@@ -124,6 +124,36 @@ describe('vendor estimates', () => {
     expect(estimateScores([target, first, second], BENCHMARKS)[0].scores.reasoning).toEqual({ score: 85, benchmarks: 2, kind: 'estimated' });
   });
 
+  it('uses same-publication pairs on two benchmarks and ignores other-source noise', () => {
+    const target = entry('target', [result('shared-a', 60), result('shared-b', 80)]);
+    const reference = entry('reference', [
+      result('shared-a', 50, 'reported'), result('shared-b', 70, 'reported'),
+      { ...result('shared-a', 0, 'measured'), source: 'other-board' },
+      { ...result('shared-b', 0, 'measured'), source: 'other-board' },
+    ], { coding: { score: 70, benchmarks: 2, kind: 'measured' } });
+    const noise = entry('noise', [
+      { ...result('shared-a', 80), source: 'other-vendor' },
+      { ...result('shared-b', 90), source: 'other-vendor' },
+    ], { coding: { score: 10, benchmarks: 2, kind: 'measured' } });
+    const estimated = estimateScores([target, reference, noise], BENCHMARKS);
+    expect(estimated[0].scores.coding).toEqual({ score: 80, benchmarks: 2, kind: 'estimated' });
+    expect(estimated[1].results.filter((row) => row.kind === 'reported')).toHaveLength(2);
+    expect(estimated[2].results).toEqual([]);
+  });
+
+  it('widens every benchmark when only one has same-publication pairs', () => {
+    const target = entry('target', [result('shared-a', 60), result('shared-b', 80)]);
+    const reference = entry('reference', [
+      result('shared-a', 50, 'reported'),
+      { ...result('shared-a', 20, 'reported'), source: 'other-table' },
+      { ...result('shared-b', 60, 'reported'), source: 'other-table' },
+    ], { coding: { score: 70, benchmarks: 2, kind: 'measured' } });
+    const estimated = estimateScores([target, reference], BENCHMARKS);
+    // Widening includes all three candidates (80, 110, 90), whose median is 90.
+    expect(estimated[0].scores.coding).toEqual({ score: 90, benchmarks: 2, kind: 'estimated' });
+    expect(estimated[1].results).toHaveLength(3);
+  });
+
   it('uses an odd median and clamps the final estimate to the score range', () => {
     const target = entry('target', [result('gpqa_diamond', 90), result('hle', 56)]);
     const first = entry('first', [result('gpqa_diamond', 80, 'measured'), result('hle', 49, 'measured')], { reasoning: { score: 70, benchmarks: 2, kind: 'measured' } });

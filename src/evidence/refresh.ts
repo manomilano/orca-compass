@@ -205,33 +205,37 @@ export function estimateScores(models: SnapshotModel[], benchmarks: EvidenceSnap
     const scores = { ...model.scores };
     for (const axis of AXES) {
       if (scores[axis]?.kind === 'measured') continue;
-      const candidates: number[] = [];
-      const shared = new Set<string>();
-      const rows = new Set<SnapshotResult>();
-      for (const target of model.results) {
-        if (target.kind !== 'vendor' && target.kind !== 'reported') continue;
-        const benchmark = Object.hasOwn(benchmarks, target.benchmark) ? benchmarks[target.benchmark] : undefined;
-        if (benchmark ? target.unit !== benchmark.unit : target.unit !== 'percent') continue;
-        const range: [number, number] = benchmark?.range ?? [0, 100];
-        for (const reference of models) {
-          if (reference.id === model.id || reference.scores[axis]?.kind !== 'measured') continue;
-          const matching = reference.results.filter((row) => row.benchmark === target.benchmark && row.unit === target.unit);
-          const measured = matching.filter((row) => row.kind === 'measured');
-          const preferred = measured.length ? measured : matching.filter((row) => row.kind === 'vendor' || row.kind === 'reported');
-          for (const row of preferred) {
-            candidates.push(reference.scores[axis]!.score + rescale(target.value, range) - rescale(row.value, range));
-            shared.add(target.benchmark);
-            rows.add(target);
-            rows.add(row);
+      for (const samePublication of [true, false]) {
+        const candidates: number[] = [];
+        const shared = new Set<string>();
+        const rows = new Set<SnapshotResult>();
+        for (const target of model.results) {
+          if (target.kind !== 'vendor' && target.kind !== 'reported') continue;
+          const benchmark = Object.hasOwn(benchmarks, target.benchmark) ? benchmarks[target.benchmark] : undefined;
+          if (benchmark ? target.unit !== benchmark.unit : target.unit !== 'percent') continue;
+          const range: [number, number] = benchmark?.range ?? [0, 100];
+          for (const reference of models) {
+            if (reference.id === model.id || reference.scores[axis]?.kind !== 'measured') continue;
+            const matching = reference.results.filter((row) => row.benchmark === target.benchmark && row.unit === target.unit &&
+              (!samePublication || row.source === target.source));
+            const measured = matching.filter((row) => row.kind === 'measured');
+            const preferred = measured.length ? measured : matching.filter((row) => row.kind === 'vendor' || row.kind === 'reported');
+            for (const row of preferred) {
+              candidates.push(reference.scores[axis]!.score + rescale(target.value, range) - rescale(row.value, range));
+              shared.add(target.benchmark);
+              rows.add(target);
+              rows.add(row);
+            }
           }
         }
+        if (shared.size < MIN_BENCHMARKS) continue;
+        candidates.sort((a, b) => a - b);
+        const mid = Math.floor(candidates.length / 2);
+        const median = candidates.length % 2 ? candidates[mid] : (candidates[mid - 1] + candidates[mid]) / 2;
+        scores[axis] = { score: Math.round(Math.max(0, Math.min(100, median)) * 10) / 10, benchmarks: shared.size, kind: 'estimated' };
+        for (const row of rows) used.add(row);
+        break;
       }
-      if (shared.size < MIN_BENCHMARKS) continue;
-      candidates.sort((a, b) => a - b);
-      const mid = Math.floor(candidates.length / 2);
-      const median = candidates.length % 2 ? candidates[mid] : (candidates[mid - 1] + candidates[mid]) / 2;
-      scores[axis] = { score: Math.round(Math.max(0, Math.min(100, median)) * 10) / 10, benchmarks: shared.size, kind: 'estimated' };
-      for (const row of rows) used.add(row);
     }
     return { ...model, scores };
   });
