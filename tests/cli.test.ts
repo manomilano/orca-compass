@@ -109,11 +109,11 @@ describe('route', () => {
     const d = JSON.parse(out());
     expect(d).toMatchObject({
       status: 'ok',
-      route: { agent: 'cursor', model: 'gemini-4-argon-high' },
+      route: { agent: 'claude', model: 'claude-opus-5-5' },
       catalogSource: 'snapshot',
       scoreSource: 'snapshot',
     });
-    expect(d.launch).toBe('orca orchestration worker-start --spec "<task>" --agent cursor --model gemini-4-argon-high');
+    expect(d.launch).toBe('orca orchestration worker-start --spec "<task>" --agent claude --model claude-opus-5-5 --effort high');
     expect(d.skipped.some((x: { agent: string }) => x.agent === 'gemini')).toBe(false);
     // Orca's "unavailable" outranks "not installed".
     expect(d.skipped).toContainEqual({ agent: 'grok', reason: 'not signed in or unavailable: Not signed in to Grok — run grok login' });
@@ -123,20 +123,20 @@ describe('route', () => {
   it('prints a compact text decision', async () => {
     expect(await main(['route', '--tier', 'daily'], io, deps)).toBe(0);
     const lines = out().split('\n');
-    expect(lines[0]).toBe('daily → claude · claude-sonnet-5-5 · medium (high confidence)');
+    expect(lines[0]).toBe('advanced → claude · claude-sonnet-5-5 · medium (high confidence)');
     expect(lines.slice(1, -1).every((l) => l.startsWith('  '))).toBe(true);
     expect(lines.at(-1)).toBe('orca orchestration worker-start --spec "<task>" --agent claude --model claude-sonnet-5-5 --effort medium');
   });
 
   it('passes agent, exclude-agent, effort and no-downgrade through to the router', async () => {
     await main(['route', '--tier', 'frontier', '--agent', 'claude', '--effort', 'max', '--json'], io, deps);
-    expect(JSON.parse(out()).route).toEqual({ agent: 'claude', model: 'claude-fable-5-2', effort: 'max' });
+    expect(JSON.parse(out()).route).toEqual({ agent: 'claude', model: 'claude-opus-5-5', effort: 'max' });
     stdout = [];
     await main(['route', '--tier', 'frontier', '--exclude-agent', 'cursor', '--exclude-agent', 'codex', '--json'], io, deps);
     expect(JSON.parse(out()).route.agent).toBe('claude');
     stdout = [];
     await main(['route', '--tier', 'advanced', '--agent', 'codex', '--no-downgrade', '--json'], io, deps);
-    expect(JSON.parse(out())).toMatchObject({ status: 'ok', tier: 'advanced', downgraded: false, route: { agent: 'codex', model: 'gpt-6.1-sol' } });
+    expect(JSON.parse(out())).toMatchObject({ status: 'ok', tier: 'frontier', requestedTier: 'advanced', upgraded: true, downgraded: false, route: { agent: 'codex', model: 'gpt-6-astra' } });
   });
 
   it('routes cursor-only Daily to a named model', async () => {
@@ -207,7 +207,7 @@ describe('status', () => {
       blocked: false,
       expired: false,
     });
-    expect(s.tiers.frontier.pick).toMatchObject({ agent: 'cursor', model: 'gemini-4-argon-high' });
+    expect(s.tiers.frontier.pick).toMatchObject({ agent: 'claude', model: 'claude-opus-5-5' });
     expect(s.tiers.light.pick.agent).toBeDefined();
     expect(s.unclassified.length).toBeGreaterThan(0);
     expect(s.catalog).toMatchObject({ source: 'snapshot' });

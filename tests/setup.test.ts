@@ -74,7 +74,7 @@ async function wizard(answers: string[], extra: MainDeps = {}): Promise<{ code: 
 const INITIAL = '{\n  "cursorAuto": false,\n  "banModels": ["grok-9"]\n}\n';
 const CONFIGURED = {
   denyAgents: ['codex'],
-  pins: { daily: { agent: 'claude', model: 'claude-sonnet-5-5' } },
+  pins: { advanced: { agent: 'claude', model: 'claude-sonnet-5-5' } },
   preferRiskLimit: 120,
   banModels: ['claude-haiku'],
 };
@@ -130,7 +130,7 @@ describe('setup --json', () => {
       }
       expect(t.warnings).toEqual(expect.any(Array));
     }
-    expect(j.tiers.daily).toMatchObject({
+    expect(j.tiers.advanced).toMatchObject({
       pick: { agent: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' },
       preferred: { agent: 'claude', model: 'claude-sonnet-5-5' },
       options: [{ agent: 'claude', model: 'claude-sonnet-5-5', blocked: false, onPacePercent: 55 }],
@@ -209,32 +209,32 @@ describe('setup wizard', () => {
     expect(screen).toMatch(/^Favorites: none; every tier takes the route with the most room$/m);
     expect(screen).toMatch(/^Never used: nothing$/m);
     expect(screen).toMatch(/^ {2}light\s+claude · claude-haiku-5-5 · low$/m);
-    expect(screen).toMatch(/^ {2}frontier\s+claude · claude-fable-5-2 · high$/m);
+    expect(screen).toMatch(/^ {2}frontier\s+claude · claude-opus-5-5 · high$/m);
     expect(screen).toMatch(new RegExp(`Saved ${escape(configPath())}$`, 'm'));
     expect(config()).toEqual({});
   });
 
   it('writes the answers exactly as the agents, prefer and ban commands do, keeping other keys', async () => {
     writeFileSync(configPath(), INITIAL);
-    // claude only; favorites: Daily → option 1, limit 120%; bans: family 2 (claude-haiku) and grok-9; save.
-    const { code, screen } = await wizard(['1', 'y', '', '1', '', '', '120%', '2, grok-9', 'y']);
+    // claude only; favorites: Advanced → option 1, limit 120%; bans: family 2 (claude-haiku) and grok-9; save.
+    const { code, screen } = await wizard(['1', 'y', '', '1', '', '120%', '2, grok-9', 'y']);
     expect(code).toBe(0);
-    expect(screen).toMatch(/^Daily: now claude · claude-sonnet-5-5 · medium; favorite: none$/m);
+    expect(screen).toMatch(/^Advanced: now claude · claude-sonnet-5-5 · medium; favorite: none$/m);
     expect(screen).toMatch(/^ {2}1\s+claude claude-sonnet-5-5\s+on pace for 55%$/m);
-    expect(screen).toMatch(/^Favorites: Daily claude claude-sonnet-5-5; above 120%, switch only to a known within-limit alternative$/m);
+    expect(screen).toMatch(/^Favorites: Advanced claude claude-sonnet-5-5; above 120%, switch only to a known within-limit alternative$/m);
     expect(screen).toMatch(/^Never used: claude-haiku, grok-9$/m);
     // Haiku is banned and Codex is off, so Light has no model left.
-    expect(screen).toMatch(/^ {2}light\s+claude · claude-sonnet-5-5 · low \(upgraded to daily\)\n\s+warning: no light-tier model installed; using daily$/m);
+    expect(screen).toMatch(/^ {2}light\s+claude · claude-sonnet-5-5 · low \(upgraded to advanced\)\n\s+warning: no light-class model covers the job; using advanced$/m);
     const fromWizard = config();
     expect(fromWizard).toEqual({
       cursorAuto: false, banModels: ['claude-haiku', 'grok-9'], denyAgents: ['codex'],
-      pins: { daily: { agent: 'claude', model: 'claude-sonnet-5-5' } }, preferRiskLimit: 120,
+      pins: { advanced: { agent: 'claude', model: 'claude-sonnet-5-5' } }, preferRiskLimit: 120,
     });
 
     process.env.ORCACOMPASS_HOME = mkdtempSync(join(tmpdir(), 'oc-setup-'));
     writeFileSync(configPath(), INITIAL);
     await main(['agents', 'disable', 'codex'], io, deps);
-    await main(['prefer', 'daily', 'claude', 'claude-sonnet-5-5'], io, deps);
+    await main(['prefer', 'advanced', 'claude', 'claude-sonnet-5-5'], io, deps);
     await main(['prefer', '--risk-limit', '120'], io, deps);
     await main(['unban', 'grok-9'], io, deps);
     await main(['ban', 'claude-haiku', 'grok-9'], io, deps);
@@ -249,8 +249,8 @@ describe('setup wizard', () => {
     expect(screen).toMatch(/Use which agents\? Numbers or names, separated by commas \[claude\]: /);
     expect(screen).toMatch(/120% \(the default is 100%\)/);
     expect(screen).toMatch(/Set favorites\? \[Y\/n\]: /);
-    expect(screen).toMatch(/^Daily: now claude · claude-sonnet-5-5 · medium; favorite: claude claude-sonnet-5-5$/m);
-    expect(screen).toMatch(/Favorite for Daily\? Number, 0 for none \[keep\]: /);
+    expect(screen).toMatch(/^Advanced: now claude · claude-sonnet-5-5 · medium; favorite: claude claude-sonnet-5-5$/m);
+    expect(screen).toMatch(/Favorite for Advanced\? Number, 0 for none \[keep\]: /);
     expect(screen).toMatch(/more than what percent\? \[120\]: /);
     expect(screen).toMatch(/"none" for no bans \[claude-haiku\]: /);
     expect(screen).toMatch(/^Nothing changed\. Config: /m);
@@ -260,7 +260,7 @@ describe('setup wizard', () => {
 
   it('asks again after a bad answer, notes an agent Orca has switched off, refuses an agent as a ban, and clears', async () => {
     writeFileSync(configPath(), JSON.stringify(CONFIGURED));
-    const { code, screen } = await wizard(['8', 'gemini', 'claude cursor', 'maybe', 'y', '0', '', '', 'codex', '99', 'none', 'y']);
+    const { code, screen } = await wizard(['8', 'gemini', 'claude cursor', 'maybe', 'y', '0', '', 'codex', '99', 'none', 'y']);
     expect(code).toBe(0);
     expect(screen).toMatch(/"8" is not one of the agents above\./);
     expect(screen).toMatch(/"gemini" is not one of the agents above\./);

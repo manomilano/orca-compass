@@ -35,16 +35,18 @@ const variantModel = (agent: string, id: string, poolNames: string[]): LaunchMod
 });
 
 /** An Environment whose models may still be raw LaunchModels; `placed` turns it into a routable one. */
-export type RawEnv = Omit<Environment, 'discoveries'> & { discoveries: AgentDiscovery[] };
+export type RawEnv = Omit<Environment, 'discoveries' | 'bands'> & { discoveries: AgentDiscovery[]; bands?: Environment['bands'] };
 export interface PlaceOpts { config?: Config; snapshot?: EvidenceSnapshot }
 
 /** Profiles every model as the build does, using deterministic fixture evidence. */
 export function placed(env: RawEnv, opts: PlaceOpts = {}): Environment {
   const config = opts.config ?? DEFAULT_CONFIG;
   const { discoveries, ...rest } = env;
+  const snapshot = opts.snapshot ?? parseSnapshot(fixture('evidence-mini.json'))!;
   return {
     ...rest,
-    discoveries: profileModels(discoveries, opts.snapshot ?? parseSnapshot(fixture('evidence-mini.json'))!, config),
+    bands: snapshot.bands,
+    discoveries: profileModels(discoveries, snapshot, config),
   };
 }
 

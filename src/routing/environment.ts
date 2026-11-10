@@ -65,6 +65,7 @@ export async function gather(config: Config, deps: GatherDeps = {}): Promise<Gat
   const rejections = activeRejections(readRejections(deps.readFile ?? readTextFile, deps.cacheDir ?? cacheDir()), now, config.rejectionTtlHours);
   const env: Environment = {
     now,
+    bands: table.bands,
     discoveries: table.agents,
     usage,
     orcaAgents,

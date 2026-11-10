@@ -84,7 +84,7 @@ it('applies family bans and overrides to newly discovered versions without metad
   expect(blocked.skipped).toContainEqual({ agent: 'claude', model: 'claude-fable-5-5', reason: 'banned by you' });
 });
 
-it.each(['provider', 'orca'])('routes an arbitrarily named new Codex model using its %s description', async (source) => {
+it.each(['provider', 'orca'])('keeps an arbitrary model unranked when its %s description has no vendor evidence', async (source) => {
   const id = 'aurora-workbench';
   const readFile = (path: string) => {
     if (source === 'provider' && path.endsWith('models_cache.json')) return JSON.stringify({ models: [{ slug: id, visibility: 'list', supported_reasoning_levels: [{ effort: 'high' }], description: 'For your toughest challenges' }] });
@@ -95,7 +95,10 @@ it.each(['provider', 'orca'])('routes an arbitrarily named new Codex model using
   expect(discovery.models[0]).toMatchObject({ modelId: id, lineup: 'For your toughest challenges' });
   expect(discovery.models[0].meta).toBeUndefined();
   const env = placed({ ...machineEnv(), discoveries: [discovery] });
-  expect(route({ tier: 'frontier', agents: ['codex'] }, env, DEFAULT_CONFIG).route?.model).toBe(id);
+  const decision = route({ tier: 'frontier', agents: ['codex'] }, env, DEFAULT_CONFIG);
+  expect(decision.status).toBe('none');
+  expect(decision.skipped).toContainEqual({ agent: 'codex', model: id, reason: 'unranked: no evidence or estimate' });
+  expect(env.discoveries[0].models[0].profile.hint).toMatchObject({ tier: 'frontier', source: 'lineup' });
 });
 
 it('does not infer capability or a known family from arbitrary names', () => {

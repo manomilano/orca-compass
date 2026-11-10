@@ -9,18 +9,132 @@ import {
 const env = machineEnv();
 const r = (req: RouteRequest) => route(req, env, DEFAULT_CONFIG);
 
+describe('per-axis routing', () => {
+  it('reports shorthand needs, quality and all Frontier alternatives in rank order', () => {
+    const d = r({ tier: 'frontier' });
+    expect(d).toMatchObject({ needsSource: 'tier', needs: { coding: 'high', agentic: 'high', reasoning: 'high' }, quality: { covers: true, class: 'frontier' } });
+    expect(d.alternatives.map((a) => `${a.agent} ${a.model}`)).toEqual(['cursor claude-fable-5-1-high', 'cursor claude-opus-5-5-high', 'claude claude-fable-5-1', 'codex gpt-6-astra']);
+    expect(r({ tier: 'advanced' }).quality).toMatchObject({ class: 'advanced', covers: true, overshoot: 0 });
+  });
+  it('high/mid/low uses quota within the lowest covering class', () => {
+    const d = r({ needs: { coding: 'high', agentic: 'mid', reasoning: 'low' } });
+    expect(d).toMatchObject({ requestedTier: 'frontier', needsSource: 'need', route: { model: 'claude-opus-5-5' } });
+    expect(d.reasons).toContain('needs coding=high agentic=mid reasoning=low; fit group: frontier class (5 models)');
+  });
+  it('low/low/min on Claude upgrades to Sonnet and explains below-need models', () => {
+    const d = r({ needs: { coding: 'low', agentic: 'low', reasoning: 'min' }, agents: ['claude'] });
+    expect(d).toMatchObject({ requestedTier: 'daily', tier: 'advanced', upgraded: true, route: { model: 'claude-sonnet-5-5' } });
+    expect(d.skipped).toContainEqual({ agent: 'claude', model: 'claude-haiku-5-5', reason: 'below need on coding (64.2 < 68)' });
+  });
+  it('downgrades by shortfall with unchanged effort, or waits when forbidden', () => {
+    const config = { ...DEFAULT_CONFIG, banModels: ['claude-opus-5-5'] };
+    const blocked = withPool(env, 'claude', 'fableWeekly', { usedPercent: 96 });
+    const d = route({ tier: 'frontier', agents: ['claude'] }, blocked, config);
+    expect(d).toMatchObject({ downgraded: true, tier: 'advanced', route: { model: 'claude-sonnet-5-5', effort: 'high' }, quality: { covers: false, shortfall: 3 } });
+    expect(d.warnings).toContain("claude-sonnet-5-5 falls short of the job's needs by 3 band steps (coding, agentic, reasoning); effort is not raised to make up for it: split the job or add stronger checks");
+    expect(route({ tier: 'frontier', agents: ['claude'], noDowngrade: true }, blocked, config)).toMatchObject({ status: 'wait', waitUntil: 1793282400000 });
+  });
+  it('never promotes above a blocked fit group', () => {
+    const blocked = withPool(env, 'codex', 'weekly', { usedPercent: 96 });
+    expect(route({ tier: 'daily' }, blocked, DEFAULT_CONFIG)).toMatchObject({ downgraded: true, route: { agent: 'claude', model: 'claude-haiku-5-5' }, quality: { shortfall: 3 } });
+    expect(route({ tier: 'daily', noDowngrade: true }, blocked, DEFAULT_CONFIG).status).toBe('wait');
+  });
+  it('breaks quota ties by evidence then need-weighted score', () => {
+    const req = { tier: 'frontier', agents: ['cursor'] } as const;
+    const run = (e: Environment) => route({ ...req, agents: [...req.agents] }, e, DEFAULT_CONFIG);
+    expect(run(env).route?.model).toBe('claude-fable-5-1-high');
+    const changed = structuredClone(env);
+    const cursor = changed.discoveries.find((d) => d.agent === 'cursor')!;
+    cursor.models.find((m) => m.modelId === 'claude-opus-5-5')!.profile.axes.coding.label = 'partial';
+    expect(run(changed).route?.model).toBe('claude-fable-5-1-high');
+    cursor.models.find((m) => m.modelId === 'claude-fable-5-1')!.profile.axes.reasoning.label = 'estimated';
+    expect(run(changed).route?.model).toBe('claude-opus-5-5-high');
+  });
+  it('uses Cursor auto only as an allowed, unblocked fallback', () => {
+    const auto = withCursorModels(withPool(env, 'cursor', 'bucket:Other Models', { usedPercent: 96 }), [CURSOR_AUTO]);
+    const req = { tier: 'frontier' as const, agents: ['cursor'] };
+    const d = route(req, auto, DEFAULT_CONFIG);
+    expect(d).toMatchObject({ status: 'ok', route: { agent: 'cursor', model: 'auto', effort: null }, quality: null, source: 'auto', confidence: 'medium' });
+    expect(d.tier).toBeUndefined();
+    expect(d.reasons).toContain('cursor auto: fallback, no named model could be routed (Cursor picks the model)');
+    expect(route({ ...req, noDowngrade: true }, auto, DEFAULT_CONFIG).status).toBe('wait');
+    expect(route(req, auto, { ...DEFAULT_CONFIG, cursorAuto: false }).status).toBe('wait');
+    expect(route(req, withPool(auto, 'cursor', 'bucket:Cursor Models', { usedPercent: 96 }), DEFAULT_CONFIG).status).toBe('wait');
+    expect(route(req, auto, { ...DEFAULT_CONFIG, banModels: ['auto'] }).status).toBe('wait');
+    expect(route({ ...req, effort: 'high' }, onlyModels(auto, 'cursor', ['auto']), DEFAULT_CONFIG).route).toBeUndefined();
+    expect(route(req, onlyModels(auto, 'cursor', ['auto']), DEFAULT_CONFIG).route?.model).toBe('auto');
+    const named = route(req, withCursorModels(env, [CURSOR_AUTO]), DEFAULT_CONFIG);
+    expect(named.route?.model).not.toBe('auto');
+    expect(named.alternatives.some((a) => a.model === 'auto')).toBe(false);
+  });
+  it('skips an agent-only pin whose models are all unranked without throwing', () => {
+    const mystery: LaunchModel = { agent: 'cursor', modelId: 'mystery-9', efforts: [], launch: { kind: 'flag', model: 'mystery-9' }, poolNames: [] };
+    const e = withCursorModels(onlyModels(env, 'cursor', []), [mystery]);
+    const d = route({ tier: 'frontier' }, e, { ...DEFAULT_CONFIG, pins: { frontier: { agent: 'cursor' } } });
+    expect(d).toMatchObject({ status: 'ok', route: { agent: 'claude' } });
+    expect(d.warnings).toContain('preferred cursor skipped: not available (unranked: no evidence or estimate)');
+  });
+  it('honors a pinned model even when it does not cover', () => {
+    const d = route({ tier: 'frontier' }, env, { ...DEFAULT_CONFIG, pins: { frontier: { agent: 'claude', model: 'claude-sonnet-5-5' } } });
+    expect(d.route?.model).toBe('claude-sonnet-5-5');
+    expect(d.quality).toMatchObject({ covers: false, shortfall: 3 });
+    expect(d.reasons.join('\n')).toContain('preferred route does not cover the job: coding 80.9 < 84');
+  });
+  it('tries last-resort named routes before auto', () => {
+    const auto = withCursorModels(withPool(env, 'cursor', 'bucket:Other Models', { usedPercent: 96 }), [CURSOR_AUTO]);
+    const e = placed({ ...auto, discoveries: [...auto.discoveries, { agent: 'opencode', installed: true, models: [{ agent: 'opencode', modelId: 'claude-opus-5-5', efforts: [], poolNames: [], launch: { kind: 'flag', model: 'claude-opus-5-5' } }] }] });
+    const d = route({ tier: 'frontier', excludeAgents: ['claude', 'codex'] }, e, DEFAULT_CONFIG);
+    expect(d.route?.agent).toBe('opencode');
+    expect(d.warnings.join('\n')).toContain('last-resort agent');
+  });
+  it('warns that an auto tier override has no effect', () => {
+    const config: Config = { ...DEFAULT_CONFIG, tierOverrides: { auto: 'frontier' } };
+    const d = route({ tier: 'light', agents: ['cursor'] }, withCursorModels(env, [CURSOR_AUTO], 0.5, config), config);
+    expect(d.route?.model).not.toBe('auto');
+    expect(d.warnings).toContain('tierOverrides.auto is ignored: Cursor auto has no model profile');
+  });
+  it('allows an explicit unranked model pin, while reporting its missing evidence', () => {
+    const mystery: LaunchModel = { agent: 'cursor', modelId: 'mystery-9', efforts: [], launch: { kind: 'flag', model: 'mystery-9' }, poolNames: [] };
+    const e = withCursorModels(onlyModels(env, 'cursor', []), [mystery]);
+    const d = route({ tier: 'frontier' }, e, { ...DEFAULT_CONFIG, pins: { frontier: { agent: 'cursor', model: 'mystery-9' } } });
+    expect(d).toMatchObject({ status: 'ok', route: { model: 'mystery-9' }, confidence: 'low', quality: { class: null, covers: false, evidence: 'unranked', shortfall: 12 } });
+    expect(d.reasons.join('\n')).toContain('preferred route does not cover the job: coding unranked < 84');
+  });
+  it('offers auto after every named Cursor model was rejected, but honors an auto rejection', () => {
+    const auto = withCursorModels(env, [CURSOR_AUTO]);
+    const rejections = auto.discoveries.find((d) => d.agent === 'cursor')!.models.filter((m) => m.modelId !== 'auto').map((m) => ({ agent: 'cursor', model: m.modelId, message: 'not available', at: env.now }));
+    const req = { tier: 'frontier' as const, agents: ['cursor'] };
+    expect(route(req, { ...auto, rejections }, DEFAULT_CONFIG).route?.model).toBe('auto');
+    const rejectedAuto = { ...auto, rejections: [...rejections, { agent: 'cursor', model: 'auto', message: 'not available', at: env.now }] };
+    expect(route(req, rejectedAuto, DEFAULT_CONFIG).route).toBeUndefined();
+    expect(route(req, withUsageStatus(auto, 'unknown', ['cursor']), DEFAULT_CONFIG).confidence).toBe('low');
+  });
+  it('uses the environment cuts in quality and shortfall explanations', () => {
+    const e = structuredClone(env);
+    e.bands.coding = [70, 80, 90];
+    const d = route({ tier: 'frontier', agents: ['claude'] }, e, { ...DEFAULT_CONFIG, pins: { frontier: { agent: 'claude', model: 'claude-sonnet-5-5' } } });
+    expect(d.quality!.axes.coding.cut).toBe(90);
+    expect(d.reasons.join('\n')).toContain('coding 80.9 < 90');
+  });
+  it('does not swap a risky Daily favorite for a higher covering class', () => {
+    const d = route({ tier: 'daily' }, env, { ...DEFAULT_CONFIG, pins: { daily: { agent: 'codex', model: 'gpt-6.1-terra' } } });
+    expect(d.route?.model).toBe('gpt-6.1-terra');
+    expect(d.warnings.join('\n')).toContain('retained: no unblocked alternative with known usage');
+  });
+});
+
 describe('stored placement routing', () => {
   it('uses stored overrides without recomputing model tiers', () => {
     const edited: Environment = {
       ...env,
       discoveries: env.discoveries.map((d) => (d.agent !== 'claude' ? d : {
         ...d,
-        models: d.models.map((m) => (m.modelId !== 'claude-fable-5-1' ? m : { ...m, profile: { ...m.profile, class: 'light' as const, hint: { tier: 'light' as const, source: 'override' as const } } })),
+        models: d.models.map((m) => (m.modelId !== 'claude-fable-5-1' ? m : { ...m, profile: { ...m.profile, class: 'light' as const, hint: { tier: 'light' as const, source: 'override' as const }, axes: { coding: { ...m.profile.axes.coding, band: 'light' as const }, agentic: { ...m.profile.axes.agentic, band: 'light' as const }, reasoning: { ...m.profile.axes.reasoning, band: 'light' as const } } } })),
       })),
     };
     const light = route({ tier: 'light', agents: ['claude'] }, edited, DEFAULT_CONFIG);
     expect([light.route?.model, ...light.alternatives.map((a) => a.model)]).toContain('claude-fable-5-1');
-    expect(route({ tier: 'frontier', agents: ['claude'], noDowngrade: true }, edited, DEFAULT_CONFIG).status).toBe('none');
+    expect(route({ tier: 'frontier', agents: ['claude'], noDowngrade: true }, edited, DEFAULT_CONFIG).route?.model).toBe('claude-opus-5-5');
   });
 
   it('ranks usage headroom before classification origin within one agent', () => {
@@ -33,19 +147,19 @@ describe('stored placement routing', () => {
 });
 
 describe('route with synthetic usage', () => {
-  it('Frontier: Cursor Fable (headroom 64%, counted as 20% for its 22d reset) beats Claude Fable (18%) and Codex Astra (-14%)', () => {
+  it('Frontier: Claude Opus (45%) beats Cursor Fable/Opus (20%), Claude Fable (18%) and Codex Astra', () => {
     expect(r({ tier: 'frontier' })).toMatchObject({
       status: 'ok', tier: 'frontier', downgraded: false, upgraded: false,
-      route: { agent: 'cursor', model: 'claude-fable-5-1-high', effort: null }, confidence: 'high',
+      route: { agent: 'claude', model: 'claude-opus-5-5', effort: 'high' }, confidence: 'high',
     });
-    expect(r({ tier: 'frontier' }).launchArgs).toEqual(['--agent', 'cursor', '--model', 'claude-fable-5-1-high']);
+    expect(r({ tier: 'frontier' }).launchArgs).toEqual(['--agent', 'claude', '--model', 'claude-opus-5-5', '--effort', 'high']);
   });
 
-  it('Daily / Advanced / Light: Claude (45%, resets in 14h) wins with the tier default effort', () => {
-    expect(r({ tier: 'daily' }).route).toEqual({ agent: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' });
-    expect(r({ tier: 'advanced' }).route).toEqual({ agent: 'claude', model: 'claude-opus-5-5', effort: 'medium' });
+  it('Daily uses Terra; Advanced uses Sonnet; Light uses Haiku with the tier default effort', () => {
+    expect(r({ tier: 'daily' }).route).toEqual({ agent: 'codex', model: 'gpt-6.1-terra', effort: 'medium' });
+    expect(r({ tier: 'advanced' }).route).toEqual({ agent: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' });
     expect(r({ tier: 'light' }).route).toEqual({ agent: 'claude', model: 'claude-haiku-5-5', effort: 'low' });
-    expect(r({ tier: 'daily' }).launchArgs).toEqual(['--agent', 'claude', '--model', 'claude-sonnet-5-5', '--effort', 'medium']);
+    expect(r({ tier: 'daily' }).launchArgs).toEqual(['--agent', 'codex', '--model', 'gpt-6.1-terra', '--effort', 'medium']);
   });
 
   it('never offers a frontier model for a light task (anti-goal)', () => {
@@ -70,25 +184,25 @@ describe('route with synthetic usage', () => {
     expect(route({ tier: 'daily' }, signedOut, DEFAULT_CONFIG).skipped).toContainEqual({ agent: 'codex', reason: 'not signed in or unavailable: login required' });
   });
 
-  it('Claude-only view picks Fable at high for Frontier', () => {
-    expect(r({ tier: 'frontier', agents: ['claude'] }).route).toEqual({ agent: 'claude', model: 'claude-fable-5-1', effort: 'high' });
+  it('Claude-only view picks Opus at high for Frontier', () => {
+    expect(r({ tier: 'frontier', agents: ['claude'] }).route).toEqual({ agent: 'claude', model: 'claude-opus-5-5', effort: 'high' });
   });
 
-  it('downgrades to Opus when the Fable pool is blocked, keeping the effort and warning about capability', () => {
-    const blocked = withPool(env, 'claude', 'fableWeekly', { usedPercent: 96 });
+  it('downgrades to Sonnet when the Frontier pool is blocked, keeping the effort and warning about capability', () => {
+    const blocked = withPool(onlyModels(env, 'claude', ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1']), 'claude', 'fableWeekly', { usedPercent: 96 });
     const d = route({ tier: 'frontier', agents: ['claude'] }, blocked, DEFAULT_CONFIG);
-    expect(d).toMatchObject({ status: 'ok', tier: 'advanced', downgraded: true, route: { model: 'claude-opus-5-5', effort: 'high' } });
+    expect(d).toMatchObject({ status: 'ok', tier: 'advanced', downgraded: true, route: { model: 'claude-sonnet-5-5', effort: 'high' } });
     expect(d.reasons.some((s) => /^downgraded from frontier: /.test(s))).toBe(true);
-    expect(d.warnings).toContain('a advanced model is doing frontier work; effort is not raised to make up for it: split the job or add stronger checks');
+    expect(d.warnings).toContain("claude-sonnet-5-5 falls short of the job's needs by 3 band steps (coding, agentic, reasoning); effort is not raised to make up for it: split the job or add stronger checks");
   });
 
   it('does not lower the effort when it goes up a tier', () => {
     const d = route({ tier: 'light', agents: ['claude'], demand: 'high' }, onlyModels(env, 'claude', ['claude-opus-5-5']), DEFAULT_CONFIG);
-    expect(d).toMatchObject({ tier: 'advanced', upgraded: true, route: { effort: 'high' } });
+    expect(d).toMatchObject({ tier: 'frontier', upgraded: true, route: { effort: 'high' } });
   });
 
   it('waits for the earliest unblocking reset when noDowngrade is set', () => {
-    const blocked = withPool(env, 'claude', 'fableWeekly', { usedPercent: 96 });
+    const blocked = withPool(onlyModels(env, 'claude', ['claude-fable-5-1']), 'claude', 'fableWeekly', { usedPercent: 96 });
     const d = route({ tier: 'frontier', agents: ['claude'], noDowngrade: true }, blocked, DEFAULT_CONFIG);
     expect(d).toMatchObject({ status: 'wait', waitUntil: 1793282400000, downgraded: false, upgraded: false });
     expect(d.route).toBeUndefined();
@@ -103,8 +217,8 @@ describe('route with synthetic usage', () => {
 
   it('goes up a tier only when nothing is installed at or below the requested tier', () => {
     const d = route({ tier: 'light', agents: ['claude'] }, onlyModels(env, 'claude', ['claude-opus-5-5']), DEFAULT_CONFIG);
-    expect(d).toMatchObject({ status: 'ok', tier: 'advanced', upgraded: true, downgraded: false, route: { model: 'claude-opus-5-5' } });
-    expect(d.warnings).toContain('no light-tier model installed; using advanced');
+    expect(d).toMatchObject({ status: 'ok', tier: 'frontier', upgraded: true, downgraded: false, route: { model: 'claude-opus-5-5' } });
+    expect(d.warnings).toContain('no light-class model covers the job; using frontier');
   });
 
   it('answers with low confidence when usage is unknown', () => {
@@ -116,11 +230,11 @@ describe('route with synthetic usage', () => {
   });
 
   it('ignores an expired pool and lowers confidence', () => {
-    const d = route({ tier: 'frontier', agents: ['claude'] }, withPool(env, 'claude', 'fableWeekly', { resetsAt: env.now - 1 }), DEFAULT_CONFIG);
+    const d = route({ tier: 'frontier', agents: ['claude'] }, withPool(onlyModels(env, 'claude', ['claude-fable-5-1']), 'claude', 'fableWeekly', { resetsAt: env.now - 1 }), DEFAULT_CONFIG);
     expect(d.confidence).toBe('low');
     expect(d.route?.model).toBe('claude-fable-5-1');
     expect(d.reasons.join('\n')).toMatch(/fableWeekly.*expired/);
-    const expiredAndFull = withPool(env, 'claude', 'fableWeekly', { resetsAt: env.now - 1, usedPercent: 99 });
+    const expiredAndFull = withPool(onlyModels(env, 'claude', ['claude-fable-5-1']), 'claude', 'fableWeekly', { resetsAt: env.now - 1, usedPercent: 99 });
     expect(route({ tier: 'frontier', agents: ['claude'] }, expiredAndFull, DEFAULT_CONFIG).status).toBe('ok');
   });
 
@@ -141,7 +255,7 @@ describe('route with synthetic usage', () => {
   });
 
   it('applies an explicit effort exactly, through the flag or the Cursor variant', () => {
-    const d = r({ tier: 'frontier', effort: 'max' });
+    const d = r({ tier: 'frontier', agents: ['cursor'], effort: 'max' });
     expect(d.route).toEqual({ agent: 'cursor', model: 'claude-fable-5-1-max', effort: null });
     expect(d.effort).toEqual({
       source: 'explicit', target: 'max', resolved: 'max', applied: 'model-id', adjusted: false, supportSource: 'unknown',
@@ -208,20 +322,20 @@ describe('route with synthetic usage', () => {
 
   it('excludes NO ZDR models only when configured', () => {
     const noZdr = { ...env, discoveries: env.discoveries.map((d) => d.agent !== 'cursor' ? d : { ...d, models: d.models.map((m) => ({ ...m, noZdr: true })) }) };
-    expect(route({ tier: 'frontier' }, noZdr, DEFAULT_CONFIG).route?.agent).toBe('cursor');
-    expect(route({ tier: 'frontier' }, noZdr, { ...DEFAULT_CONFIG, excludeNoZdr: true }).route?.agent).toBe('claude');
+    expect(route({ tier: 'frontier', excludeAgents: ['claude'] }, noZdr, DEFAULT_CONFIG).route?.agent).toBe('cursor');
+    expect(route({ tier: 'frontier', excludeAgents: ['claude'] }, noZdr, { ...DEFAULT_CONFIG, excludeNoZdr: true }).route?.agent).toBe('codex');
   });
 
   it('explains the pick with its tightest pool and names the runner-up and skipped agents', () => {
-    const d = r({ tier: 'frontier' });
+    const d = r({ tier: 'frontier', excludeAgents: ['claude'] });
     expect(d.reasons[0]).toBe('cursor claude-fable-5-1-high: Other Models 6.3% used, 29% of window elapsed (headroom 64%, counted as 20% for a reset beyond 7d) → on pace for 22% before reset in 22d');
-    expect(d.reasons).toContain('next best: claude claude-fable-5-1 (fableWeekly headroom 18%, resets in 14h)');
-    expect(d.reasons).toContain('skipped: muse (not installed)');
+    expect(d.reasons).toContain('next best: cursor claude-opus-5-5-high (Other Models headroom 64%, counted as 20% for a reset beyond 7d, resets in 22d)');
+    expect(d.skipped).toContainEqual({ agent: 'muse', reason: 'not installed' });
     expect(d.alternatives.map((a) => [a.agent, a.model, a.blocked])).toEqual([
-      ['claude', 'claude-fable-5-1', false],
+      ['cursor', 'claude-opus-5-5-high', false],
       ['codex', 'gpt-6-astra', false],
     ]);
-    expect(d.alternatives[0].headroom).toBeCloseTo(0.1803, 3);
+    expect(d.alternatives[0].headroom).toBeCloseTo(0.6420, 3);
     expect(d.alternatives[1].headroom).toBeCloseTo(-0.1375, 3);
   });
 
@@ -235,16 +349,16 @@ describe('route with synthetic usage', () => {
 describe('ranking by headroom', () => {
   it('a just-reset session does not hide Claude weekly (45%, resets in 14h): Claude beats Codex (19%) and Cursor (20% counted)', () => {
     const e = withPool(withPool(env, 'claude', 'session', { usedPercent: 0, resetsAt: env.now + 297 * 60_000 }), 'codex', 'weekly', { usedPercent: 12 });
-    const d = route({ tier: 'daily' }, e, DEFAULT_CONFIG);
+    const d = route({ tier: 'advanced' }, e, DEFAULT_CONFIG);
     expect(d.route).toEqual({ agent: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' });
     expect(d.reasons[0]).toBe('claude claude-sonnet-5-5: weekly 50% used, 92% of window elapsed (headroom 45%) → on pace for 55% before reset in 14h');
     expect(d.alternatives.find((a) => a.agent === 'codex')?.headroom).toBeCloseTo(0.1925, 3);
   });
 
   it('a session at its threshold still blocks every Claude model', () => {
-    const d = route({ tier: 'daily', agents: ['claude'] }, withPool(env, 'claude', 'session', { usedPercent: 91 }), DEFAULT_CONFIG);
-    expect(d.status).toBe('none');
-    expect(d.reasons[0]).toMatch(/all daily candidates blocked: claude claude-sonnet-5-5 \(session 91% used/);
+    const d = route({ tier: 'advanced', agents: ['claude'] }, withPool(env, 'claude', 'session', { usedPercent: 91 }), DEFAULT_CONFIG);
+    expect(d.status).toBe('wait');
+    expect(d.reasons[0]).toMatch(/all advanced candidates blocked: claude claude-sonnet-5-5 \(session 91% used/);
   });
 
   it('a session on pace to hit its threshold before it resets ranks the route by that session', () => {
@@ -260,13 +374,13 @@ describe('ranking by headroom', () => {
     expect(claude).toMatchObject({ blocked: false });
     expect(claude?.headroom).toBeCloseTo(-0.1886, 3);
     expect(claude?.reason).toBe('session 72% used, 60% of window elapsed (headroom -19%) → on pace for 120% before reset in 2h');
-    expect(route({ tier: 'daily' }, withPool(env, 'claude', 'session', { usedPercent: 72 }), DEFAULT_CONFIG).route?.agent).toBe('cursor');
+    expect(route({ tier: 'advanced' }, withPool(env, 'claude', 'session', { usedPercent: 72 }), DEFAULT_CONFIG).route?.agent).toBe('cursor');
   });
 
   it('a hot session not on pace to hit its threshold is reported and only breaks ties', () => {
     // 72% used with 90% of the session elapsed: on pace for 80%, under the 90% threshold.
     const late = withPool(env, 'claude', 'session', { usedPercent: 72, resetsAt: env.now + 30 * 60_000 });
-    const d = route({ tier: 'daily' }, late, DEFAULT_CONFIG);
+    const d = route({ tier: 'advanced' }, late, DEFAULT_CONFIG);
     expect(d.route?.agent).toBe('claude');
     expect(d.reasons[0]).toBe('claude claude-sonnet-5-5: weekly 50% used, 92% of window elapsed (headroom 45%) → on pace for 55% before reset in 14h; session 72% used → on pace for 80% before reset in 30m');
   });
@@ -296,10 +410,10 @@ describe('ranking by headroom', () => {
 });
 
 describe('stale usage (graduated)', () => {
-  it('31-minute-old usage still blocks: Fable at 96% downgrades to Opus, not Fable', () => {
-    const stale = withUsageUpdatedAt(withPool(env, 'claude', 'fableWeekly', { usedPercent: 96 }), env.now - 31 * 60_000, ['claude']);
+  it('31-minute-old usage still blocks: Fable at 96% downgrades to Sonnet, not Fable', () => {
+    const stale = withUsageUpdatedAt(withPool(onlyModels(env, 'claude', ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1']), 'claude', 'fableWeekly', { usedPercent: 96 }), env.now - 31 * 60_000, ['claude']);
     const d = route({ tier: 'frontier', agents: ['claude'] }, stale, DEFAULT_CONFIG);
-    expect(d).toMatchObject({ status: 'ok', tier: 'advanced', downgraded: true, route: { model: 'claude-opus-5-5', effort: 'high' } });
+    expect(d).toMatchObject({ status: 'ok', tier: 'advanced', downgraded: true, route: { model: 'claude-sonnet-5-5', effort: 'high' } });
   });
 
   it('45-minute-old usage keeps the headroom ranking, drops confidence to medium and says how old it is', () => {
@@ -313,16 +427,16 @@ describe('stale usage (graduated)', () => {
   });
 
   it('3-hour-old usage nulls the headroom and lowers confidence, but blocked pools still block', () => {
-    const stale = withUsageUpdatedAt(withPool(env, 'claude', 'fableWeekly', { usedPercent: 96 }), env.now - 3 * 3_600_000, ['claude']);
+    const stale = withUsageUpdatedAt(withPool(onlyModels(env, 'claude', ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1']), 'claude', 'fableWeekly', { usedPercent: 96 }), env.now - 3 * 3_600_000, ['claude']);
     const d = route({ tier: 'frontier', agents: ['claude'] }, stale, DEFAULT_CONFIG);
-    expect(d).toMatchObject({ status: 'ok', tier: 'advanced', downgraded: true, confidence: 'low', route: { model: 'claude-opus-5-5' } });
-    expect(d.reasons[0]).toBe('claude claude-opus-5-5: usage stale (updated 3h ago)');
+    expect(d).toMatchObject({ status: 'ok', tier: 'advanced', downgraded: true, confidence: 'low', route: { model: 'claude-sonnet-5-5' } });
+    expect(d.reasons[0]).toBe('claude claude-sonnet-5-5: usage stale (updated 3h ago)');
     expect(d.reasons.some((s) => s.startsWith('downgraded from frontier: all frontier candidates blocked: claude claude-fable-5-1 (fableWeekly 96% used'))).toBe(true);
     const wait = route({ tier: 'frontier', agents: ['claude'], noDowngrade: true }, stale, DEFAULT_CONFIG);
     expect(wait.status).toBe('wait');
     expect(wait.alternatives[0]).toMatchObject({ blocked: true, headroom: null, reason: 'blocked: fableWeekly 96% used, resets in 14h' });
     // routes with known headroom beat stale-unknown ones
-    expect(route({ tier: 'daily' }, withUsageUpdatedAt(env, env.now - 3 * 3_600_000, ['claude']), DEFAULT_CONFIG).route?.agent).toBe('cursor');
+    expect(route({ tier: 'advanced' }, withUsageUpdatedAt(env, env.now - 3 * 3_600_000, ['claude']), DEFAULT_CONFIG).route?.agent).toBe('cursor');
   });
 
   it('the staleness bands scale with usageStaleMinutes', () => {
@@ -337,12 +451,12 @@ describe('stale usage (graduated)', () => {
 
 describe('formatLaunch', () => {
   it('prefixes the launch args with the worker-start command', () => {
-    expect(formatLaunch(r({ tier: 'frontier' }))).toBe('orca orchestration worker-start --spec "<task>" --agent cursor --model claude-fable-5-1-high');
-    expect(formatLaunch(r({ tier: 'daily' }))).toBe('orca orchestration worker-start --spec "<task>" --agent claude --model claude-sonnet-5-5 --effort medium');
+    expect(formatLaunch(r({ tier: 'frontier' }))).toBe('orca orchestration worker-start --spec "<task>" --agent claude --model claude-opus-5-5 --effort high');
+    expect(formatLaunch(r({ tier: 'daily' }))).toBe('orca orchestration worker-start --spec "<task>" --agent codex --model gpt-6.1-terra --effort medium');
   });
 
   it('is undefined when there is no route', () => {
-    const blocked = withPool(env, 'claude', 'fableWeekly', { usedPercent: 96 });
+    const blocked = withPool(onlyModels(env, 'claude', ['claude-fable-5-1']), 'claude', 'fableWeekly', { usedPercent: 96 });
     expect(formatLaunch(route({ tier: 'frontier', agents: ['claude'], noDowngrade: true }, blocked, DEFAULT_CONFIG))).toBeUndefined();
   });
 });
@@ -368,8 +482,8 @@ describe('Cursor auto is not a ranked model', () => {
   });
 
   it('compares named models with other agents by headroom', () => {
-    expect(route({ tier: 'daily' }, auto, DEFAULT_CONFIG).route?.agent).toBe('claude');
-    const decision = route({ tier: 'daily' }, withPool(auto, 'claude', 'weekly', { usedPercent: 80 }), DEFAULT_CONFIG);
+    expect(route({ tier: 'advanced' }, auto, DEFAULT_CONFIG).route?.agent).toBe('claude');
+    const decision = route({ tier: 'advanced' }, withPool(auto, 'claude', 'weekly', { usedPercent: 80 }), DEFAULT_CONFIG);
     expect(decision.route).toEqual({ agent: 'cursor', model: 'claude-sonnet-5-5-medium', effort: null });
   });
 
@@ -381,11 +495,11 @@ describe('Cursor auto is not a ranked model', () => {
   });
 
   it('retains agent filters and model pins on named routes', () => {
-    const excluded = route({ tier: 'daily', excludeAgents: ['cursor'] }, withPool(auto, 'claude', 'weekly', { usedPercent: 85 }), DEFAULT_CONFIG);
+    const excluded = route({ tier: 'advanced', excludeAgents: ['cursor'] }, withPool(auto, 'claude', 'weekly', { usedPercent: 85 }), DEFAULT_CONFIG);
     expect(excluded.route?.agent).toBe('claude');
     expect(excluded.alternatives.some((alternative) => alternative.agent === 'cursor')).toBe(false);
-    const config: Config = { ...DEFAULT_CONFIG, pins: { daily: { agent: 'cursor', model: 'claude-sonnet-5-5' } } };
-    expect(route({ tier: 'daily' }, auto, config).route?.model).toBe('claude-sonnet-5-5-medium');
+    const config: Config = { ...DEFAULT_CONFIG, pins: { advanced: { agent: 'cursor', model: 'claude-sonnet-5-5' } } };
+    expect(route({ tier: 'advanced' }, auto, config).route?.model).toBe('claude-sonnet-5-5-medium');
   });
 });
 
@@ -465,7 +579,7 @@ describe('Grok, Antigravity and Muse', () => {
   it('competes with the other agents by headroom', () => {
     const d = route({ tier: 'advanced' }, ext, config);
     expect(d.route).toMatchObject({ agent: 'grok', model: 'grok-4.7' });
-    expect(d.confidence).toBe('medium');
+    expect(d.confidence).toBe('high');
     expect(d.reasons[0]).toMatch(/^grok grok-4\.7: weekly 10% used, 99% of window elapsed \(headroom 90%\)/);
     expect(route({ tier: 'advanced', excludeAgents: ['grok'] }, ext, config).route?.agent).toBe('claude');
   });
@@ -525,7 +639,7 @@ describe('agents the user has not enabled in Orca', () => {
   it('falls back to today\'s behavior when Orca\'s setting could not be read', () => {
     const unknown: Environment = { ...env, orcaAgents: { known: false, reason: 'Orca settings not found' } };
     expect(route({ tier: 'daily' }, unknown, DEFAULT_CONFIG).route).toEqual(r({ tier: 'daily' }).route);
-    expect(reasons(unknown).claude).toBeUndefined();
+    expect(route({ tier: 'daily' }, unknown, DEFAULT_CONFIG).skipped.filter((s) => s.agent === 'claude' && !s.model)).toEqual([]);
   });
 
   it('reports the strongest reason: user choice, then Orca not enabled, then unavailable, then not installed', () => {
@@ -564,7 +678,7 @@ describe('consumption risk', () => {
     const d = route({ tier: 'daily', agents: ['codex'] }, env, DEFAULT_CONFIG);
     expect(d.risk).toEqual({ pool: 'weekly', usedPercent: 20, elapsedPercent: 17, projectedPercent: 120, tooEarly: false, resetsAt: 1793736000000 });
     expect(d.reasons[0]).toMatch(/weekly 20% used, 17% of window elapsed \(headroom -14%\) → on pace for 120% before reset in 5d$/);
-    const claude = r({ tier: 'daily' });
+    const claude = r({ tier: 'advanced' });
     expect(claude.risk).toMatchObject({ pool: 'weekly', projectedPercent: 54.5 });
     expect(claude.alternatives.every((a) => a.risk !== undefined)).toBe(true);
   });
@@ -586,10 +700,10 @@ describe('preferences', () => {
   const prefer = (pin: Config['pins'], extra: Partial<Config> = {}): Config => ({ ...DEFAULT_CONFIG, pins: pin, ...extra });
 
   it('chooses a known within-limit alternative when the favorite exceeds the limit', () => {
-    const pinned = prefer({ daily: { agent: 'codex' } });
+    const pinned = prefer({ advanced: { agent: 'codex' } });
     const used = withPool(env, 'codex', 'weekly', { usedPercent: 60, resetsAt: env.now + 0.6 * 10080 * 60_000 });
     const competing = withPool(used, 'claude', 'weekly', { usedPercent: 20, windowMinutes: 10080, resetsAt: env.now + 0.6 * 10080 * 60_000 });
-    const request: RouteRequest = { tier: 'daily', agents: ['codex', 'claude'] };
+    const request: RouteRequest = { tier: 'advanced', agents: ['codex', 'claude'] };
     const d = route(request, competing, pinned);
     expect(d.route?.agent).toBe('claude');
     expect(d.warnings.join('\n')).toContain('on pace for 150%');
@@ -614,9 +728,9 @@ describe('preferences', () => {
   it('keeps the favorite when all eligible alternatives exceed the risk limit', () => {
     const used = withPool(env, 'codex', 'weekly', { usedPercent: 70, resetsAt: env.now + 0.6 * 10080 * 60_000 });
     const competing = withPool(used, 'claude', 'weekly', { usedPercent: 60, resetsAt: env.now + 0.6 * 10080 * 60_000 });
-    const request: RouteRequest = { tier: 'daily', agents: ['codex', 'claude'] };
+    const request: RouteRequest = { tier: 'advanced', agents: ['codex', 'claude'] };
     expect(route(request, competing, DEFAULT_CONFIG).route?.agent).toBe('claude');
-    const d = route(request, competing, prefer({ daily: { agent: 'codex' } }));
+    const d = route(request, competing, prefer({ advanced: { agent: 'codex' } }));
     expect(d.route?.agent).toBe('codex');
     expect(d.downgraded).toBe(false);
     expect(d.warnings.join('\n')).toContain('retained');
@@ -625,14 +739,14 @@ describe('preferences', () => {
 
   it('does not treat unknown usage as proof that an alternative is within the limit', () => {
     const unknown = withUsageStatus(env, 'unknown', ['claude']);
-    const d = route({ tier: 'daily', agents: ['codex', 'claude'] }, unknown, prefer({ daily: { agent: 'codex' } }));
+    const d = route({ tier: 'advanced', agents: ['codex', 'claude'] }, unknown, prefer({ advanced: { agent: 'codex' } }));
     expect(d.route?.agent).toBe('codex');
     expect(d.warnings.join('\n')).toContain('known usage');
   });
 
   it('does not replace the favorite based on a very stale within-limit projection', () => {
     const stale = withUsageUpdatedAt(env, env.now - 121 * 60_000, ['claude']);
-    const d = route({ tier: 'daily', agents: ['codex', 'claude'] }, stale, prefer({ daily: { agent: 'codex' } }));
+    const d = route({ tier: 'advanced', agents: ['codex', 'claude'] }, stale, prefer({ advanced: { agent: 'codex' } }));
     expect(d.route?.agent).toBe('codex');
     expect(d.warnings.join('\n')).toContain('retained');
   });
@@ -640,10 +754,10 @@ describe('preferences', () => {
   it('still excludes a blocked or banned favorite when every alternative is risky', () => {
     const competing = withPool(env, 'claude', 'weekly', { usedPercent: 70, resetsAt: env.now + 0.6 * 10080 * 60_000 });
     const blocked = withPool(competing, 'codex', 'weekly', { usedPercent: 97 });
-    const request: RouteRequest = { tier: 'daily', agents: ['codex', 'claude'] };
-    const pinned = prefer({ daily: { agent: 'codex' } });
+    const request: RouteRequest = { tier: 'advanced', agents: ['codex', 'claude'] };
+    const pinned = prefer({ advanced: { agent: 'codex', model: 'gpt-6.1-sol' } });
     expect(route(request, blocked, pinned).route?.agent).toBe('claude');
-    expect(route(request, competing, { ...pinned, banModels: ['gpt-6.1-terra'] }).route?.agent).toBe('claude');
+    expect(route(request, competing, { ...pinned, banModels: ['gpt-6.1-sol'] }).route?.agent).toBe('claude');
   });
 
   it('uses the preference when its projected usage is within the limit', () => {
@@ -654,17 +768,17 @@ describe('preferences', () => {
   });
 
   it('skips a preference on pace to exceed the limit and says why', () => {
-    const d = route({ tier: 'daily' }, env, prefer({ daily: { agent: 'codex', model: 'gpt-6.1-terra' } }));
+    const d = route({ tier: 'advanced' }, env, prefer({ advanced: { agent: 'codex', model: 'gpt-6.1-sol' } }));
     expect(d.route?.agent).toBe('claude');
-    expect(d.warnings).toContain('preferred codex gpt-6.1-terra skipped: weekly on pace for 120% (limit 100%), resets in 5d');
+    expect(d.warnings).toContain('preferred codex gpt-6.1-sol skipped: weekly on pace for 120% (limit 100%), resets in 5d');
     expect(d.reasons).not.toContain(expect.stringMatching(/^preferred route/));
-    expect(route({ tier: 'daily' }, env, prefer({ daily: { agent: 'codex', model: 'gpt-6.1-terra' } }, { preferRiskLimit: 120 })).route?.agent).toBe('codex');
+    expect(route({ tier: 'advanced' }, env, prefer({ advanced: { agent: 'codex', model: 'gpt-6.1-sol' } }, { preferRiskLimit: 120 })).route?.agent).toBe('codex');
   });
 
-  it('with an agent only, prefers that agent\'s best model in the tier', () => {
+  it('with an agent only, prefers that agent\'s best model by quota and job score', () => {
     const d = route({ tier: 'frontier' }, env, prefer({ frontier: { agent: 'claude' } }));
-    expect(d.route).toMatchObject({ agent: 'claude', model: 'claude-fable-5-1' });
-    expect(d.reasons).toContain('preferred route, on pace for 82%');
+    expect(d.route).toMatchObject({ agent: 'claude', model: 'claude-opus-5-5' });
+    expect(d.reasons).toContain('preferred route, on pace for 55%');
   });
 
   it('applies only after request flags and bans', () => {
@@ -710,21 +824,21 @@ describe('last-resort agents (OpenCode)', () => {
   });
 
   it('come after a downgrade, but before waiting', () => {
-    const blocked = withPool(withOc, 'claude', 'fableWeekly', { usedPercent: 96 });
+    const blocked = withPool(onlyModels(withOc, 'claude', ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1']), 'claude', 'fableWeekly', { usedPercent: 96 });
     const req = { tier: 'frontier' as const, excludeAgents: ['codex', 'cursor'] };
-    expect(route(req, blocked, DEFAULT_CONFIG)).toMatchObject({ downgraded: true, route: { agent: 'claude', model: 'claude-opus-5-5' } });
+    expect(route(req, blocked, DEFAULT_CONFIG)).toMatchObject({ downgraded: true, route: { agent: 'claude', model: 'claude-sonnet-5-5' } });
     const d = route({ ...req, noDowngrade: true }, blocked, DEFAULT_CONFIG);
     expect(d.route).toMatchObject({ agent: 'opencode', model: 'openrouter/anthropic/claude-fable-5.1' });
     expect(d.warnings.some((w) => /^opencode is a last-resort agent \(lastResortAgents\), used instead of waiting \d+[mhd]: pay per use/.test(w))).toBe(true);
   });
 
   it('are ordinary agents when named with --agent, preferred for the tier, or lastResortAgents is empty', () => {
-    const named = route({ tier: 'daily', agents: ['opencode'] }, withOc, DEFAULT_CONFIG);
+    const named = route({ tier: 'advanced', agents: ['opencode'] }, withOc, DEFAULT_CONFIG);
     expect(named.route?.agent).toBe('opencode');
     expect(named.warnings.some((w) => w.includes('last-resort'))).toBe(false);
-    const pinned = route({ tier: 'daily' }, withOc, { ...DEFAULT_CONFIG, pins: { daily: { agent: 'opencode' } } });
+    const pinned = route({ tier: 'advanced' }, withOc, { ...DEFAULT_CONFIG, pins: { advanced: { agent: 'opencode' } } });
     expect(pinned.route?.agent).toBe('opencode');
-    const plain = route({ tier: 'daily' }, withOc, { ...DEFAULT_CONFIG, lastResortAgents: [] });
+    const plain = route({ tier: 'advanced' }, withOc, { ...DEFAULT_CONFIG, lastResortAgents: [] });
     expect(plain.skipped.some((s) => s.agent === 'opencode')).toBe(false);
     // Without a usage window it still ranks after every route with usage data.
     expect(plain.route?.agent).not.toBe('opencode');
@@ -739,7 +853,7 @@ describe('models an agent refused at launch', () => {
   };
 
   it('are skipped for that agent only, with the agent\'s words', () => {
-    const d = route({ tier: 'daily' }, refused, DEFAULT_CONFIG);
+    const d = route({ tier: 'advanced' }, refused, DEFAULT_CONFIG);
     expect(d.route).not.toMatchObject({ agent: 'claude', model: 'claude-sonnet-5-5' });
     expect(d.skipped).toContainEqual({
       agent: 'claude', model: 'claude-sonnet-5-5', reason: 'refused by claude 2h ago: "There\'s an issue with the selected model (claude-sonnet-5-5)."',
@@ -762,17 +876,17 @@ describe('ban list', () => {
     expect(d.alternatives.some((a) => a.model.includes('sonnet'))).toBe(false);
     expect(d.skipped).toContainEqual({ agent: 'claude', model: 'claude-sonnet-5-5', reason: 'banned by you' });
     expect(d.skipped).toContainEqual({ agent: 'cursor', model: 'claude-sonnet-5-5', reason: 'banned by you' });
-    expect(d.reasons).toContain('skipped: muse (not installed), claude claude-sonnet-5-5 (banned by you), cursor claude-sonnet-5-5 (banned by you)');
+    expect(d.reasons.join('\n')).toContain('claude claude-sonnet-5-5 (banned by you)');
   });
 
-  it('lists only the banned models of the requested tier', () => {
+  it('lists banned models across classes for pin diagnostics', () => {
     const d = route({ tier: 'light' }, env, ban('claude-sonnet'));
-    expect(d.skipped.some((s) => s.model !== undefined)).toBe(false);
+    expect(d.skipped).toContainEqual({ agent: 'claude', model: 'claude-sonnet-5-5', reason: 'banned by you' });
   });
 
   it('bans a model id, including its Cursor effort variants', () => {
     const d = route({ tier: 'frontier' }, env, ban('claude-fable-5-1'));
-    expect(d.route?.agent).toBe('codex');
+    expect(d.route?.agent).toBe('claude');
     expect(d.alternatives.some((a) => a.model.includes('fable'))).toBe(false);
   });
 

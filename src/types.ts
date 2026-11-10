@@ -3,8 +3,10 @@
 
 export type { Axis } from './evidence/snapshot.js';
 export type { AxisProfile, EvidenceLabel, Profile } from './placements/profiles.js';
-import type { EvidenceSnapshot } from './evidence/snapshot.js';
-import type { Profile } from './placements/profiles.js';
+import type { Axis, EvidenceSnapshot } from './evidence/snapshot.js';
+import type { EvidenceLabel, Profile } from './placements/profiles.js';
+import type { Need, Needs } from './routing/needs.js';
+export type { Need, Needs } from './routing/needs.js';
 
 import type { Rejection } from './routing/rejection.js';
 
@@ -141,6 +143,7 @@ export type OrcaAgents =
 
 export interface Environment {
   now: number;
+  bands: EvidenceSnapshot['bands'];
   /** Every agent with its models already placed (the placement table's rows). */
   discoveries: PlacedAgent[];
   usage: Record<AgentId, AgentUsage>;
@@ -158,8 +161,9 @@ export interface Environment {
   rejections?: Rejection[];
 }
 
-export interface RouteRequest {
-  tier: Tier;
+export type RouteRequest = RouteOptions & ({ tier: Tier; needs?: never } | { needs: Needs; tier?: never });
+
+interface RouteOptions {
   /** The coordinator's short explanation of the task classification. */
   tierReason?: string;
   noDowngrade?: boolean;
@@ -209,6 +213,7 @@ export interface Alternative {
   model: string;
   effort: Effort | null;
   tier: Tier;
+  quality: Quality;
   /** Share of the ranked window expected to be left unused at reset; null when usage is unknown. */
   headroom: number | null;
   confidence: Confidence;
@@ -218,9 +223,22 @@ export interface Alternative {
   reason: string;
 }
 
+export interface Quality {
+  class: Tier | null;
+  covers: boolean;
+  shortfall: number;
+  overshoot: number;
+  evidence: EvidenceLabel;
+  axes: Record<Axis, { score: number | null; band: Tier | null; evidence: EvidenceLabel; benchmarks: number; need: Need; cut: number | null }>;
+}
+
 export interface Decision {
   status: 'ok' | 'wait' | 'none';
   requestedTier: Tier;
+  needs: Needs;
+  needsSource: 'need' | 'tier';
+  quality?: Quality | null;
+  source?: Classification['source'] | 'evidence' | 'auto';
   tierReason?: string;
   tier?: Tier;
   downgraded: boolean;
