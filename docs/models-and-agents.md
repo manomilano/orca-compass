@@ -14,8 +14,8 @@ does not report as `unavailable`, and that you have not switched off with
 
 | Agent | Orca agent ID | Executable | Model list comes from | Effort levels | Usage data from Orca | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| Claude Code | `claude` | `claude` | its cached account catalog, then Orca's catalog, then Anthropic families in Models.dev | from the same source, else `low` to `max` | session, weekly, Fable weekly | Supported |
-| Codex | `codex` | `codex` | `~/.codex/models_cache.json`, then Orca's model catalog, then Models.dev (Codex ladder families only) | per model, from those files | session, weekly | Supported |
+| Claude Code | `claude` | `claude` | its cached account catalog, then Orca's catalog, then Anthropic families in the evidence snapshot | from the same source, else `low` to `max` | session, weekly, Fable weekly | Supported |
+| Codex | `codex` | `codex` | `~/.codex/models_cache.json`, then Orca's model catalog, then the evidence snapshot (Codex ladder families only) | per model, from those files | session, weekly | Supported |
 | Cursor | `cursor` | `cursor-agent` (also `%LOCALAPPDATA%\cursor-agent`) | `cursor-agent models` | encoded in the model ID (`…-high`) | monthly, plus the `Cursor Models` and `Other Models` buckets | Supported |
 | Grok Build (xAI) | `grok` | `grok` (also `$GROK_HOME/bin`, `~/.grok/bin`) | `~/.grok/models_cache.json`, then `grok models` | per model from that cache; else `low` to `xhigh` (Grok 4.5 up to `high`) | weekly credits or monthly budget | Supported; verified on Windows |
 | Antigravity (Google) | `antigravity` | `agy` (also `%LOCALAPPDATA%\agy\bin`, `~/.local/bin`) | `agy models` | `low` to `high` | weekly, and 5-hour when reported, per quota group | Supported; verified on Windows |
@@ -49,62 +49,22 @@ For live listings, the last good list is used only when the command fails;
 a sign-in prompt skips the agent as `not signed in`.
 Claude's list is the catalog Claude Code caches under
 `~/.claude/cache/model-catalog` for your account, then Orca's catalog, then
-Models.dev. Model makers reachable today: Anthropic
+the evidence snapshot. Model makers reachable today: Anthropic
 and OpenAI (directly and through Cursor); Google, xAI, Meta, Moonshot, Zhipu,
 and DeepSeek through Cursor; xAI through Grok Build; Google, Anthropic and
 OpenAI through Antigravity; and Cursor's own Auto. Gemini models route through
 Antigravity or Cursor; the Gemini CLI is not an agent here.
 
-## How a model gets its tier
+## How a model gets its profile
 
-These rules run when the placement table is built, and `orcacompass tiers`
-prints their result. The first rule that applies wins:
+Benchmark evidence and class hints form coding, agentic and reasoning scores.
+The highest axis band is the class; the lowest class that covers the job forms
+the fit group. `orcacompass ranking` displays the profiles and evidence.
+Cursor `auto` is only a fallback and has no profile. See
+[Tiers and routing](tiers-and-routing.md#ranking) for the routing order.
 
-1. Cursor's `auto`: Light and Daily when `cursorAuto` is on and there is no
-   exact `tierOverrides.auto` entry.
-2. Your `tierOverrides` for the exact model ID.
-3. Your `tierOverrides` for the model's family (from metadata, or inferred
-   from a recognized Claude/GPT versioned ID).
-4. The provider's own description ("For your toughest challenges" is Frontier,
-   "Fastest for quick answers" is Light; Claude Code's account catalog and
-   Codex's model cache carry these words).
-5. The built-in model-line and family rules below.
-6. The capability score: the repository's Model Index rating and output price,
-   weighted 40/60 after normalizing the rating and logarithm of price against
-   reference models. This fallback is capped at Advanced.
-7. Otherwise the model is unclassified and never routed.
-
-A model normally serves one tier; Cursor Auto serves Light and Daily.
-Score-based placement is at most medium confidence. The words and numbers
-behind every placement appear in `orcacompass status` and route `reasons`.
-
-Within an agent, only the newest release of each family per tier is kept;
-recognized Claude/GPT family IDs can be compared by numeric version before
-the metadata sources catch up. Provider descriptions also classify newly named
-models missing from those sources. Older releases are dropped silently.
-After headroom, hot-session status, confidence and fast-variant checks,
-ties favor Claude/GPT families, then newer release dates. See
-[Ranking](tiers-and-routing.md#ranking) for the full order.
-
-### Built-in family ladder
-
-| Tier | Families |
-| --- | --- |
-| Light | `claude-haiku`, `gpt-luna`, `gemini-flash-lite` |
-| Daily | `claude-sonnet`, `gpt-terra` |
-| Advanced | `claude-opus`, `gpt-sol`, Grok 4.7 and later (`grok-<version>`) |
-| Frontier | `claude-fable`, `gpt-astra`, Gemini Argon (`gemini-<version>-argon`) |
-
-Models.dev files Gemini Argon under the broad `gemini` family and every Grok
-under `grok`, so those two lines are matched by model ID. Older Grok releases
-(4.6, 4.5, 4.3, 4.20) and Grok Build are placed by the capability score, as is
-every other Google model (Flash, Pro). Cursor's Grok 4.7 Fast variants are the
-same model as Grok 4.7; like other `-fast` variants they are not routed
-separately.
-
-Effort is chosen from the job's reasoning demand (`--demand`), not from the
-tier; without one, the tier default applies: Light `low`, Daily `medium`,
-Advanced `medium`, Frontier `high`.
+Effort follows the job's effort demand (`--demand`); without it the requested
+tier's default applies.
 
 ## Inspect available models
 
@@ -136,7 +96,7 @@ It also explains when an over-limit favorite is retained.
 
 `orcacompass ban <model-or-family>` stores entries in `banModels`. An entry
 matches a model's base ID, so `claude-opus-5-5` also covers Cursor's
-`claude-opus-5-5-high`, or its Models.dev family, so `grok` covers Grok 4.5 to 4.7
+`claude-opus-5-5-high`, or its catalog family, so `grok` covers Grok 4.5 to 4.7
 but not Grok Build (`grok-build`). Banned models are never chosen or shown as
 alternatives and are listed as `banned by you`.
 

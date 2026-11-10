@@ -2,7 +2,7 @@
 
 Discovery is an estimate. A model an agent *lists* can still be one this account
 cannot use (a cached Claude catalog can be stale, or discovery may fall back to
-Models.dev; a Codex model may be enterprise-only; a Cursor model may be off in
+the evidence snapshot; a Codex model may be enterprise-only; a Cursor model may be off in
 the account).
 Orca does not check: `orca orchestration worker-start` reports the requested
 model as effective even when the agent cannot use it. `orcacompass verify`

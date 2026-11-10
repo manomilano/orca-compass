@@ -1,65 +1,19 @@
 # Model data
 
-OrcaCompass combines the data below with the models discovered from your
-installed agents. The orchestrator supplies the task's difficulty; OrcaCompass
-assigns models to tiers and uses live Orca usage to choose a route.
+The schema 1 `data/evidence-snapshot.json` is both the model catalog and the
+benchmark evidence used for coding, agentic and reasoning profiles. It contains
+model identifiers, aliases, results with source URLs and dates, axis scores,
+weights, bands and licensed source metadata. No token prices are used.
 
-## The two data files
+The owner runs the daily refresh from [LLMBenchmark.ai](https://llmbenchmark.ai)
+and reviews the resulting pull request. The raw dataset is not committed. The
+trimmed snapshot is licensed CC BY 4.0; see the repository NOTICE.
 
-| File | Contents | Where users get updates |
-| --- | --- | --- |
-| `data/models-snapshot.json` | Model metadata from Models.dev: names, families, dates, prices and supported effort levels | Models.dev; the bundled file is the offline fallback |
-| `data/modelindex-snapshot.json` | The Model Index capability scores and output prices | This file on the public OrcaCompass repository's `main` branch; the bundled copy is the offline fallback |
+Clients check `data/evidence-manifest.json` on the repository's public `main`
+at most once per `evidenceTtlHours` (24 by default). A changed manifest causes
+a snapshot download and integrity check. A valid cached copy, then the bundled
+snapshot, supplies offline fallback. `orcacompass refresh` forces a check and
+rebuilds placements. `evidenceSource` reports `network`, `cache` or `snapshot`.
+No API key is required; clients do not contact LLMBenchmark directly.
 
-In the score file, `score` is the source's capability rating and `out` is the
-output-token price in USD per million tokens. `date` is the model's date, not
-the file's version. The top-level `fetchedAt` records when the maintainer
-collected the snapshot. Source attribution and licenses are in
-[NOTICE](https://github.com/manomilano/orca-compass/blob/main/NOTICE).
-
-## Refresh timing
-
-Downloaded metadata and scores are cached for 24 hours by default
-(`modelsDevTtlHours`). The calculated tier table is reused for 5 hours
-(`placementsTtlHours`). A table rebuild rediscovers local models and reads
-the cached data; it only downloads data when its own cache has expired.
-Checks run on demand when a command needs them, with no background polling.
-
-The shorter table interval picks up changes in local agent catalogs while
-reusing the daily data cache. A new model does not need to appear in either
-downloaded dataset: its provider's description can supply its tier. For a
-recognized versioned family, the newer release is preferred within that
-agent and tier, such as Fable 5.5 over Fable 5.1. User overrides, bans and
-usage limits still apply. The local catalog must actually list the model;
-OrcaCompass cannot discover a release that the agent has not exposed yet.
-
-A changed placement setting, a new CLI version, a newly detected agent or
-`orcacompass refresh` can trigger an earlier rebuild. `refresh` also bypasses
-the data-cache interval. Failed downloads use a valid cached copy, then the
-bundled snapshot. Usage is read from Orca for each routing request.
-
-Currently an expired data cache triggers a full download even if the remote
-file has not changed. The score cache's `fetchedAt` is the time this client
-downloaded it; the repository snapshot's `fetchedAt` is the maintainer's
-collection time. Neither is a conditional-download version check. See
-[Tiers and routing](tiers-and-routing.md) for the calculation.
-
-## Updating the shared scores
-
-Maintainers can prepare updated data with:
-
-```sh
-npm run build
-npm run snapshot -- scores
-```
-
-This maintainer command fetches The Model Index upstream and rewrites
-`data/modelindex-snapshot.json`. Review the changed entries, run `npm test`
-and `npm run test:package`, then submit the data update through the repository's
-normal contribution process. Once it reaches `main`, installed clients that
-support repository score fetching can receive it through their normal refresh
-or immediately with `orcacompass refresh`. A data-only update needs no npm release.
-
-Use `npm run snapshot -- models` to update the bundled Models.dev fallback,
-or `npm run snapshot` for both files. Updated bundled fallbacks reach users
-with the next npm release. Previous file versions remain in Git history.
+See [Tiers and routing](tiers-and-routing.md) for scoring and routing.

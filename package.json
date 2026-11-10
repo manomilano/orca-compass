@@ -1,6 +1,6 @@
 {
   "name": "orcacompass",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Usage-aware agent/model/effort routing for Orca coordinator agents",
   "license": "Apache-2.0",
   "author": "manomilano",

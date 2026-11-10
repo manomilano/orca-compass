@@ -81,39 +81,23 @@ Use the commands above to write the config; never edit the file yourself.
   Orca`). Do not work around it; tell the user to enable it in Orca's settings
   if they want it. If `agents` reports the Orca setting as `unknown`, say so.
 
-## Choose a task tier
+## Rate the three needs
 
-Rate the job by what a worker needs to get it right, never by spare capacity:
-do not send a Light job to Frontier because Frontier capacity is unused.
+Rate each job by the work, not spare capacity. Pass all three axes with `--need`:
 
-| Tier | What it means | Typical signals | Examples | Default effort |
+| Axis | min | low | mid | high |
 | --- | --- | --- | --- | --- |
-| light | Mechanical work: the right result is obvious once the worker looks, and a mistake is cheap and easy to see. | One file or a few lines; exact instructions; no design choice. | Rename a symbol; change a config value; summarize a file; write docstrings; run a command and report the output. | low |
-| daily | Ordinary engineering a competent developer does without a written plan: read the nearby code, make sensible local choices, verify. | A few files in one area; clear acceptance criteria; tests exist or are easy to add. | Add an endpoint with tests; fix a reproducible bug; write a migration; review a small PR. | medium |
-| advanced | Work that needs a plan: many interacting parts, an unknown root cause, or decisions that last. Mistakes are costly or subtle. | Crosses modules or services; concurrency, security or data integrity; behavior must stay stable. | Refactor across subsystems; debug a flaky race; design a schema change and its migration; a security-sensitive change. | medium |
-| frontier | The edge of what models can do. Use it when Advanced is likely to fail or already has. | Novel algorithm or research; a multi-system failure without leads; an Advanced worker failed on capability. | Design a new algorithm; find a cross-system failure after an Advanced worker failed. | high |
+| coding | none | small contained edits | multi-file changes with tests | design-level or tricky code |
+| agentic | a single edit | run the tests | iterate with tools until green | long unsupervised runs or orchestration |
+| reasoning | mechanical | routine judgement | real analysis | open-ended design or hard debugging |
 
-Rules of thumb:
+Use `--tier` for the rare job that is the same on all axes: light, daily,
+advanced and frontier map to min, low, mid and high respectively. Supply a
+short explanation with `--tier-reason`; explain it in chat when asked.
 
-- Rate the hardest part of the job, not the average.
-- Between two tiers, take the lower one when the result is cheap to check and
-  retry, and the higher one when a wrong result is costly or hard to notice.
-- Split mixed jobs: a bulk mechanical edit plus one hard decision is a Light
-  worker and an Advanced (or Daily) worker, not one Advanced worker.
-- Move up one tier only when a worker failed for lack of capability, not for
-  missing context; give it the missing context first.
+## Rate the effort demand separately
 
-For each worker, pass one short explanation of the chosen tier with
-`--tier-reason`, grounded in scope, uncertainty, and the cost of a mistake.
-For example, use Daily because the change is local and its acceptance tests
-are clear. Keep routine classification and its rationale in the tool exchange.
-Explain them in chat only when the user asks. The CLI returns the explanation
-as `tierReason` and in `reasons`. The coordinator supplies the classification
-using the rubric above. Older callers can omit the flag.
-
-## Rate the reasoning demand separately
-
-The tier picks how capable the model must be; the reasoning demand picks how
+The needs describe the abilities required; the effort demand picks how
 much it should think. Rate it from the work, never from the tier or the model:
 
 | Demand | Signals |
@@ -138,11 +122,11 @@ route without `--effort`.
 
 ## Route, then launch
 
-1. Choose the tier and any user constraints.
+1. Rate the needs and note any user constraints.
 2. Make one route call per worker:
 
    ```sh
-   orcacompass route --tier daily --demand moderate --tier-reason "Local endpoint change with clear acceptance tests." --json
+   orcacompass route --need coding=mid,agentic=low,reasoning=low --demand moderate --tier-reason "Multi-file change with tests and routine judgement." --json
    ```
 
    Add `--demand <low|moderate|high|exceptional>`. Restrict agents with
@@ -173,10 +157,8 @@ route without `--effort`.
    string is a readable template with a `<task>` placeholder, not task content.
    `route` contains agent/model/effort; Cursor effort is encoded in its model id,
    so `route.effort` is null and its `launchArgs` omit `--effort`. The same
-   holds for Antigravity Gemini ids such as `gemini-3.8-flash-high`. For Light
-   and Daily, Cursor's route is usually `auto` (Cursor picks the underlying
-   model itself; at most medium confidence). Auto is placed only in Light and
-   Daily, but an Advanced request that falls back to Daily can receive it.
+   holds for Antigravity Gemini ids such as `gemini-3.8-flash-high`. Cursor `auto` is a fallback, not a recommendation: Cursor picks the model
+   when no named model could be routed.
 5. Right after `worker-start` returns a `dispatchId`, check that the agent
    accepted the model:
 
@@ -242,26 +224,15 @@ route without `--effort`.
   the reason then notes its age ("usage 45m old"). Stale usage still blocks.
   Do not invent headroom or percentages. `catalogSource` is `network`, `cache`,
   or `snapshot`.
-- `catalogSource: "snapshot"` means model metadata may be old; run `orcacompass refresh` when online.
-- Every model's tiers come from a placement table OrcaCompass builds from
-  every source and keeps for 5 hours; `placementsBuiltAt` (epoch ms) in the
-  route JSON says when it was built. `orcacompass tiers` prints it. When a
-  model the user expects is missing or sits in an odd tier, run `orcacompass
-  refresh` (it rebuilds the table) before changing the config.
-- A model's tier comes from your override, the provider's own description,
-  or the built-in family ladder. Models without one of those classifications
-  use the Model Index capability rating and output price from the maintained
-  repository file. The CLI combines those scores with Models.dev metadata
-  and discovered local models; no API key is required. Score-derived routes
-  are at most medium confidence and `reasons` shows the calculation.
-  `scoreSource` is `network`, `cache`, `snapshot`, or `unavailable`.
-  When scores are unavailable, descriptions, family rules, overrides and
-  Cursor Auto still apply. `orcacompass refresh` updates data and placements.
-- A model listed by the local agent can be routed before either downloaded
-  dataset includes it. Use the CLI's provider-description tier and recognized
-  family/version handling; do not invent scores or release dates for it.
-  Newer numeric releases within a recognized Claude/GPT family take priority
-  within the same agent and tier, subject to user settings and usage limits.
+- `evidenceSource: "snapshot"` means the bundled evidence was used; run
+  `orcacompass refresh` when online. Profiles use LLMBenchmark evidence with
+  family, lineup or override hints as a nudge. Class is the highest axis band;
+  the fit group is the lowest class covering the needs. Inspect profiles with
+  `orcacompass ranking`.
+- `quality` reports class, coverage, shortfall, overshoot and axis scores and
+  evidence. Labels include `measured`, `partial`, `estimated`, `assumed` and
+  `unranked`; estimated and assumed placements are provisional and worth
+  mentioning when asked why a model was chosen. Cursor auto has no quality.
 
 Use `orcacompass status --json` to inspect discovery, pools, and skipped agents
 (each skipped agent carries its reason, such as `excluded by config` or
@@ -273,9 +244,6 @@ table, and `orcacompass tiers` to see every model's tiers. Send only the short c
 explanation via `--tier-reason`. Keep the full task specification and repository
 contents in the worker launch.
 
-Routing is stateless: back-to-back calls may return the same route. OrcaCompass does
-not reserve capacity or account for workers that have just been launched; when
-you launch several workers at once, consider spreading them over the returned
-route and its `alternatives`. Skip alternatives with `blocked: true`.
-Alternatives carry no `launchArgs`: route again with `--agent <agent>` for the
-one you pick and launch with that route's `launchArgs`.
+Recent hand-outs are remembered and applied to usage, so spreading workers
+by hand over `alternatives` is unnecessary. Alternatives carry no `launchArgs`;
+route again with `--agent` if choosing one explicitly.

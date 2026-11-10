@@ -4,11 +4,12 @@ Every command of the `orcacompass` CLI, its flags, what it writes, and what its
 JSON looks like. Code: `src/cli.ts`.
 
 ```text
-orcacompass route --tier <light|daily|advanced|frontier> [--no-downgrade] [--agent <id>]... [--exclude-agent <id>]... [--demand <d>] [--effort <e>] [--tier-reason <text>] [--json]
+orcacompass route --need coding=<l>,agentic=<l>,reasoning=<l> | --tier <light|daily|advanced|frontier> [--no-downgrade] [--agent <id>]... [--exclude-agent <id>]... [--demand <d>] [--effort <e>] [--tier-reason <text>] [--json]
 orcacompass verify --dispatch <id> [--wait <seconds>] [--json]
 orcacompass rejected [--clear] [--json]
 orcacompass status [--json]
-orcacompass tiers [--json]
+orcacompass ranking [--axis <coding|agentic|reasoning>] [--json]
+orcacompass tiers [--axis <coding|agentic|reasoning>] [--json]
 orcacompass agents [--json]
 orcacompass agents disable|enable|only <id>... [--json]
 orcacompass agents reset [--json]
@@ -35,11 +36,12 @@ orcacompass --help
 | `verify` | Whether a just-started worker's agent accepted its model; records a refusal | cache (`rejected-models.json`) |
 | `rejected` | Models agents refused at launch, still skipped; `--clear` forgets them | cache |
 | `status` | Agents, usage pools, the pick and alternatives per tier, metadata and placement table age | same as `route` |
+| `ranking` | Profiles of discovered models, optionally sorted by axis | placement cache |
 | `tiers` | Every model's tiers from the placement table, with the words and numbers behind each one | same as `route` |
 | `agents` | Which agents are used, and why not; `disable`, `enable`, `only`, `reset` change it | listing: same as `route`; mutations write `allowAgents`, `denyAgents` |
 | `prefer` | Favorite route per tier; `clear` removes it; `--risk-limit` sets when a known within-limit alternative replaces it | `pins`, `preferRiskLimit`; same caches as `route` when setting a preference |
 | `ban` / `unban` | Models or families never routed | `banModels` when adding/removing entries; same caches as `route`, including when listing bans |
-| `refresh` | Downloads fresh model metadata and rebuilds the placement table | cache (`modelsdev.json`, `modelindex.json`, `placements.json`) |
+| `refresh` | Downloads fresh model metadata and rebuilds the placement table | evidence and placement caches |
 | `setup` | Interactive first-time setup in a terminal | the keys above |
 | `setup --json` | What the setup questions need, for an orchestrator asking them in chat | same as `route` |
 | `setup --complete` | Marks chat setup complete, including unchanged defaults | an empty config if absent; same as `route` |
@@ -66,12 +68,13 @@ the id probably meant, such as `unknown agent "cursor-agent" in
 ## `route`
 
 ```sh
-orcacompass route --tier advanced --demand high --agent claude --agent codex --json
+orcacompass route --need coding=high,agentic=mid,reasoning=low --demand high --agent claude --agent codex --json
 ```
 
 | Flag | Meaning |
 | --- | --- |
-| `--tier <t>` | Required. `light`, `daily`, `advanced`, `frontier` |
+| `--need <axes>` | All three axes: `coding`, `agentic`, `reasoning`, each `min`, `low`, `mid` or `high`; no spaces |
+| `--tier <t>` | Shorthand for equal needs: `light`, `daily`, `advanced`, `frontier`; mutually exclusive with `--need` |
 | `--tier-reason <text>` | Optional nonempty explanation from the coordinator, returned in JSON and text. The Skill keeps routine classification in the tool exchange and explains it in chat on request |
 | `--demand <d>` | `low`, `moderate`, `high`, `exceptional`; mapped to an effort through `effortPolicy` |
 | `--effort <e>` | Exact effort; never snapped. Routes that cannot apply it are left out |
@@ -113,9 +116,10 @@ source fields and `placementsBuiltAt`:
 | `alternatives` | Up to five other candidates from the chosen tier (requested tier without a pick): `agent`, `model`, `effort`, `tier`, `headroom` (fraction, or `null`), `confidence`, `blocked`, `risk`, `reason` |
 | `skipped` | `{ agent, model?, reason }` for excluded agents and banned/refused models in the requested tier. Superseded releases and no-ZDR exclusions are omitted. Preference exclusions appear in `warnings` |
 | `waitUntil` | Epoch ms when a blocked requested-tier candidate resets; with `wait`, sometimes with `none` |
-| `catalogSource` | Models.dev: `network`, `cache`, or `snapshot` |
-| `scoreSource` | The Model Index: the same values, or `unavailable` |
-| `placementsBuiltAt` | Epoch ms when the placement table this route read was built (see [`tiers`](#tiers)); the two source fields say what that build used |
+| `needs`, `needsSource` | The three requested levels and whether they came from `need` or `tier` |
+| `quality` | Class, coverage, shortfall or overshoot, evidence and per-axis scores, bands, needs and cuts; also on alternatives |
+| `evidenceSource` | `network`, `cache`, or `snapshot`; `catalogSource` and `scoreSource` are compatibility aliases |
+| `placementsBuiltAt` | Epoch ms when the placement table this route read was built (see [`tiers`](#tiers)); the evidence source says what that build used |
 
 The chosen route's own headroom appears in its reason line, not as a separate
 field.
@@ -254,7 +258,7 @@ orcacompass ban claude-opus-5-5       # a base model id (covers Cursor's claude-
 orcacompass unban grok
 ```
 
-An entry matches a model's base id or its Models.dev family. An entry that
+An entry matches a model's base id or its catalog family. An entry that
 matches nothing discovered right now is saved with a warning. An agent id that
 is not also a model family is refused: use `agents disable` for a whole agent.
 `--json` returns `{ configPath, banModels, matches }`, where `matches` maps each
@@ -262,15 +266,10 @@ entry to the `{ agent, model }` pairs it covers now.
 
 ## `refresh`
 
-Downloads fresh Models.dev metadata and Model Index scores from the repository
-into the cache, without an API key, then rebuilds the placement table: every
-agent's model list is read again and every model placed again. It does not
-read Orca usage. The last output line is `placements: N models across M
-agents (built now)`. `--json` returns `{ source, fetchedAt, models, scores,
-placements: { builtAt, models, agents } }`. On network failure it
-reports the fallback source on stderr and still exits 0 when fallback metadata
-exists. If scores are unavailable, provider descriptions, family rules and
-overrides remain usable.
+Checks the repository manifest and downloads changed evidence without an API
+key, then rebuilds placements. It does not read Orca usage. JSON returns
+`{ evidence, placements }`; a valid cached or bundled snapshot is used if the
+network fails.
 
 ## `setup`
 
