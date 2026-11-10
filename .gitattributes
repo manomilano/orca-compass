@@ -1,0 +1,2 @@
+# The manifest hashes the snapshot's bytes on every platform.
+data/evidence-snapshot.json text eol=lf
