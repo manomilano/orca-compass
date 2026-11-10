@@ -8,22 +8,22 @@ export const NOW = 1793232000000;
 const EFFORTS: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 const META: Record<string, ModelMeta> = {
-  'claude-haiku-5-5': { id: 'claude-haiku-5-5', provider: 'anthropic', name: 'Claude Haiku 5.5', family: 'claude-haiku', releaseDate: '2026-10-07', outputCost: 0.5, efforts: EFFORTS },
-  'claude-sonnet-5-5': { id: 'claude-sonnet-5-5', provider: 'anthropic', name: 'Claude Sonnet 5.5', family: 'claude-sonnet', releaseDate: '2026-09-28', outputCost: 10, efforts: EFFORTS },
-  'claude-opus-5-5': { id: 'claude-opus-5-5', provider: 'anthropic', name: 'Claude Opus 5.5', family: 'claude-opus', releaseDate: '2026-09-22', outputCost: 20, efforts: EFFORTS },
-  'claude-opus-5': { id: 'claude-opus-5', provider: 'anthropic', name: 'Claude Opus 5', family: 'claude-opus', releaseDate: '2026-07-24', outputCost: 25, efforts: EFFORTS },
-  'claude-fable-5-1': { id: 'claude-fable-5-1', provider: 'anthropic', name: 'Claude Fable 5.1', family: 'claude-fable', releaseDate: '2026-09-01', outputCost: 50, efforts: EFFORTS },
-  'gpt-6-luna': { id: 'gpt-6-luna', provider: 'openai', name: 'GPT-6 Luna', family: 'gpt-luna', releaseDate: '2026-09-22', outputCost: 0.5, efforts: ['none', ...EFFORTS] },
-  'gpt-6.1-terra': { id: 'gpt-6.1-terra', provider: 'openai', name: 'GPT-6.1 Terra', family: 'gpt-terra', releaseDate: '2026-10-26', outputCost: 5, efforts: ['none', ...EFFORTS] },
-  'gpt-6.1-sol': { id: 'gpt-6.1-sol', provider: 'openai', name: 'GPT-6.1 Sol', family: 'gpt-sol', releaseDate: '2026-09-29', outputCost: 10, efforts: EFFORTS },
-  'gpt-6-astra': { id: 'gpt-6-astra', provider: 'openai', name: 'GPT-6 Astra', family: 'gpt-astra', releaseDate: '2026-09-04', outputCost: 50, efforts: EFFORTS },
+  'claude-haiku-5-5': { id: 'claude-haiku-5-5', provider: 'anthropic', name: 'Claude Haiku 5.5', family: 'claude-haiku', releaseDate: '2026-10-07' },
+  'claude-sonnet-5-5': { id: 'claude-sonnet-5-5', provider: 'anthropic', name: 'Claude Sonnet 5.5', family: 'claude-sonnet', releaseDate: '2026-09-28' },
+  'claude-opus-5-5': { id: 'claude-opus-5-5', provider: 'anthropic', name: 'Claude Opus 5.5', family: 'claude-opus', releaseDate: '2026-09-22' },
+  'claude-opus-5': { id: 'claude-opus-5', provider: 'anthropic', name: 'Claude Opus 5', family: 'claude-opus', releaseDate: '2026-07-24' },
+  'claude-fable-5-1': { id: 'claude-fable-5-1', provider: 'anthropic', name: 'Claude Fable 5.1', family: 'claude-fable', releaseDate: '2026-09-01' },
+  'gpt-6-luna': { id: 'gpt-6-luna', provider: 'openai', name: 'GPT-6 Luna', family: 'gpt-luna', releaseDate: '2026-09-22' },
+  'gpt-6.1-terra': { id: 'gpt-6.1-terra', provider: 'openai', name: 'GPT-6.1 Terra', family: 'gpt-terra', releaseDate: '2026-10-26' },
+  'gpt-6.1-sol': { id: 'gpt-6.1-sol', provider: 'openai', name: 'GPT-6.1 Sol', family: 'gpt-sol', releaseDate: '2026-09-29' },
+  'gpt-6-astra': { id: 'gpt-6-astra', provider: 'openai', name: 'GPT-6 Astra', family: 'gpt-astra', releaseDate: '2026-09-04' },
 };
 
 const pool = (name: string, kind: UsagePool['kind'], usedPercent: number, windowMinutes: number, resetsAt: number): UsagePool =>
   ({ name, kind, usedPercent, windowMinutes, resetsAt });
 
 const flagModel = (agent: string, id: string, poolNames: string[]): LaunchModel => ({
-  agent, modelId: id, meta: META[id], efforts: META[id].efforts!, launch: { kind: 'flag', model: id }, poolNames,
+  agent, modelId: id, meta: META[id], efforts: id === 'gpt-6-luna' || id === 'gpt-6.1-terra' ? ['none', ...EFFORTS] : EFFORTS, launch: { kind: 'flag', model: id }, poolNames,
 });
 
 const variantModel = (agent: string, id: string, poolNames: string[]): LaunchModel => ({

@@ -44,7 +44,7 @@ function toEfforts(options: unknown): Effort[] | undefined {
 
 function toMeta(key: string, raw: Record<string, unknown>, provider: string): ModelMeta {
   const id = str(raw.id) ?? key;
-  const meta: ModelMeta = { id, provider, name: str(raw.name) ?? id };
+  const meta: ModelMeta & { outputCost?: number; efforts?: Effort[] } = { id, provider, name: str(raw.name) ?? id };
   const family = str(raw.family);
   if (family) meta.family = family;
   const releaseDate = str(raw.release_date);

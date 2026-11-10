@@ -58,8 +58,8 @@ export async function discoverCodex(deps: AgentDeps): Promise<AgentDiscovery> {
       agent: 'codex',
       modelId: meta.id,
       meta,
-      efforts: meta.efforts?.length ? meta.efforts : DEFAULT_EFFORTS,
-      effortSource: meta.efforts?.length ? 'catalog' : 'assumed',
+      efforts: (meta as typeof meta & { efforts?: Effort[] }).efforts?.length ? (meta as typeof meta & { efforts: Effort[] }).efforts : DEFAULT_EFFORTS,
+      effortSource: (meta as typeof meta & { efforts?: Effort[] }).efforts?.length ? 'catalog' : 'assumed',
       launch: { kind: 'flag', model: meta.id },
       poolNames: ['session', 'weekly'],
     }));

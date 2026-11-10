@@ -1,3 +1,4 @@
+import type { ModelMeta, Effort } from '../../../src/types.js';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -36,8 +37,8 @@ describe('toModelIndex', () => {
       releaseDate: '2026-09-22',
       efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
     });
-    expect(idx['claude-haiku-5-5'].efforts).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
-    expect(idx['gpt-6-luna'].efforts).toContain('none');
+    expect((idx['claude-haiku-5-5'] as ModelMeta & { efforts: Effort[] }).efforts).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+    expect((idx['gpt-6-luna'] as ModelMeta & { efforts: Effort[] }).efforts).toContain('none');
   });
 
   it('keeps only known providers', () => {

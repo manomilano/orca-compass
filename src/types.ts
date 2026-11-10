@@ -1,6 +1,8 @@
 // Shared types for the routing core and its adapters. The core never does I/O;
 // adapters turn the machine into an Environment and the router turns that into a Decision.
 
+export type { Axis } from './evidence/snapshot.js';
+
 import type { Rejection } from './routing/rejection.js';
 
 export type Tier = 'light' | 'daily' | 'advanced' | 'frontier';
@@ -24,8 +26,6 @@ export interface ModelMeta {
   name: string;
   family?: string;
   releaseDate?: string;
-  outputCost?: number;
-  efforts?: Effort[];
 }
 export type ModelIndex = Record<string, ModelMeta>;
 

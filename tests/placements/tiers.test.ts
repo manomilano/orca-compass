@@ -6,7 +6,7 @@ import { classifyLaunch, classifyModel, FAMILY_TIERS, findAnchors, lineupTier, s
 import { TIERS, type Config, type LaunchModel, type ModelMeta, type RatedModel } from '../../src/types.js';
 import { toRatings } from '../../src/placements/sources/modelindex.js';
 
-const m = (family: string | undefined, outputCost?: number): ModelMeta => ({ id: 'x', provider: 'p', name: 'x', family, outputCost });
+const m = (family: string | undefined, outputCost?: number): ModelMeta & { outputCost?: number } => ({ id: 'x', provider: 'p', name: 'x', family, outputCost });
 
 // Model Index numbers as of 2026-10-30 (scores and OpenRouter output prices).
 const ratings = toRatings(JSON.parse(readFileSync(new URL('../fixtures/modelindex-mini.json', import.meta.url), 'utf8')));
