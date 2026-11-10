@@ -2,6 +2,8 @@
 // adapters turn the machine into an Environment and the router turns that into a Decision.
 
 export type { Axis } from './evidence/snapshot.js';
+export type { AxisProfile, EvidenceLabel, Profile } from './placements/profiles.js';
+import type { Profile } from './placements/profiles.js';
 
 import type { Rejection } from './routing/rejection.js';
 
@@ -92,11 +94,11 @@ export interface LaunchModel {
 /** One tier a model may serve and why; `detail` carries the numbers or words behind it. */
 export interface Classification {
   tier: Tier;
-  source: 'override' | 'lineup' | 'family' | 'score' | 'auto';
+  source: 'override' | 'lineup' | 'family';
   /** The numbers or provider description behind a placement. */
   detail?: string;
 }
-export const CLASSIFICATION_SOURCES: readonly Classification['source'][] = ['override', 'lineup', 'family', 'score', 'auto'];
+export const CLASSIFICATION_SOURCES: readonly Classification['source'][] = ['override', 'lineup', 'family'];
 
 export interface AgentDiscovery {
   agent: AgentId;
@@ -109,9 +111,10 @@ export interface AgentDiscovery {
 
 /** A discovered model with its placement result, as stored in the placement table. */
 export interface PlacedModel extends LaunchModel {
-  /** Exactly what classifyLaunch returned, lowest tier first; empty when unclassified. */
+  profile: Profile;
+  /** Transitional hint for the V1 router; removed when the profile table is wired. */
   placements: Classification[];
-  /** The tiers of `placements`, for reading the file by eye. */
+  /** Transitional highest band, for consumers awaiting the profile table. */
   tiers: Tier[];
 }
 

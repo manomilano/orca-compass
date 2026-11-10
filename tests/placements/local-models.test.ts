@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { DEFAULT_CONFIG } from '../../src/config.js';
 import { discoverCodex } from '../../src/placements/agents/codex.js';
-import { classifyLaunch } from '../../src/placements/tiers.js';
+import { hintFor } from '../../src/placements/profiles.js';
 import { MODEL_INDEX_URL, toRatings } from '../../src/placements/sources/modelindex.js';
 import { MODELS_DEV_URL } from '../../src/placements/sources/modelsdev.js';
 import { gather } from '../../src/routing/environment.js';
@@ -77,8 +77,8 @@ it.each([
 it('applies family bans and overrides to newly discovered versions without metadata', () => {
   const model = launch('claude-fable-5-5', 'Frontier intelligence for the most demanding work.');
   const config = { ...DEFAULT_CONFIG, tierOverrides: { 'claude-fable': 'daily' as const } };
-  expect(classifyLaunch(model, config)).toEqual([{ tier: 'daily', source: 'override' }]);
-  expect(classifyLaunch(model, { ...config, tierOverrides: { ...config.tierOverrides, 'claude-fable-5-5': 'light' } })).toEqual([{ tier: 'light', source: 'override' }]);
+  expect(hintFor(model.modelId, model.meta, model.lineup, config)).toEqual({ tier: 'daily', source: 'override' });
+  expect(hintFor(model.modelId, model.meta, model.lineup, { ...config, tierOverrides: { ...config.tierOverrides, 'claude-fable-5-5': 'light' } })).toEqual({ tier: 'light', source: 'override' });
   const env = placed({ ...machineEnv(), discoveries: [{ agent: 'claude', installed: true, models: [model] }] });
   const blocked = route({ tier: 'frontier', agents: ['claude'] }, env, { ...DEFAULT_CONFIG, banModels: ['claude-fable'] });
   expect(blocked.status).toBe('none');
@@ -101,7 +101,7 @@ it.each(['provider', 'orca'])('routes an arbitrarily named new Codex model using
 
 it('does not infer capability or a known family from arbitrary names', () => {
   for (const id of ['claude-mystery-9', 'claude-fable-preview', 'gpt-unfamiliar-99', 'aurora-workbench', 'claude-fable-999999999999999999']) {
-    expect(classifyLaunch(launch(id), DEFAULT_CONFIG)).toEqual([]);
+    expect(hintFor(id, undefined, undefined, DEFAULT_CONFIG)).toBeUndefined();
   }
 });
 
@@ -121,6 +121,7 @@ it('keeps an unclassified family name alias in its own identity group', () => {
   const alias = { ...launch('claude-fable', 'For your toughest challenges'), meta: { id: 'claude-fable', name: 'Alias', provider: 'anthropic', releaseDate: '2026-10-01' } };
   const env = placed({ ...machineEnv(), discoveries: [{ agent: 'claude', installed: true, models: [older, newer, alias] }] });
   const decision = route({ tier: 'frontier', agents: ['claude'] }, env, DEFAULT_CONFIG);
-  expect(decision.route?.model).toBe('claude-fable-5-5');
-  expect(decision.alternatives.map((a) => a.model)).toEqual(['claude-fable']);
+  // Without the removed ladder-vendor tie-break, the alias's explicit date wins this usage tie.
+  expect(decision.route?.model).toBe('claude-fable');
+  expect(decision.alternatives.map((a) => a.model)).toEqual(['claude-fable-5-5']);
 });

@@ -2,7 +2,6 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { findAnchors } from '../../../src/placements/tiers.js';
 import { fetchRatings, fetchUpstreamRatings, loadRatings, MODEL_INDEX_URL, MODEL_INDEX_UPSTREAM_URL, toRatings } from '../../../src/placements/sources/modelindex.js';
 import { cacheDir } from '../../../src/paths.js';
 
@@ -115,13 +114,5 @@ describe('loadRatings', () => {
     mkdirSync(cacheDir(), { recursive: true });
     writeFileSync(join(cacheDir(), 'modelindex.json'), '{not json');
     expect((await loadRatings({ ttlHours: 24, fetchImpl: offline }))?.source).toBe('snapshot');
-  });
-});
-
-describe('bundled snapshot', () => {
-  it('has an anchor for every tier', async () => {
-    const r = await loadRatings({ ttlHours: 24, fetchImpl: offline });
-    const tiers = new Set(findAnchors(r!.ratings).map((a) => a.tier));
-    expect([...tiers].sort()).toEqual(['advanced', 'daily', 'frontier', 'light']);
   });
 });

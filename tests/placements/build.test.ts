@@ -4,21 +4,23 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG } from '../../src/config.js';
 import { readTextFile } from '../../src/placements/agents/deps.js';
-import { buildPlacements, placeModels, placementScales } from '../../src/placements/build.js';
+import { parseSnapshot } from '../../src/evidence/snapshot.js';
+import { buildPlacements } from '../../src/placements/build.js';
+import { profileModels } from '../../src/placements/profiles.js';
 import { MODEL_INDEX_URL } from '../../src/placements/sources/modelindex.js';
 import { MODELS_DEV_URL } from '../../src/placements/sources/modelsdev.js';
 import { builtWith, readTable } from '../../src/placements/table.js';
 import { AGENT_IDS, type AgentDiscovery, type LaunchModel } from '../../src/types.js';
 import { VERSION } from '../../src/version.js';
 import { machineEnv } from '../helpers/env.js';
-import { fakeDeps, NOW } from '../helpers/fakes.js';
+import { fakeDeps, fixture, NOW } from '../helpers/fakes.js';
 
-describe('placeModels', () => {
+describe('profileModels integration', () => {
   const discoveries: AgentDiscovery[] = machineEnv().discoveries;
-  const scales = placementScales(undefined, DEFAULT_CONFIG);
+  const snapshot = parseSnapshot(fixture('evidence-mini.json'))!;
 
-  it('keeps every model and stores classifyLaunch output as placements', () => {
-    const placed = placeModels(discoveries, DEFAULT_CONFIG, scales);
+  it('keeps every model and stores its hint and class beside the profile', () => {
+    const placed = profileModels(discoveries, snapshot, DEFAULT_CONFIG);
     expect(placed.map((a) => [a.agent, a.models.length])).toEqual(discoveries.map((d) => [d.agent, d.models.length]));
     const claude = placed.find((a) => a.agent === 'claude')!;
     const fable = claude.models.find((m) => m.modelId === 'claude-fable-5-1')!;
@@ -32,12 +34,12 @@ describe('placeModels', () => {
 
   it('stores an unclassified model with empty placements', () => {
     const mystery: LaunchModel = { agent: 'cursor', modelId: 'mystery-9', efforts: [], launch: { kind: 'variant', ids: {} }, poolNames: [] };
-    const placed = placeModels([{ agent: 'cursor', installed: true, models: [mystery] }], DEFAULT_CONFIG, {});
+    const placed = profileModels([{ agent: 'cursor', installed: true, models: [mystery] }], snapshot, DEFAULT_CONFIG);
     expect(placed[0].models[0]).toMatchObject({ modelId: 'mystery-9', placements: [], tiers: [] });
   });
 
   it('keeps discovery notes and the signed-out flag', () => {
-    const placed = placeModels([{ agent: 'grok', installed: true, models: [], note: 'grok models failed', signedOut: true }], DEFAULT_CONFIG, {});
+    const placed = profileModels([{ agent: 'grok', installed: true, models: [], note: 'grok models failed', signedOut: true }], snapshot, DEFAULT_CONFIG);
     expect(placed[0]).toEqual({ agent: 'grok', installed: true, models: [], note: 'grok models failed', signedOut: true });
   });
 });
@@ -61,10 +63,10 @@ describe('buildPlacements', () => {
     expect(table).toMatchObject({ schemaVersion: 2, version: VERSION, builtAt: NOW, builtWith: builtWith(DEFAULT_CONFIG) });
     expect(table.sources.catalog.source).toBe('snapshot');
     expect(table.sources.scores?.source).toBe('snapshot');
-    expect(table.sources.scoreScale?.cuts).toHaveLength(3);
+    expect(table.sources.scoreScale).toBeNull();
     expect(table.agents.map((a) => a.agent)).toEqual([...AGENT_IDS]);
     const codex = table.agents.find((a) => a.agent === 'codex')!;
-    expect(codex.models.find((m) => m.modelId === 'gpt-6-astra')).toMatchObject({ tiers: ['frontier'], placements: [{ tier: 'frontier', source: 'lineup' }] });
+    expect(codex.models.find((m) => m.modelId === 'gpt-6-astra')).toMatchObject({ tiers: ['frontier'], placements: [{ tier: 'frontier', source: 'family' }], profile: { class: 'frontier' } });
     expect(table.agents.find((a) => a.agent === 'grok')).toMatchObject({ installed: false, models: [] });
     expect(readTable(readTextFile, join(home, 'cache'))).toEqual({ table, present: true });
   });

@@ -41,10 +41,10 @@ describe('metadata output', () => {
   it.each(['status', 'refresh', 'tiers', 'route'])('%s omits the removed benchmark source from text and JSON', async (command) => {
     const args = command === 'route' ? [command, '--tier', 'daily'] : [command];
     expect(await main(args, io, deps)).toBe(0);
-    expect(out()).not.toMatch(/benchmark/i);
+    expect(out()).not.toMatch(/benchmarkSource|benchmark source/i);
     stdout = [];
     expect(await main([...args, '--json'], io, deps)).toBe(0);
-    expect(out()).not.toMatch(/benchmark/i);
+    expect(out()).not.toMatch(/benchmarkSource|benchmark source/i);
   });
 });
 
@@ -108,11 +108,11 @@ describe('route', () => {
     const d = JSON.parse(out());
     expect(d).toMatchObject({
       status: 'ok',
-      route: { agent: 'cursor', model: 'claude-fable-5-1-thinking-high' },
+      route: { agent: 'cursor', model: 'gemini-4-argon-high' },
       catalogSource: 'snapshot',
       scoreSource: 'snapshot',
     });
-    expect(d.launch).toBe('orca orchestration worker-start --spec "<task>" --agent cursor --model claude-fable-5-1-thinking-high');
+    expect(d.launch).toBe('orca orchestration worker-start --spec "<task>" --agent cursor --model gemini-4-argon-high');
     expect(d.skipped.some((x: { agent: string }) => x.agent === 'gemini')).toBe(false);
     // Orca's "unavailable" outranks "not installed".
     expect(d.skipped).toContainEqual({ agent: 'grok', reason: 'not signed in or unavailable: Not signed in to Grok — run grok login' });
@@ -138,11 +138,10 @@ describe('route', () => {
     expect(JSON.parse(out())).toMatchObject({ status: 'ok', tier: 'advanced', downgraded: false, route: { agent: 'codex', model: 'gpt-6.1-sol' } });
   });
 
-  it('routes cursor-only Daily to Cursor Auto', async () => {
+  it('routes cursor-only Daily to a named model', async () => {
     await main(['route', '--tier', 'daily', '--agent', 'cursor', '--json'], io, deps);
     const d = JSON.parse(out());
-    expect(d).toMatchObject({ route: { agent: 'cursor', model: 'auto', effort: null }, launchArgs: ['--agent', 'cursor', '--model', 'auto'] });
-    expect(['medium', 'low']).toContain(d.confidence);
+    expect(d).toMatchObject({ route: { agent: 'cursor', model: 'claude-sonnet-5-5-medium', effort: null }, launchArgs: ['--agent', 'cursor', '--model', 'claude-sonnet-5-5-medium'], confidence: 'high' });
   });
 
   it('routes on with a warning and a suggestion for an unknown agent id', async () => {
@@ -207,20 +206,16 @@ describe('status', () => {
       blocked: false,
       expired: false,
     });
-    expect(s.tiers.frontier.pick).toMatchObject({ agent: 'cursor', model: 'claude-fable-5-1-thinking-high' });
+    expect(s.tiers.frontier.pick).toMatchObject({ agent: 'cursor', model: 'gemini-4-argon-high' });
     expect(s.tiers.light.pick.agent).toBeDefined();
     expect(s.unclassified.length).toBeGreaterThan(0);
     expect(s.catalog).toMatchObject({ source: 'snapshot' });
     expect(s.scores).toMatchObject({ source: 'snapshot' });
     expect(s.scores.models).toBeGreaterThan(0);
-    const kimi = s.scored.find((x: { model: string }) => x.model === 'kimi-k3');
-    expect(kimi).toMatchObject({ agent: 'cursor', tier: expect.any(String), detail: expect.stringMatching(/^capability score \(Model Index /) });
-    expect(s.unclassified).not.toContainEqual({ agent: 'cursor', model: 'auto' });
-    for (const tier of ['light', 'daily']) {
-      const listed = [s.tiers[tier].pick, ...s.tiers[tier].alternatives];
-      expect(listed, tier).toContainEqual(expect.objectContaining({ agent: 'cursor', model: 'auto', effort: null }));
-    }
-    for (const tier of ['advanced', 'frontier']) {
+    expect(s.scored).toEqual([]);
+    expect(s.unclassified).toContainEqual({ agent: 'cursor', model: 'auto' });
+    for (const tier of ['light', 'daily', 'advanced', 'frontier']) {
+      expect(s.tiers[tier].pick?.model).not.toBe('auto');
       expect(s.tiers[tier].alternatives.some((a: { model: string }) => a.model === 'auto'), tier).toBe(false);
     }
   });
@@ -242,7 +237,7 @@ describe('status', () => {
     expect(out()).toMatch(/frontier/);
     expect(out()).toMatch(/catalog: snapshot/);
     expect(out()).toMatch(/scores: snapshot, \d+ models/);
-    expect(out()).toMatch(/cursor kimi-k3: tier \w+ from capability score \(Model Index /);
+    expect(out()).toContain('unclassified (never routed):');
   });
 });
 
@@ -291,8 +286,8 @@ describe('placement table in the CLI', () => {
     expect(await main(['status', '--json'], io, { ...deps, now: NOW + 2 * HOUR })).toBe(0);
     const s = JSON.parse(out());
     expect(s.placements).toMatchObject({ builtAt: NOW, age: 2 * HOUR, version: VERSION, rebuilt: null, saveError: null });
-    expect(s.placements.scoreScale.cuts).toHaveLength(3);
-    expect(s.scored.length).toBeGreaterThan(0);
+    expect(s.placements.scoreScale).toBeNull();
+    expect(s.scored).toEqual([]);
     stdout = [];
     expect(await main(['status'], io, { ...deps, now: NOW + 2 * HOUR })).toBe(0);
     expect(out()).toContain(`placements: built 2h ago (orcacompass ${VERSION})`);
@@ -304,7 +299,7 @@ describe('placement table in the CLI', () => {
     expect(text).toContain(`placements: built now: no table yet (orcacompass ${VERSION})`);
     expect(text).toMatch(/^catalog: snapshot, \d+ models; scores: snapshot, \d+ models$/m);
     expect(text).toMatch(/^frontier:$/m);
-    expect(text).toMatch(/^  codex gpt-6-astra  the provider's lineup \("Frontier intelligence for the most demanding work\."\)/m);
+    expect(text).toMatch(/^  codex gpt-6-astra  family/m);
     expect(text).toMatch(/^  claude claude-haiku-5-5  /m);
     expect(text).toMatch(/^unclassified: \d+$/m);
     stdout = [];

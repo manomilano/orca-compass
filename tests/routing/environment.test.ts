@@ -100,7 +100,7 @@ describe('loadPlacements', () => {
     const rebuilt = await loadPlacements(DEFAULT_CONFIG, { ...fakeDeps, now: NOW + HOUR });
     expect(rebuilt.rebuilt).toBe('invalid');
     expect(rebuilt.table.schemaVersion).toBe(2);
-    expect(rebuilt.table.agents.find((a) => a.agent === 'claude')!.models.find((m) => m.modelId === 'claude-opus-5-5')!.tiers).toEqual(['advanced']);
+    expect(rebuilt.table.agents.find((a) => a.agent === 'claude')!.models.find((m) => m.modelId === 'claude-opus-5-5')!).toMatchObject({ tiers: ['frontier'], profile: { class: 'frontier', hint: { tier: 'advanced', source: 'family' } } });
   });
 
   it('keeps going when the table cannot be saved', async () => {

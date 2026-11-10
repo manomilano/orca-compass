@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { parseSnapshot, type EvidenceSnapshot } from '../evidence/snapshot.js';
 import { cacheDir } from '../paths.js';
 import { findExecutable, runCommand } from '../system/run.js';
-import { AGENT_IDS, type AgentDiscovery, type AgentId, type Config, type PlacedAgent, type PlacementTable, type RatedModel } from '../types.js';
+import { AGENT_IDS, type AgentDiscovery, type AgentId, type Config, type PlacementTable } from '../types.js';
 import { VERSION } from '../version.js';
 import { discoverAntigravity, locateAntigravity } from './agents/antigravity.js';
 import { discoverClaude, locateClaude } from './agents/claude.js';
@@ -13,7 +15,7 @@ import { discoverOpencode, locateOpencode } from './agents/opencode.js';
 import { loadRatings } from './sources/modelindex.js';
 import { loadCatalog } from './sources/modelsdev.js';
 import { builtWith, PLACEMENTS_SCHEMA, writeTable } from './table.js';
-import { classifyLaunch, scoreScale, type Scales } from './tiers.js';
+import { profileModels } from './profiles.js';
 
 // Part 1 of OrcaCompass: every source at once, every model placed, one table written.
 
@@ -31,31 +33,13 @@ export const AGENTS: Record<AgentId, { locate: (deps: Locator) => string | undef
 /** The agents whose executable is found right now, looked up exactly as discovery does. */
 export const installedAgents = (deps: Locator): AgentId[] => AGENT_IDS.filter((a) => AGENTS[a].locate(deps) !== undefined);
 
-/** The scales the placements draw on, computed once over the whole datasets. */
-export function placementScales(ratings: RatedModel[] | undefined, config: Config): Scales {
-  const score = scoreScale(ratings, config.classWeight);
-  return score ? { score } : {};
-}
-
-/** Pure: every discovered model with its placements, in the input order. */
-export function placeModels(discoveries: AgentDiscovery[], config: Config, scales: Scales): PlacedAgent[] {
-  return discoveries.map((d) => ({
-    agent: d.agent,
-    installed: d.installed,
-    models: d.models.map((model) => {
-      const placements = classifyLaunch(model, config, scales);
-      return { ...model, placements, tiers: placements.map((p) => p.tier) };
-    }),
-    ...(d.note !== undefined ? { note: d.note } : {}),
-    ...(d.signedOut !== undefined ? { signedOut: d.signedOut } : {}),
-  }));
-}
-
 export type BuildDeps = Partial<AgentDeps> & {
   fetchImpl?: typeof fetch;
   refresh?: boolean;
   now?: number;
   version?: string;
+  /** Transitional bundled evidence until the evidence loader owns the table build. */
+  snapshot?: EvidenceSnapshot;
 };
 
 export interface Built {
@@ -70,7 +54,7 @@ export async function buildPlacements(config: Config, deps: BuildDeps = {}): Pro
   const env = deps.env ?? process.env;
   const opts = { ttlHours: config.evidenceTtlHours, now, fetchImpl: deps.fetchImpl, refresh: deps.refresh };
   const catalogP = loadCatalog(opts);
-  // Scores only add tiers for models outside the family table, so a failure must not stop the build.
+  // Keep source metadata for the transitional schema; profiles use only the evidence snapshot.
   const ratingsP = loadRatings(opts).catch(() => undefined);
   const catalog = await catalogP;
   const agentDeps: AgentDeps = {
@@ -87,7 +71,8 @@ export async function buildPlacements(config: Config, deps: BuildDeps = {}): Pro
     Promise.all(AGENT_IDS.map((a) => AGENTS[a].discover(agentDeps))),
     ratingsP,
   ]);
-  const scales = placementScales(ratings?.ratings, config);
+  const snapshot = deps.snapshot ?? parseSnapshot(readFileSync(new URL('../../data/evidence-snapshot.json', import.meta.url), 'utf8'));
+  if (!snapshot) throw new Error('bundled evidence snapshot unreadable');
   const table: PlacementTable = {
     schemaVersion: PLACEMENTS_SCHEMA,
     version: deps.version ?? VERSION,
@@ -96,9 +81,9 @@ export async function buildPlacements(config: Config, deps: BuildDeps = {}): Pro
     sources: {
       catalog: { source: catalog.source, fetchedAt: catalog.fetchedAt, models: Object.keys(catalog.index).length },
       scores: ratings ? { source: ratings.source, fetchedAt: ratings.fetchedAt, models: ratings.ratings.length } : null,
-      scoreScale: scales.score ? { cuts: scales.score.cuts } : null,
+      scoreScale: null,
     },
-    agents: placeModels(discoveries, config, scales),
+    agents: profileModels(discoveries, snapshot, config),
   };
   const saveError = writeTable(table, agentDeps.cacheDir);
   return { table, ...(saveError !== undefined ? { saveError } : {}) };

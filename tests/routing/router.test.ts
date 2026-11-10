@@ -1,9 +1,7 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG } from '../../src/config.js';
 import { agentSkipReason, formatLaunch, route } from '../../src/routing/router.js';
 import type { Config, Effort, Environment, LaunchModel, RouteRequest } from '../../src/types.js';
-import { toRatings } from '../../src/placements/sources/modelindex.js';
 import {
   CURSOR_AUTO, cursorVariant, machineEnv, onlyModels, placed, withCursorModels, withPool, withUsageStatus, withUsageUpdatedAt,
 } from '../helpers/env.js';
@@ -349,139 +347,45 @@ describe('formatLaunch', () => {
   });
 });
 
-describe('score-placed models', () => {
-  const ratings = toRatings(JSON.parse(readFileSync(new URL('../fixtures/modelindex-mini.json', import.meta.url), 'utf8')));
-  const muse: LaunchModel = {
-    agent: 'cursor', modelId: 'muse-wonder-1.0', efforts: ['medium'],
-    launch: { kind: 'variant', ids: { medium: 'muse-wonder-1.0-medium' } }, poolNames: ['monthly', 'bucket:Other Models'],
-  };
-  const scored: Environment = placed({
-    ...env,
-    discoveries: env.discoveries.map((d) => (d.agent === 'cursor' ? { ...d, models: [muse] } : d)),
-  }, { ratings, config: { ...DEFAULT_CONFIG, classWeight: 0.4 } });
-
-  it('routes them with the score as the reason and at most medium confidence', () => {
-    const d = route({ tier: 'daily', agents: ['cursor'] }, scored, DEFAULT_CONFIG);
-    expect(d).toMatchObject({ status: 'ok', tier: 'daily', route: { agent: 'cursor', model: 'muse-wonder-1.0-medium' }, confidence: 'medium' });
-    expect(d.reasons).toContain('muse-wonder-1.0: tier daily from capability score (Model Index 180.3, $20/M → 0.66; cuts 0.34/0.72/0.90)');
-  });
-
-  it('keeps the newest model of a family per tier when scores split the family', () => {
-    const kimi = (id: string, releaseDate: string, pools: string[]): LaunchModel => ({
-      agent: 'cursor', modelId: id, meta: { id, provider: 'moonshotai', name: id, family: 'kimi', releaseDate }, efforts: ['medium'],
-      launch: { kind: 'variant', ids: { medium: `${id}-medium` } }, poolNames: pools,
-    });
-    const split: Environment = placed({
-      ...scored,
-      discoveries: scored.discoveries.map((d) => (d.agent === 'cursor'
-        ? { ...d, models: [kimi('kimi-k3', '2026-07-16', ['monthly', 'bucket:Other Models']), kimi('kimi-k2.7-code', '2026-06-12', ['monthly'])] }
-        : d)),
-    }, { ratings, config: { ...DEFAULT_CONFIG, classWeight: 0.4 } });
-    expect(route({ tier: 'daily', agents: ['cursor'] }, split, DEFAULT_CONFIG).route?.model).toBe('kimi-k3-medium');
-    expect(route({ tier: 'light', agents: ['cursor'] }, split, DEFAULT_CONFIG).route?.model).toBe('kimi-k2.7-code-medium');
-  });
-
-  it('leaves them unrouted without Model Index data', () => {
-    const d = route({ tier: 'daily', agents: ['cursor'] }, placed(scored), DEFAULT_CONFIG);
-    expect(d.status).toBe('none');
-  });
-});
-
-describe('Cursor Auto', () => {
-  // Cursor Models at 20% leaves Auto 25% headroom (8% counted, reset in 22d); named Cursor models (Other Models) 64% (20% counted).
+describe('Cursor auto is not a ranked model', () => {
   const auto = withCursorModels(env, [CURSOR_AUTO, cursorVariant('gpt-6-luna')], 20);
-  // The table is built with the config in force, so a test config places the models again.
-  const cursorOnly = (tier: RouteRequest['tier'], e: Environment = auto, config: Config = DEFAULT_CONFIG, extra: Partial<RouteRequest> = {}) =>
-    route({ tier, agents: ['cursor'], ...extra }, config === DEFAULT_CONFIG ? e : placed(e, { config }), config);
-  const AUTO_REASON = 'cursor auto: Cursor Auto picks the model (Cost mode), billed to Cursor Models';
 
-  it('comes first inside Cursor for Light and Daily, even when a named model has more headroom', () => {
-    for (const tier of ['light', 'daily'] as const) {
-      const d = cursorOnly(tier);
-      expect(d).toMatchObject({ status: 'ok', tier, route: { agent: 'cursor', model: 'auto', effort: null }, confidence: 'medium' });
-      expect(d.alternatives[0]).toMatchObject({ agent: 'cursor', model: tier === 'light' ? 'gpt-6-luna-low' : 'claude-sonnet-5-5-medium', blocked: false });
-      expect(d.alternatives[0].headroom).toBeCloseTo(0.6420, 3);
-      expect(d.reasons[0]).toMatch(/\(headroom 25%, counted as 8% for a reset beyond 7d\)/);
-    }
+  it.each(['light', 'daily', 'advanced', 'frontier'] as const)('uses named models for %s when available', (tier) => {
+    const decision = route({ tier, agents: ['cursor'] }, auto, DEFAULT_CONFIG);
+    expect(decision.status).toBe('ok');
+    expect(decision.route?.model).not.toBe('auto');
+    expect(decision.alternatives.some((alternative) => alternative.model === 'auto')).toBe(false);
   });
 
-  it('launches with --model auto and no --effort, explaining the route', () => {
-    const d = cursorOnly('daily', auto, DEFAULT_CONFIG, { demand: 'high' });
-    expect(d.launchArgs).toEqual(['--agent', 'cursor', '--model', 'auto']);
-    expect(d.route?.effort).toBeNull();
-    expect(d.effort).toMatchObject({ target: 'high', resolved: null, applied: 'provider-default' });
-    expect(d.reasons[0]).toMatch(/^cursor auto: Cursor Models 20% used, 29% of window elapsed \(headroom 25%, counted as 8% for a reset beyond 7d\)/);
-    expect(d.reasons).toContain(AUTO_REASON);
-    expect(d.reasons).toContain('effort: not set, Cursor Auto decides; high wanted from high reasoning demand (balanced policy)');
-    expect(formatLaunch(d)).toBe('orca orchestration worker-start --spec "<task>" --agent cursor --model auto');
+  it('applies effort demand through the named model variants', () => {
+    const decision = route({ tier: 'daily', agents: ['cursor'], demand: 'high' }, auto, DEFAULT_CONFIG);
+    expect(decision.launchArgs).toEqual(['--agent', 'cursor', '--model', 'claude-sonnet-5-5-high']);
+    expect(decision.effort).toMatchObject({ target: 'high', resolved: 'high', applied: 'model-id' });
   });
 
-  it('is left out when an explicit effort is requested, since Auto cannot apply one', () => {
-    const d = cursorOnly('daily', auto, DEFAULT_CONFIG, { effort: 'high' });
-    expect(d.route).toEqual({ agent: 'cursor', model: 'claude-sonnet-5-5-high', effort: null });
-    expect(d.alternatives.map((a) => a.model)).not.toContain('auto');
+  it('keeps explicit effort support on named models', () => {
+    expect(route({ tier: 'daily', agents: ['cursor'], effort: 'high' }, auto, DEFAULT_CONFIG).route).toEqual({ agent: 'cursor', model: 'claude-sonnet-5-5-high', effort: null });
   });
 
-  it('is compared with other agents by headroom: Claude with more still beats Auto', () => {
+  it('compares named models with other agents by headroom', () => {
     expect(route({ tier: 'daily' }, auto, DEFAULT_CONFIG).route?.agent).toBe('claude');
-    // Claude at 80% (13% headroom) sits between named Cursor (20% counted) and Auto (8% counted): Cursor's representative is Auto, so Claude wins.
-    const d = route({ tier: 'daily' }, withPool(auto, 'claude', 'weekly', { usedPercent: 80 }), DEFAULT_CONFIG);
-    expect(d.route).toEqual({ agent: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' });
-    expect(d.alternatives.slice(0, 2).map((a) => a.model)).toEqual(['auto', 'claude-sonnet-5-5-medium']);
-    // Claude at 88% (3%) is below Auto: Auto wins for Cursor, ahead of the named Cursor model with more headroom.
-    expect(route({ tier: 'daily' }, withPool(auto, 'claude', 'weekly', { usedPercent: 88 }), DEFAULT_CONFIG).route?.model).toBe('auto');
+    const decision = route({ tier: 'daily' }, withPool(auto, 'claude', 'weekly', { usedPercent: 80 }), DEFAULT_CONFIG);
+    expect(decision.route).toEqual({ agent: 'cursor', model: 'claude-sonnet-5-5-medium', effort: null });
   });
 
-  it('lets the named Cursor models compete as before when Auto is blocked', () => {
-    const blockedBucket = withPool(auto, 'cursor', 'bucket:Cursor Models', { usedPercent: 96 });
-    expect(cursorOnly('daily', blockedBucket).route?.model).toBe('claude-sonnet-5-5-medium');
-    expect(cursorOnly('light', blockedBucket).route?.model).toBe('gpt-6-luna-low');
-    expect(cursorOnly('daily', blockedBucket).alternatives).toContainEqual(expect.objectContaining({ model: 'auto', blocked: true }));
+  it.each([false, true])('keeps auto unranked with cursorAuto %s and an override', (cursorAuto) => {
+    const config: Config = { ...DEFAULT_CONFIG, cursorAuto, tierOverrides: { auto: 'advanced' } };
+    const profiles = placed(auto, { config });
+    expect(profiles.discoveries.find((discovery) => discovery.agent === 'cursor')!.models.find((model) => model.modelId === 'auto')!.profile.class).toBeNull();
+    expect(route({ tier: 'daily', agents: ['cursor'] }, profiles, config).route?.model).toBe('claude-sonnet-5-5-medium');
   });
 
-  it('is never a candidate for Advanced or Frontier', () => {
-    for (const tier of ['advanced', 'frontier'] as const) {
-      const d = route({ tier }, auto, DEFAULT_CONFIG);
-      expect(d.route?.model).not.toBe('auto');
-      expect(d.alternatives.some((a) => a.model === 'auto')).toBe(false);
-    }
-    const otherFull = withPool(auto, 'cursor', 'bucket:Other Models', { usedPercent: 96 });
-    const wait = cursorOnly('advanced', otherFull, DEFAULT_CONFIG, { noDowngrade: true });
-    expect(wait.status).toBe('wait');
-    expect(wait.alternatives.some((a) => a.model === 'auto')).toBe(false);
-  });
-
-  it('may serve an Advanced request downgraded to Daily', () => {
-    const otherFull = withPool(auto, 'cursor', 'bucket:Other Models', { usedPercent: 96 });
-    const d = cursorOnly('advanced', otherFull);
-    expect(d).toMatchObject({ status: 'ok', tier: 'daily', downgraded: true, route: { model: 'auto', effort: null } });
-    expect(d.launchArgs).toEqual(['--agent', 'cursor', '--model', 'auto']);
-  });
-
-  it('is unclassified and never routed with cursorAuto: false', () => {
-    const off: Config = { ...DEFAULT_CONFIG, cursorAuto: false };
-    expect(cursorOnly('daily', auto, off).route?.model).toBe('claude-sonnet-5-5-medium');
-    expect(cursorOnly('light', auto, off).route?.model).toBe('gpt-6-luna-low');
-    expect(cursorOnly('daily', auto, off).alternatives.some((a) => a.model === 'auto')).toBe(false);
-  });
-
-  it('follows a tierOverride for auto as an ordinary candidate of that tier', () => {
-    const advanced: Config = { ...DEFAULT_CONFIG, tierOverrides: { auto: 'advanced' } };
-    expect(cursorOnly('light', auto, advanced).alternatives.some((a) => a.model === 'auto')).toBe(false);
-    expect(cursorOnly('advanced', auto, advanced).alternatives).toContainEqual(expect.objectContaining({ model: 'auto', tier: 'advanced' }));
-    // Overridden into Daily it competes on headroom only: the named model with more headroom wins.
-    const daily: Config = { ...DEFAULT_CONFIG, tierOverrides: { auto: 'daily' } };
-    expect(cursorOnly('daily', auto, daily).route?.model).toBe('claude-sonnet-5-5-medium');
-    expect(cursorOnly('light', auto, daily).route?.model).toBe('gpt-6-luna-low');
-  });
-
-  it('respects agent filters, pins and excludeNoZdr', () => {
+  it('retains agent filters and model pins on named routes', () => {
     const excluded = route({ tier: 'daily', excludeAgents: ['cursor'] }, withPool(auto, 'claude', 'weekly', { usedPercent: 85 }), DEFAULT_CONFIG);
     expect(excluded.route?.agent).toBe('claude');
-    expect(excluded.alternatives.some((a) => a.agent === 'cursor')).toBe(false);
-    const pinned: Config = { ...DEFAULT_CONFIG, pins: { daily: { agent: 'cursor', model: 'claude-sonnet-5-5' } } };
-    expect(cursorOnly('daily', auto, pinned).route?.model).toBe('claude-sonnet-5-5-medium');
-    expect(cursorOnly('daily', auto, { ...DEFAULT_CONFIG, excludeNoZdr: true }).route?.model).toBe('auto');
+    expect(excluded.alternatives.some((alternative) => alternative.agent === 'cursor')).toBe(false);
+    const config: Config = { ...DEFAULT_CONFIG, pins: { daily: { agent: 'cursor', model: 'claude-sonnet-5-5' } } };
+    expect(route({ tier: 'daily' }, auto, config).route?.model).toBe('claude-sonnet-5-5-medium');
   });
 });
 

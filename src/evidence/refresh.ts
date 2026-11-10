@@ -1,5 +1,7 @@
-import { FAMILY_TIERS, knownModelVersion, MODEL_LINE_TIERS } from '../placements/tiers.js';
-import type { Tier } from '../types.js';
+import { DEFAULT_CONFIG } from '../config.js';
+import { buildProfile, CLASS_POINTS, hintFor, type Profile } from '../placements/profiles.js';
+import { knownModelVersion } from '../placements/tiers.js';
+import { TIERS } from '../types.js';
 import { AXIS_WEIGHTS, axisScore, BENCHMARKS, MIN_BENCHMARKS, rescale } from './scoring.js';
 import { AXES, SNAPSHOT_SCHEMA, type Axis, type EvidenceSnapshot, type SnapshotModel, type SnapshotResult } from './snapshot.js';
 
@@ -242,24 +244,14 @@ export function estimateScores(models: SnapshotModel[], benchmarks: EvidenceSnap
   return estimated.map((model) => ({ ...model, results: model.results.filter((row) => row.kind === 'measured' || used.has(row)) }));
 }
 
-const CLASS_POINTS: Record<Tier, number> = { light: 25, daily: 50, advanced: 75, frontier: 100 };
-const BANDS: readonly Tier[] = ['light', 'daily', 'advanced', 'frontier'];
-
 /** Family-only hints for the refresh builder; local lineup descriptions are unavailable. */
 export function hintPointsOf(model: SnapshotModel): number | undefined {
-  const family = model.family ?? knownModelVersion(model.id)?.family;
-  const tier = family && Object.hasOwn(FAMILY_TIERS, family) ? FAMILY_TIERS[family] : MODEL_LINE_TIERS.find((line) => line.pattern.test(model.id))?.tier;
-  return tier === undefined ? undefined : CLASS_POINTS[tier];
+  const hint = hintFor(model.id, model, undefined, DEFAULT_CONFIG);
+  return hint === undefined ? undefined : CLASS_POINTS[hint.tier];
 }
 
-function placement(model: SnapshotModel, axis: Axis, snapshot: EvidenceSnapshot, classWeight: number): { score: number; band: Tier } | undefined {
-  const evidence = model.scores[axis];
-  if (!evidence) return undefined;
-  const points = hintPointsOf(model);
-  const score = Math.round((points === undefined ? evidence.score : (1 - classWeight) * evidence.score + classWeight * points) * 10) / 10;
-  const band = BANDS[snapshot.bands[axis].filter((cut) => score >= cut).length];
-  return { score, band };
-}
+const snapshotProfile = (model: SnapshotModel, snapshot: EvidenceSnapshot, classWeight: number): Profile =>
+  buildProfile(model.id, model, undefined, snapshot, { ...DEFAULT_CONFIG, classWeight });
 
 export function diffSnapshots(previous: EvidenceSnapshot | undefined, next: EvidenceSnapshot, classWeight: number): string[] {
   const before = new Map(previous?.models.map((model) => [model.id, model]));
@@ -268,11 +260,13 @@ export function diffSnapshots(previous: EvidenceSnapshot | undefined, next: Evid
   for (const model of next.models) {
     const old = before.get(model.id);
     if (!old || !previous) { lines.push(`- Added model: ${model.id}`); continue; }
+    const oldProfile = snapshotProfile(old, previous, classWeight);
+    const newProfile = snapshotProfile(model, next, classWeight);
     for (const axis of AXES) {
-      const from = placement(old, axis, previous, classWeight);
-      const to = placement(model, axis, next, classWeight);
-      if (from?.band !== to?.band || (from && to && Math.abs(Math.round(to.score * 10) - Math.round(from.score * 10)) >= 10)) {
-        const describe = (value: typeof from): string => value ? `${value.band} (${value.score.toFixed(1)})` : 'unranked';
+      const from = oldProfile.axes[axis];
+      const to = newProfile.axes[axis];
+      if (from.band !== to.band || (from.score !== null && to.score !== null && Math.abs(Math.round(to.score * 10) - Math.round(from.score * 10)) >= 10)) {
+        const describe = (value: typeof from): string => value.score !== null ? `${value.band} (${value.score.toFixed(1)})` : 'unranked';
         lines.push(`- ${model.id} ${axis}: ${describe(from)} → ${describe(to)}`);
       }
     }
@@ -288,14 +282,14 @@ export function calibrationChecks(snapshot: EvidenceSnapshot, classWeight: numbe
   const models = new Map(snapshot.models.map((model) => [model.id, model]));
   for (const [id, want] of [ ['claude-fable-5-1', 'frontier'], ['gpt-6-astra', 'frontier'], ['claude-opus-5-5', 'frontier'], ['claude-haiku-5-5', 'light'] ] as const) {
     const model = models.get(id);
-    const actual = model && placement(model, 'coding', snapshot, classWeight);
+    const actual = model?.scores.coding && snapshotProfile(model, snapshot, classWeight).axes.coding;
     if (actual?.band !== want) failures.push(`${id} coding: expected ${want}, got ${actual?.band ?? 'missing model or score'}`);
   }
   const fable = models.get('claude-fable-5-1'), sonnet = models.get('claude-sonnet-5-5');
   for (const axis of AXES) {
-    const higher = fable && placement(fable, axis, snapshot, classWeight);
-    const lower = sonnet && placement(sonnet, axis, snapshot, classWeight);
-    if (!higher || !lower || higher.score <= lower.score) failures.push(`claude-fable-5-1 must rank above claude-sonnet-5-5 on ${axis}${!higher || !lower ? ' (missing model or score)' : ''}`);
+    const higher = fable?.scores[axis] && snapshotProfile(fable, snapshot, classWeight).axes[axis].score;
+    const lower = sonnet?.scores[axis] && snapshotProfile(sonnet, snapshot, classWeight).axes[axis].score;
+    if (higher == null || lower == null || higher <= lower) failures.push(`claude-fable-5-1 must rank above claude-sonnet-5-5 on ${axis}${higher == null || lower == null ? ' (missing model or score)' : ''}`);
   }
   return [...failures, ...crossAxisFindings(snapshot, classWeight, true)];
 }
@@ -308,6 +302,7 @@ function crossAxisFindings(snapshot: EvidenceSnapshot, classWeight: number, hint
   const findings: string[] = [];
   for (const model of snapshot.models) {
     if ((hintPointsOf(model) !== undefined) !== hinted) continue;
+    const profile = snapshotProfile(model, snapshot, classWeight);
     const ranked = AXES.filter((axis) => model.scores[axis] !== undefined);
     const hasPartialEvidence = (axis: Axis): boolean => model.scores[axis]?.kind === 'measured' && model.scores[axis]!.benchmarks >= MIN_BENCHMARKS;
     for (let i = 0; i < ranked.length; i++) {
@@ -315,8 +310,8 @@ function crossAxisFindings(snapshot: EvidenceSnapshot, classWeight: number, hint
         const a = ranked[i], b = ranked[j];
         // Design 7.4 permits a large gap when both axes have independent evidence.
         if (hasPartialEvidence(a) && hasPartialEvidence(b)) continue;
-        const first = placement(model, a, snapshot, classWeight)!, second = placement(model, b, snapshot, classWeight)!;
-        if (Math.abs(BANDS.indexOf(first.band) - BANDS.indexOf(second.band)) > 1) findings.push(`${model.id}: ${a} ${first.band} and ${b} ${second.band} differ by more than one band`);
+        const first = profile.axes[a].band!, second = profile.axes[b].band!;
+        if (Math.abs(TIERS.indexOf(first) - TIERS.indexOf(second)) > 1) findings.push(`${model.id}: ${a} ${first} and ${b} ${second} differ by more than one band`);
       }
     }
   }

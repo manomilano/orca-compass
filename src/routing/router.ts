@@ -1,7 +1,7 @@
 import { DEMAND_EFFORT, snapEffort } from './effort.js';
 import { poolState, projectPool, rankHeadroom } from './pace.js';
 import type { Rejection } from './rejection.js';
-import { FAMILY_TIERS, isLadderVendor, knownModelVersion, modelFamily } from '../placements/tiers.js';
+import { FAMILY_TIERS, knownModelVersion, modelFamily } from '../placements/tiers.js';
 import {
   AGENT_IDS,
   TIERS,
@@ -125,7 +125,7 @@ function routeOnce(req: RouteRequest, env: Environment, config: Config, deferred
   const all = collectCandidates(agents, env, config, req.tier, skipped);
   // An explicit effort is a constraint, like --agent: a route that cannot apply it exactly is not used.
   const honors = (c: Candidate): boolean => !req.effort || canApplyEffort(c.model, req.effort);
-  const byTier = (tier: Tier): Candidate[] => autoFirst(all.filter((c) => c.tier === tier && honors(c)).sort(compareRanked));
+  const byTier = (tier: Tier): Candidate[] => all.filter((c) => c.tier === tier && honors(c)).sort(compareRanked);
 
   const requested = req.tier;
   const plan = effortPlan(req, config);
@@ -183,7 +183,6 @@ function routeOnce(req: RouteRequest, env: Environment, config: Config, deferred
     const others = byTier(tier).filter((c) => c !== cand && !overRisk.has(c));
     const reasons = [`${cand.model.agent} ${chosen.model}: ${describe(cand, env.now)}`];
     if (cand.scoreDetail) reasons.push(`${cand.model.modelId}: tier ${cand.tier} from ${cand.scoreDetail}`);
-    if (cand.source === 'auto') reasons.push('cursor auto: Cursor Auto picks the model (Cost mode), billed to Cursor Models');
     if (cand.model.agent === 'opencode') reasons.push('opencode: Orca takes --model for OpenCode only in an existing worktree (--worktree current or a selector)');
     if (pick.pinned) reasons.push(`preferred route, ${cand.risk ? paceText(cand.risk) : 'usage unknown'}`);
     for (const name of cand.expiredPools) reasons.push(`${cand.model.agent} ${poolLabel(name)}: reset time already passed (expired), pool ignored`);
@@ -471,7 +470,7 @@ function evaluate(model: PlacedModel, cls: Classification, env: Environment, con
 
 // --- ranking --------------------------------------------------------------------------------
 
-/** Within a tier: unblocked first, then most headroom, then the plan's ordering (Claude/GPT before other vendors on a tie), ending in a total order for determinism. */
+/** Within a tier: unblocked first, then most headroom, ending in a total order for determinism. */
 function compareRanked(a: Candidate, b: Candidate): number {
   if (a.blocked !== b.blocked) return a.blocked ? 1 : -1;
   if ((a.rank === null) !== (b.rank === null)) return a.rank === null ? 1 : -1;
@@ -480,25 +479,11 @@ function compareRanked(a: Candidate, b: Candidate): number {
   const conf = CONFIDENCE_ORDER.indexOf(a.confidence) - CONFIDENCE_ORDER.indexOf(b.confidence);
   if (conf !== 0) return conf;
   if (!!a.model.fast !== !!b.model.fast) return a.model.fast ? 1 : -1;
-  const va = isLadderVendor(modelFamily(a.model.modelId, a.model.meta));
-  if (va !== isLadderVendor(modelFamily(b.model.modelId, b.model.meta))) return va ? -1 : 1;
   const da = a.model.meta?.releaseDate ?? '';
   const db = b.model.meta?.releaseDate ?? '';
   if (da !== db) return da < db ? 1 : -1;
   if (a.model.agent !== b.model.agent) return a.model.agent < b.model.agent ? -1 : 1;
   return a.model.modelId < b.model.modelId ? -1 : a.model.modelId > b.model.modelId ? 1 : 0;
-}
-
-/**
- * Cursor's representative in a tier is Auto when it is unblocked: named Cursor models that out-ranked
- * it move to just behind it, so other agents are compared with Auto by the usual ranking.
- */
-function autoFirst(ranked: Candidate[]): Candidate[] {
-  const at = ranked.findIndex((c) => c.source === 'auto' && !c.blocked);
-  if (at <= 0) return ranked;
-  const behind = ranked.slice(0, at).filter((c) => c.model.agent === 'cursor');
-  const ahead = ranked.slice(0, at).filter((c) => c.model.agent !== 'cursor');
-  return [...ahead, ranked[at], ...behind, ...ranked.slice(at + 1)];
 }
 
 /** Earliest moment at which some blocked candidate has all of its blocking pools reset. */
@@ -549,7 +534,7 @@ function effortText(e: EffortResolution, c: Candidate): string {
   const why = e.source === 'explicit' ? 'request' : e.source === 'demand' ? `${e.demand} reasoning demand (${e.policy} policy)` : 'tier default';
   if (e.applied === 'provider-default') {
     const own = e.providerDefault ? ` (${e.providerDefault})` : '';
-    const who = c.source === 'auto' ? 'Cursor Auto decides' : `${c.model.agent} uses its own default${own}`;
+    const who = `${c.model.agent} uses its own default${own}`;
     return `effort: not set, ${who}; ${e.target} wanted from ${why}`;
   }
   const how = e.applied === 'flag' ? 'passed as --effort' : 'chosen through the model id';

@@ -3,9 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG } from '../../src/config.js';
+import { parseSnapshot } from '../../src/evidence/snapshot.js';
+import { buildProfile } from '../../src/placements/profiles.js';
 import { readTextFile } from '../../src/placements/agents/deps.js';
 import { builtWith, parseTable, PLACEMENTS_FILE, readTable, staleness, tableAge, writeTable, type ReadTable } from '../../src/placements/table.js';
 import type { Config, PlacementTable, PlacedModel } from '../../src/types.js';
+import { fixture } from '../helpers/fakes.js';
 
 const NOW = 1793232000000;
 const HOUR = 3_600_000;
@@ -19,6 +22,7 @@ const fable: PlacedModel = {
   launch: { kind: 'flag', model: 'claude-fable-5-1' },
   poolNames: ['session', 'weekly', 'fableWeekly'],
   lineup: 'For your toughest challenges',
+  profile: buildProfile('claude-fable-5-1', undefined, undefined, parseSnapshot(fixture('evidence-mini.json'))!, DEFAULT_CONFIG),
   placements: [
     { tier: 'frontier', source: 'lineup', detail: 'the provider\'s lineup ("For your toughest challenges")' },
   ],
