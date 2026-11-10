@@ -1,5 +1,5 @@
 {
-  "_note": "Trimmed from https://llmbenchmark.ai/data/dataset.json, downloaded 2026-11-10; LLMBenchmark.ai, CC BY 4.0.",
+  "_note": "Trimmed from https://llmbenchmark.ai/data/dataset.json, downloaded 2026-11-10; LLMBenchmark.ai, CC BY 4.0. Extended with three FrontierSWE v2 comparison rows from the same download for vendor-bridge tests.",
   "models": [
     {
       "id": "anthropic/claude-fable-5.2",
@@ -2915,6 +2915,54 @@
       "publishedAt": "2026-11-09",
       "publishedAtSource": "release",
       "quote": "Category | Benchmark | Fable 5.2 | Fable 5.1 | Opus 5.5 | GPT-6 Astra | Gemini 4 Carbon Agentic coding | FrontierCode 2.0 | 49.1% Xhigh effort | 32.4% Xhigh effort | 45.5% | 42.8% | 41.1% Medium effort Agentic coding | FrontierSWE v2 | 69.9% | 56.3% | 62.3% | 65.5% | 61.2% Business workflows | AutomationBench | 51.4% | 31.4% | 42.5% | 41.4% | 53.9% Agentic scientific research | Terminal-Bench-Science 0.1 | 74.6% 75.3% (Mythos 5.2) | 52.6% | 58.7% | 68.1% | 64.8% Cybersecurity | CyScenarioBench † | 76.3% Mythos 5.2 | 61.7% Mythos 5.1 | 67.6% without safeguards | 61% GPT-6 Cyber | — Cybersecurity | CVE Rediscovery | 89.6% Mythos 5.2 | 78.3% Mythos 5.1 | 81.3% without safeguards | — | — Protein design | De novo binder design (24 hr) | 85.1% Mythos 5.2 | 79.1% Mythos 5.1 | 82.6% without safeguards | — | — Agentic search | WANDR (relaxed score) | 82.1% | 68.7% | 72.3% | — | — Computer use | OSWorld 2.1 (offline set, partial) | 89.3% | 83.5% | 87.2% | 79.5% | 81.5% Robotics | RoboDojo Sim ‡ | 64.9% | 27.6% | 39.4% | 29.8% | — Knowledge work | AA-Briefcase v1.1 | 66.1% rubric | 61.5% rubric | 61.2% rubric | 52.0% rubric | 61.8% rubric Knowledge work | AA-Briefcase v1.1 | 1785 Elo | 1669 Elo | 1800 Elo | 1569 Elo | 1611 Elo Knowledge work | Remote Labor Index (RLI) | 41.3% High effort | 17.9% | 21.3% | 20.8% | — Multidisciplinary reasoning | Humanity’s Last Exam (with tools) | 74.2% | 65.6% | 67.7% | 57.2% | — Visual chart recognition | Chartography (no tools) | 73.4% | 44.8% | 64.4% | 71.0% | 72.5%",
+      "evidence": "text",
+      "imageUrl": null,
+      "observedAt": "2026-11-09"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "benchmark": "frontierswe-v2",
+      "value": 0.563,
+      "unit": "ratio",
+      "setting": null,
+      "reportedBy": "anthropic",
+      "announcementUrl": "https://www.anthropic.com/claude/fable",
+      "announcementTitle": "Claude Fable",
+      "publishedAt": "2026-11-09",
+      "publishedAtSource": "release",
+      "quote": "Category | Benchmark | Fable 5.2 | Fable 5.1 | Opus 5.5 | GPT-6 Astra | Gemini 4 Carbon Agentic coding | FrontierCode 2.0 | 49.1% Xhigh effort | 32.4% Xhigh effort | 45.5% | 42.8% | 41.1% Medium effort Agentic coding | FrontierSWE v2 | 69.9% | 56.3% | 62.3% | 65.5% | 61.2%",
+      "evidence": "text",
+      "imageUrl": null,
+      "observedAt": "2026-11-09"
+    },
+    {
+      "modelId": "anthropic/claude-opus-5.5",
+      "benchmark": "frontierswe-v2",
+      "value": 0.623,
+      "unit": "ratio",
+      "setting": null,
+      "reportedBy": "anthropic",
+      "announcementUrl": "https://www.anthropic.com/claude/fable",
+      "announcementTitle": "Claude Fable",
+      "publishedAt": "2026-11-09",
+      "publishedAtSource": "release",
+      "quote": "Category | Benchmark | Fable 5.2 | Fable 5.1 | Opus 5.5 | GPT-6 Astra | Gemini 4 Carbon Agentic coding | FrontierCode 2.0 | 49.1% Xhigh effort | 32.4% Xhigh effort | 45.5% | 42.8% | 41.1% Medium effort Agentic coding | FrontierSWE v2 | 69.9% | 56.3% | 62.3% | 65.5% | 61.2%",
+      "evidence": "text",
+      "imageUrl": null,
+      "observedAt": "2026-11-09"
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "benchmark": "frontierswe-v2",
+      "value": 0.655,
+      "unit": "ratio",
+      "setting": null,
+      "reportedBy": "anthropic",
+      "announcementUrl": "https://www.anthropic.com/claude/fable",
+      "announcementTitle": "Claude Fable",
+      "publishedAt": "2026-11-09",
+      "publishedAtSource": "release",
+      "quote": "Category | Benchmark | Fable 5.2 | Fable 5.1 | Opus 5.5 | GPT-6 Astra | Gemini 4 Carbon Agentic coding | FrontierCode 2.0 | 49.1% Xhigh effort | 32.4% Xhigh effort | 45.5% | 42.8% | 41.1% Medium effort Agentic coding | FrontierSWE v2 | 69.9% | 56.3% | 62.3% | 65.5% | 61.2%",
       "evidence": "text",
       "imageUrl": null,
       "observedAt": "2026-11-09"

@@ -1,0 +1,32 @@
+{
+  "models": [
+    {
+      "id": "composer-2-5",
+      "provider": "cursor",
+      "name": "Composer 2.5",
+      "family": "composer",
+      "results": [
+        { "benchmark": "terminal-bench-2-0", "value": 69.3, "unit": "percent", "kind": "vendor", "source": "cursor", "url": "https://cursor.com/composer", "observedAt": "2026-11-10" },
+        { "benchmark": "swe-bench-multilingual", "value": 79.8, "unit": "percent", "kind": "vendor", "source": "cursor", "url": "https://cursor.com/composer", "observedAt": "2026-11-10" }
+      ]
+    },
+    {
+      "id": "claude-opus-4-7",
+      "provider": "anthropic",
+      "name": "Claude Opus 4.7",
+      "results": [
+        { "benchmark": "terminal-bench-2-0", "value": 69.4, "unit": "percent", "kind": "reported", "source": "cursor", "url": "https://cursor.com/composer", "observedAt": "2026-11-10" },
+        { "benchmark": "swe-bench-multilingual", "value": 80.5, "unit": "percent", "kind": "reported", "source": "cursor", "url": "https://cursor.com/composer", "observedAt": "2026-11-10" }
+      ]
+    },
+    {
+      "id": "gpt-5-5",
+      "provider": "openai",
+      "name": "GPT-5.5",
+      "results": [
+        { "benchmark": "terminal-bench-2-0", "value": 82.7, "unit": "percent", "kind": "reported", "source": "cursor", "url": "https://cursor.com/composer", "observedAt": "2026-11-10" },
+        { "benchmark": "swe-bench-multilingual", "value": 77.8, "unit": "percent", "kind": "reported", "source": "cursor", "url": "https://cursor.com/composer", "observedAt": "2026-11-10" }
+      ]
+    }
+  ]
+}

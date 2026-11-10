@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { buildSnapshot, calibrationChecks, DEFAULT_BANDS, diffSnapshots, displayName, familyOfSlug, hintPointsOf } from '../../src/evidence/refresh.js';
+import { buildSnapshot, calibrationChecks, DEFAULT_BANDS, diffSnapshots, displayName, estimateScores, familyOfSlug, hintPointsOf, mergeCurated } from '../../src/evidence/refresh.js';
 import { BENCHMARKS } from '../../src/evidence/scoring.js';
-import { parseSnapshot, type SnapshotModel } from '../../src/evidence/snapshot.js';
+import { parseSnapshot, type SnapshotModel, type SnapshotResult } from '../../src/evidence/snapshot.js';
 
 const dataset = JSON.parse(readFileSync(new URL('../fixtures/llmb-dataset-mini.json', import.meta.url), 'utf8'));
 const opts = { now: '2026-11-10T04:00:00Z', bands: DEFAULT_BANDS, sourceFetchedAt: '2026-11-10' };
@@ -83,6 +83,134 @@ describe('snapshot builder', () => {
     const input = structuredClone(dataset);
     buildSnapshot(input, opts);
     expect(input).toEqual(dataset);
+  });
+});
+
+const result = (benchmark: string, value: number, kind: SnapshotResult['kind'] = 'vendor', unit: SnapshotResult['unit'] = 'percent'): SnapshotResult => ({
+  benchmark, value, kind, unit, source: 'test', url: 'https://example.com/benchmark', observedAt: '2026-11-10',
+});
+const entry = (id: string, results: SnapshotResult[], scores: SnapshotModel['scores'] = {}): SnapshotModel => ({
+  id, aliases: [], provider: 'test', name: id, results, scores,
+});
+
+describe('vendor estimates', () => {
+  it('estimates Fable 5.2 from its vendor rows against measured neighbours', () => {
+    const stripped = structuredClone(dataset);
+    stripped.scores = stripped.scores.filter((s: { modelId: string }) => s.modelId !== 'anthropic/claude-fable-5.2');
+    const snapshot = buildSnapshot(stripped, opts);
+    const fable = snapshot.models.find((m) => m.id === 'claude-fable-5-2')!;
+    expect(fable.scores.reasoning).toMatchObject({ kind: 'estimated', benchmarks: 2 });
+    expect(fable.scores.reasoning!.score).toBeGreaterThan(snapshot.models.find((m) => m.id === 'claude-opus-5-5')!.scores.reasoning!.score - 5);
+    expect(fable.results.find((r) => r.benchmark === 'hle')).toMatchObject({ value: 74.2, unit: 'percent', kind: 'vendor', source: 'anthropic', observedAt: '2026-11-09', url: 'https://www.anthropic.com/claude/fable', setting: 'with tools' });
+    expect(fable.results.map((r) => r.benchmark).sort()).toEqual(['epoch_frontierswe', 'hle']);
+    expect(parseSnapshot(JSON.stringify(snapshot))).toEqual(snapshot);
+  });
+
+  it('needs two distinct shared benchmarks, even with several reference models and settings', () => {
+    const reference = entry('reference', [result('gpqa_diamond', 70, 'measured'), result('gpqa_diamond', 80, 'measured')], { reasoning: { score: 80, benchmarks: 2, kind: 'measured' } });
+    const target = entry('target', [result('gpqa_diamond', 90), result('gpqa_diamond', 95)]);
+    expect(estimateScores([reference, { ...reference, id: 'other' }, target], BENCHMARKS).at(-1)!.scores.reasoning).toBeUndefined();
+    const stripped = structuredClone(dataset);
+    stripped.scores = stripped.scores.filter((s: { modelId: string }) => s.modelId !== 'anthropic/claude-fable-5.2');
+    stripped.vendorReports = stripped.vendorReports.filter((r: { benchmark: string }) => r.benchmark === 'epoch-hle');
+    expect(buildSnapshot(stripped, opts).models.find((m) => m.id === 'claude-fable-5-2')!.scores.reasoning).toBeUndefined();
+  });
+
+  it('takes the median of all reference pairs and prefers measured reference rows', () => {
+    const target = entry('target', [result('gpqa_diamond', 90), result('hle', 56)]);
+    const first = entry('first', [result('gpqa_diamond', 80, 'measured'), result('gpqa_diamond', 0), result('hle', 49, 'reported')], { reasoning: { score: 70, benchmarks: 2, kind: 'measured' } });
+    const second = entry('second', [result('gpqa_diamond', 50, 'reported'), result('hle', 7)], { reasoning: { score: 50, benchmarks: 2, kind: 'measured' } });
+    // Candidates are 80, 80, 90 and 120; the middle pair averages to 85.
+    expect(estimateScores([target, first, second], BENCHMARKS)[0].scores.reasoning).toEqual({ score: 85, benchmarks: 2, kind: 'estimated' });
+  });
+
+  it('uses an odd median and clamps the final estimate to the score range', () => {
+    const target = entry('target', [result('gpqa_diamond', 90), result('hle', 56)]);
+    const first = entry('first', [result('gpqa_diamond', 80, 'measured'), result('hle', 49, 'measured')], { reasoning: { score: 70, benchmarks: 2, kind: 'measured' } });
+    const second = entry('second', [result('gpqa_diamond', 50, 'measured')], { reasoning: { score: 50, benchmarks: 2, kind: 'measured' } });
+    expect(estimateScores([target, first, second], BENCHMARKS)[0].scores.reasoning!.score).toBe(80);
+    first.scores.reasoning!.score = 100;
+    second.scores.reasoning!.score = 100;
+    expect(estimateScores([target, first, second], BENCHMARKS)[0].scores.reasoning!.score).toBe(100);
+    target.results = [result('gpqa_diamond', 0), result('hle', 0)];
+    first.scores.reasoning!.score = 0;
+    second.scores.reasoning!.score = 0;
+    expect(estimateScores([target, first, second], BENCHMARKS)[0].scores.reasoning!.score).toBe(0);
+  });
+
+  it('rescales axis ranges and shared percent benchmarks, skipping unknown scales', () => {
+    const target = entry('target', [result('tbench_4_0', 60), result('webdev_arena', 1900, 'vendor', 'elo'), result('unknown-points', 90, 'vendor', 'points'), result('unknown-elo', 1900, 'vendor', 'elo')]);
+    const reference = entry('reference', [result('tbench_4_0', 45, 'measured'), result('webdev_arena', 1830, 'measured', 'elo'), result('unknown-points', 10, 'reported', 'points'), result('unknown-elo', 1200, 'reported', 'elo')], { coding: { score: 70, benchmarks: 2, kind: 'measured' } });
+    expect(estimateScores([target, reference], BENCHMARKS)[0].scores.coding).toEqual({ score: 85, benchmarks: 2, kind: 'estimated' });
+  });
+
+  it('does not borrow unknown scales or mismatched units as percentage evidence', () => {
+    const target = entry('target', [result('shared', 60), result('other', 80)]);
+    const reference = entry('reference', [result('shared', 50, 'reported'), result('other', 70, 'reported', 'points')], { coding: { score: 70, benchmarks: 2, kind: 'measured' } });
+    expect(estimateScores([target, reference], BENCHMARKS)[0].scores.coding).toBeUndefined();
+  });
+
+  it('preserves measured scores and never chains estimates or uses measured target rows', () => {
+    const rows = [result('shared', 60), result('other', 80)];
+    const measured = entry('measured', rows, { coding: { score: 70, benchmarks: 2, kind: 'measured' } });
+    const estimated = entry('estimated', rows, { reasoning: { score: 90, benchmarks: 2, kind: 'estimated' } });
+    const target = entry('target', rows);
+    const input = structuredClone([measured, estimated, target]);
+    const output = estimateScores(input, BENCHMARKS);
+    expect(output[0].scores.coding).toEqual({ score: 70, benchmarks: 2, kind: 'measured' });
+    expect(output[2].scores.coding).toEqual({ score: 70, benchmarks: 2, kind: 'estimated' });
+    expect(output[2].scores.reasoning).toBeUndefined();
+    expect(input).toEqual([measured, estimated, target]);
+    expect(estimateScores([measured, entry('independent', rows.map((r) => ({ ...r, kind: 'measured' })))], BENCHMARKS)[1].scores.coding).toBeUndefined();
+  });
+
+  it('merges the curated Composer 2.5 near Opus 4.7 on coding', () => {
+    const curated = JSON.parse(readFileSync(new URL('../../data/evidence-curated.json', import.meta.url), 'utf8'));
+    const snapshot = buildSnapshot(dataset, { ...opts, curated });
+    const composer = snapshot.models.find((m) => m.id === 'composer-2-5')!;
+    expect(composer.scores.coding).toMatchObject({ kind: 'estimated', benchmarks: 2 });
+    expect(Math.abs(composer.scores.coding!.score - snapshot.models.find((m) => m.id === 'claude-opus-4-7')!.scores.coding!.score)).toBeLessThan(3);
+    expect(snapshot.models).toHaveLength(dataset.models.length + 1);
+    expect(composer.results).toHaveLength(2);
+    expect(snapshot.models.find((m) => m.id === 'claude-opus-4-7')!.scores).toEqual(model('claude-opus-4-7').scores);
+  });
+
+  it('retains vendor rows only when a successful estimate uses them', () => {
+    const stripped = structuredClone(dataset);
+    stripped.scores = stripped.scores.filter((s: { modelId: string }) => s.modelId !== 'anthropic/claude-fable-5.2');
+    stripped.vendorReports.push({ ...stripped.vendorReports[0], benchmark: 'unused-benchmark' });
+    const snapshot = buildSnapshot(stripped, opts);
+    expect(snapshot.models.flatMap((m) => m.results).some((r) => r.benchmark === 'unused-benchmark')).toBe(false);
+    expect(snapshot.models.find((m) => m.id === 'claude-opus-5-5')!.results.some((r) => r.benchmark === 'epoch_frontierswe' && r.kind === 'vendor')).toBe(true);
+    expect(built.models.flatMap((m) => m.results).every((r) => r.kind === 'measured')).toBe(true);
+  });
+});
+
+describe('curated results', () => {
+  const curatedModel = { id: 'new-model', provider: 'test', name: 'New model', aliases: ['test/new-model'], family: 'new', releasedAt: '2026-11-10', results: [result('gpqa_diamond', 90)] };
+
+  it('appends new models and existing rows without changing catalog metadata or input', () => {
+    const existing = entry('new-model', [result('hle', 49, 'measured')], { reasoning: { score: 80, benchmarks: 2, kind: 'measured' } });
+    const before = structuredClone(existing);
+    expect(mergeCurated([], { models: [curatedModel] })).toEqual([{ ...curatedModel, scores: {} }]);
+    expect(mergeCurated([existing], { models: [curatedModel] })).toEqual([{ ...existing, results: [...existing.results, ...curatedModel.results] }]);
+    expect(existing).toEqual(before);
+    expect(mergeCurated([existing], undefined)).toEqual([existing]);
+  });
+
+  it('rejects a curated row without a url', () => {
+    expect(() => mergeCurated([], { models: [{ ...curatedModel, results: [{ ...curatedModel.results[0], url: undefined }] }] })).toThrow(/^curated:/);
+  });
+
+  it.each([
+    { kind: 'measured' }, { kind: 'unknown' }, { observedAt: '' }, { source: '' }, { benchmark: '' },
+    { value: NaN }, { value: Infinity }, { value: '90' }, { unit: 'ratio' }, { setting: 4 },
+  ])('rejects invalid curated row fields %j', (change) => {
+    expect(() => mergeCurated([], { models: [{ ...curatedModel, results: [{ ...curatedModel.results[0], ...change }] }] })).toThrow(/^curated:/);
+  });
+
+  it.each([null, {}, { models: null }, { models: [null] }, { models: [{ ...curatedModel, id: '' }] }, { models: [{ ...curatedModel, results: undefined }] }, { models: [{ ...curatedModel, aliases: [1] }] }])('rejects an invalid curated document %j', (curated) => {
+    expect(() => mergeCurated([], curated)).toThrow(/^curated:/);
   });
 });
 
