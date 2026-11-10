@@ -243,7 +243,28 @@ function decisionText(d: Decision, now: number): string[] {
     head = `${d.requestedTier} → no route`;
   }
   const launch = formatLaunch(d);
-  return [head, ...d.reasons.map((r) => `  ${r}`), ...d.warnings.map((w) => `  warning: ${w}`), ...(launch ? [launch] : [])];
+  return [head, ...d.reasons.map((r) => `  ${r.startsWith('skipped:') ? skippedText(d.skipped) : r}`), ...d.warnings.map((w) => `  warning: ${w}`), ...(launch ? [launch] : [])];
+}
+
+/** Keep operational skips visible while bounding profile diagnostics in text only. */
+function skippedText(skipped: Decision['skipped']): string {
+  const full: string[] = [];
+  const needs = new Map<string, string[]>();
+  for (const s of skipped) {
+    const name = `${s.agent}${s.model ? ` ${s.model}` : ''}`;
+    if (/^(below need on |unranked:)/.test(s.reason)) {
+      const reasons = needs.get(name) ?? [];
+      reasons.push(s.reason);
+      needs.set(name, reasons);
+    } else full.push(`${name} (${s.reason})`);
+  }
+  for (const [name, reasons] of [...needs].slice(0, 6)) {
+    const below = reasons.every((r) => r.startsWith('below need on '));
+    const reason = below ? `below need on ${reasons.map((r) => r.replace(/^below need on (\w+) \((.*)\)$/, '$1 $2')).join(', ')}` : reasons.join(', ');
+    full.push(`${name} (${reason})`);
+  }
+  if (needs.size > 6) full.push(`… ${needs.size - 6} more (route --json lists them)`);
+  return `skipped: ${full.join(', ')}`;
 }
 
 // --- verify and rejected --------------------------------------------------------------------

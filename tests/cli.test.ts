@@ -50,6 +50,26 @@ describe('metadata output', () => {
 });
 
 describe('route', () => {
+  it('caps need skips by model in text while retaining every JSON skip and other diagnostics', async () => {
+    writeFileSync(configPath(), JSON.stringify({ banModels: ['gpt-6.1-terra'] }));
+    expect(await main(['route', '--tier', 'frontier', '--json'], io, deps)).toBe(0);
+    const decision = JSON.parse(out());
+    const needSkips = decision.skipped.filter((s: { reason: string }) => /^(below need on |unranked:)/.test(s.reason));
+    const models = new Set(needSkips.map((s: { agent: string; model: string }) => `${s.agent} ${s.model}`));
+    expect(models.size).toBeGreaterThan(6);
+    expect(needSkips.filter((s: { agent: string; model: string }) => s.agent === 'claude' && s.model === 'claude-haiku-5-5')).toHaveLength(3);
+    stdout = [];
+    expect(await main(['route', '--tier', 'frontier'], io, deps)).toBe(0);
+    const line = out().split('\n').find((s) => s.trimStart().startsWith('skipped:'))!;
+    expect(line).toBeDefined();
+    expect(line.match(/\((?:below need on |unranked:)/g)).toHaveLength(6);
+    expect(line).toContain(`… ${models.size - 6} more (route --json lists them)`);
+    expect(line).toContain('claude claude-haiku-5-5 (below need on coding 64.2 < 84, agentic 50.7 < 80, reasoning 69.7 < 88)');
+    for (const skip of decision.skipped.filter((s: { reason: string }) => !/^(below need on |unranked:)/.test(s.reason))) {
+      expect(line).toContain(`${skip.agent}${skip.model ? ` ${skip.model}` : ''} (${skip.reason})`);
+    }
+    expect(line).toContain('banned by you');
+  });
   it.each([
     'coding=high,agentic=mid', 'coding=high,agentic=mid,reasoning=low,coding=min',
     'coding=huge,agentic=mid,reasoning=low', 'coding = high, agentic=mid,reasoning=low',
