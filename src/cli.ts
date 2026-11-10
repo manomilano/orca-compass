@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { recordHandout } from './routing/handouts.js';
+import { cacheDir } from './paths.js';
 import { existsSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { parseArgs, type ParseArgsConfig } from 'node:util';
@@ -166,6 +168,14 @@ async function routeCommand(args: string[], io: IO, deps: MainDeps): Promise<num
   const env = await gatherEnvironment(config, deps);
   const d = route(req, env, config);
   d.warnings.push(...unknownAgents);
+  if (d.status === 'ok' && d.route) {
+    const chosen = d.route;
+    const model = env.discoveries.find((a) => a.agent === chosen.agent)?.models.find((m) => launchIds(m).includes(chosen.model));
+    if (model) {
+      try { recordHandout({ at: env.now, agent: chosen.agent, model: chosen.model, pools: model.poolNames, needs: d.needs }, config.handoutMinutes, deps.cacheDir ?? cacheDir()); }
+      catch (e) { d.warnings.push(`hand-out could not be saved: ${(e as Error).message}`); }
+    }
+  }
   if (v.json) {
     const sources = {
       catalogSource: env.catalogSource, scoreSource: env.scoreSource ?? 'unavailable',
@@ -375,6 +385,9 @@ function buildStatus(gathered: Gathered, config: Config) {
 
   return {
     now: env.now,
+    handouts: gathered.handouts,
+    handoutMinutes: config.handoutMinutes,
+    handoutPercent: config.handoutPercent,
     catalog: table.sources.evidence,
     scores: table.sources.evidence,
     placements: placementsView(gathered, env.now),
@@ -417,6 +430,7 @@ function statusText(s: Status): string[] {
       lines.push(`    ${p.name.replace(/^bucket:/, '')}: ${percent(p.usedPercent)} used, resets in ${duration(p.resetsAt - now)}, headroom ${headroomText(p.headroom)}${state}`);
     }
   }
+  if (s.handouts.length) lines.push(`hand-outs (last ${s.handoutMinutes}m): ${s.handouts.map((h) => `${h.agent} ${h.model} ${duration(now - h.at)} ago (${h.pools.map((p) => `${p.replace(/^bucket:/, '')} +${s.handoutPercent}%`).join(', ')})`).join('; ')}`);
   lines.push('tiers:');
   for (const tier of TIERS) {
     const t = s.tiers[tier];

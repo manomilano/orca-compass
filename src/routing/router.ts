@@ -50,6 +50,8 @@ interface Candidate {
   blockedPools: UsagePool[];
   expiredPools: string[];
   confidence: Confidence;
+  handoutMinutes: number;
+  handoutPercent: number;
   /** Set when usage could not be evaluated (unknown, very stale, no matching pool). */
   usageNote?: string;
   /** Set when usage is moderately stale: headroom is kept, confidence capped at medium. */
@@ -397,7 +399,7 @@ function evaluate(model: PlacedModel, env: Environment, config: Config, needs: N
   };
   const base: Candidate = {
     model, tier: model.profile.class, quality: auto ? null : quality, below: adequacy.below, weightedScore: needWeightedScore(model.profile, needs),
-    headroom: null, rank: null, blocked: false, blockedPools: [], expiredPools: [], confidence: 'low', projections: {},
+    headroom: null, rank: null, blocked: false, blockedPools: [], expiredPools: [], confidence: 'low', projections: {}, handoutMinutes: config.handoutMinutes, handoutPercent: config.handoutPercent,
   };
   if (model.poolNames.length === 0) return { ...base, usageNote: `no usage window: ${model.billing ?? 'limits not tracked'}` };
   const usage = env.usage[model.agent];
@@ -444,7 +446,7 @@ function evaluate(model: PlacedModel, env: Environment, config: Config, needs: N
   base.rank = ranked.rank;
   base.tightest = { pool: ranked.pool, elapsed: ranked.elapsed };
   // Confidence describes usage only; quality carries the certainty of the profile.
-  base.confidence = lowered ? 'low' : 'high';
+  base.confidence = lowered ? 'low' : ranked.pool.handouts ? 'medium' : 'high';
 
   const age = usage.updatedAt === undefined ? 0 : env.now - usage.updatedAt;
   const staleMs = config.usageStaleMinutes * 60_000;
@@ -560,6 +562,7 @@ function describe(c: Candidate, now: number): string {
   if (worst) parts.push(`${poolLabel(worst.pool)} ${percent(worst.usedPercent)} used${pace(worst, worst.resetsAt)}`);
   else if (c.hotSession && c.hotSession !== pool) parts.push(`session ${percent(c.hotSession.usedPercent)} used, resets in ${duration(c.hotSession.resetsAt - now)}`);
   if (c.staleNote) parts.push(c.staleNote);
+  if (pool.handouts) parts.push(handoutNote(c, pool));
   return parts.join('; ');
 }
 
@@ -568,11 +571,16 @@ function summary(c: Candidate, now: number): string {
   if (c.blocked) return blockers(c, now);
   if (c.model.poolNames.length === 0 && c.usageNote) return c.usageNote;
   if (c.usageNote || !c.tightest || c.headroom === null) return 'usage unknown';
-  return `${poolLabel(c.tightest.pool.name)} headroom ${headroomText(c.headroom)}${scaled(c)}, resets in ${duration(c.tightest.pool.resetsAt - now)}`;
+  return `${poolLabel(c.tightest.pool.name)} headroom ${headroomText(c.headroom)}${scaled(c)}, resets in ${duration(c.tightest.pool.resetsAt - now)}${c.tightest.pool.handouts ? `; ${handoutNote(c, c.tightest.pool)}` : ''}`;
+}
+
+function handoutNote(c: Candidate, pool: UsagePool): string {
+  const n = pool.handouts ?? 0;
+  return `${n} worker${n === 1 ? '' : 's'} routed in the last ${c.handoutMinutes}m, counted as +${n * c.handoutPercent}%`;
 }
 
 function blockers(c: Candidate, now: number): string {
-  return c.blockedPools.map((p) => `${poolLabel(p.name)} ${percent(p.usedPercent)} used, resets in ${duration(p.resetsAt - now)}`).join('; ');
+  return c.blockedPools.map((p) => `${poolLabel(p.name)} ${percent(p.usedPercent)} used, resets in ${duration(p.resetsAt - now)}${p.handouts ? `; ${handoutNote(c, p)}` : ''}`).join('; ');
 }
 
 const poolLabel = (name: string): string => name.replace(/^bucket:/, '');

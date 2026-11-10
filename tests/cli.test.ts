@@ -628,3 +628,21 @@ describe('verify and rejected', () => {
     expect(out()).not.toContain('claude-sonnet-5-5');
   });
 });
+
+it('records a route and shows live hand-outs in status', async () => {
+  expect(await main(['route', '--tier', 'daily', '--agent', 'claude', '--json'], io, deps)).toBe(0);
+  const decision = JSON.parse(out());
+  const file = join(process.env.ORCACOMPASS_HOME!, 'cache', 'handouts.json');
+  const entries = JSON.parse(readFileSync(file, 'utf8')).handouts;
+  expect(entries).toHaveLength(1);
+  expect(entries[0]).toMatchObject({ agent: 'claude', model: decision.route.model, needs: { coding: 'low', agentic: 'low', reasoning: 'low' } });
+  expect(entries[0].pools).toContain('weekly');
+  stdout = [];
+  await main(['status', '--json'], io, deps);
+  const status = JSON.parse(out());
+  expect(status.handouts).toHaveLength(1);
+  expect(status.agents.find((a: { agent: string }) => a.agent === 'claude').usage.pools.find((p: { name: string }) => p.name === 'weekly').handouts).toBe(1);
+  stdout = [];
+  await main(['status'], io, deps);
+  expect(out()).toMatch(/hand-outs \(last 10m\): claude .*0m ago/);
+});

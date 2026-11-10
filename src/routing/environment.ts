@@ -6,6 +6,7 @@ import { cacheDir } from '../paths.js';
 import { findExecutable, runCommand } from '../system/run.js';
 import type { Config, Environment, OrcaAgents, PlacementTable } from '../types.js';
 import { VERSION } from '../version.js';
+import { applyHandouts, liveHandouts, readHandouts, type Handout } from './handouts.js';
 import { readOrcaAgents } from './orca-settings.js';
 import { readOrcaUsage } from './orca-usage.js';
 import { activeRejections } from './rejection.js';
@@ -24,6 +25,7 @@ export type GatherDeps = Partial<AgentDeps & {
 
 export interface Gathered {
   env: Environment;
+  handouts: Handout[];
   table: PlacementTable;
   /** Why the table was rebuilt on this call; undefined when the cached one was used. */
   rebuilt: Staleness | 'refresh' | undefined;
@@ -32,7 +34,7 @@ export interface Gathered {
 }
 
 /** The cached table when it is fresh, else a rebuilt one. */
-export async function loadPlacements(config: Config, deps: GatherDeps = {}): Promise<Omit<Gathered, 'env'>> {
+export async function loadPlacements(config: Config, deps: GatherDeps = {}): Promise<Omit<Gathered, 'env' | 'handouts'>> {
   const now = deps.now ?? Date.now();
   const find = deps.find ?? findExecutable;
   const dir = deps.cacheDir ?? cacheDir();
@@ -62,12 +64,13 @@ export async function gather(config: Config, deps: GatherDeps = {}): Promise<Gat
     (deps.readOrcaAgents ?? readOrcaAgents)(),
   ]);
   const { table } = placements;
+  const handouts = liveHandouts(readHandouts(deps.readFile ?? readTextFile, deps.cacheDir ?? cacheDir()), now, config.handoutMinutes);
   const rejections = activeRejections(readRejections(deps.readFile ?? readTextFile, deps.cacheDir ?? cacheDir()), now, config.rejectionTtlHours);
   const env: Environment = {
     now,
     bands: table.bands,
     discoveries: table.agents,
-    usage,
+    usage: applyHandouts(usage, handouts, config.handoutPercent),
     orcaAgents,
     placementsBuiltAt: table.builtAt,
     evidenceSource: table.sources.evidence.source,
@@ -76,7 +79,7 @@ export async function gather(config: Config, deps: GatherDeps = {}): Promise<Gat
     scoreSource: table.sources.evidence.source,
     ...(rejections.length > 0 ? { rejections } : {}),
   };
-  return { env, ...placements };
+  return { env, handouts, ...placements };
 }
 
 export async function gatherEnvironment(config: Config, deps: GatherDeps = {}): Promise<Environment> {

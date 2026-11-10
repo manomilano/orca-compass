@@ -40,6 +40,7 @@ export interface UsagePool {
   name: string;
   kind: 'session' | 'long';
   usedPercent: number;
+  handouts?: number;
   windowMinutes: number;
   resetsAt: number; // epoch ms
 }
