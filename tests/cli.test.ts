@@ -39,17 +39,54 @@ afterEach(() => {
 });
 
 describe('metadata output', () => {
-  it.each(['status', 'refresh', 'tiers', 'route'])('%s omits the removed benchmark source from text and JSON', async (command) => {
+  it.each(['status', 'refresh', 'tiers', 'ranking', 'route'])('%s omits the retired data providers from text and JSON', async (command) => {
     const args = command === 'route' ? [command, '--tier', 'daily'] : [command];
     expect(await main(args, io, deps)).toBe(0);
-    expect(out()).not.toMatch(/benchmarkSource|benchmark source/i);
+    expect(out()).not.toMatch(/models\.dev|model index/i);
     stdout = [];
     expect(await main([...args, '--json'], io, deps)).toBe(0);
-    expect(out()).not.toMatch(/benchmarkSource|benchmark source/i);
+    expect(out()).not.toMatch(/models\.dev|model index/i);
   });
 });
 
 describe('route', () => {
+  it.each([
+    'coding=high,agentic=mid', 'coding=high,agentic=mid,reasoning=low,coding=min',
+    'coding=huge,agentic=mid,reasoning=low', 'coding = high, agentic=mid,reasoning=low',
+    'CODING=high,agentic=mid,reasoning=low', 'coding=High,agentic=mid,reasoning=LOW',
+  ])('rejects malformed --need %s with usage', async (need) => {
+    expect(await main(['route', '--need', need], io, deps)).toBe(1);
+    expect(err()).toMatch(/must name all three axes/);
+    expect(err()).toContain('usage: orcacompass');
+    expect(stdout).toEqual([]);
+  });
+
+  it('accepts reordered needs and preserves quality, sources and hand-outs', async () => {
+    expect(await main(['route', '--need', 'reasoning=low,coding=high,agentic=mid', '--json'], io, deps)).toBe(0);
+    const d = JSON.parse(out());
+    expect(d).toMatchObject({ needs: { coding: 'high', agentic: 'mid', reasoning: 'low' }, needsSource: 'need', evidenceSource: 'snapshot', scoreSource: 'snapshot', catalogSource: 'snapshot', placementsBuiltAt: NOW });
+    for (const quality of [d.quality, ...d.alternatives.map((a: { quality: unknown }) => a.quality)]) {
+      expect(quality.axes.coding).toMatchObject({ score: expect.any(Number), band: expect.any(String), evidence: expect.any(String), benchmarks: expect.any(Number), need: 'high', cut: 84 });
+    }
+    const entries = JSON.parse(readFileSync(join(process.env.ORCACOMPASS_HOME!, 'cache', 'handouts.json'), 'utf8')).handouts;
+    expect(entries).toHaveLength(1);
+    expect(entries[0].needs).toEqual(d.needs);
+  });
+
+  it('requires exactly one of need and tier', async () => {
+    expect(await main(['route'], io, deps)).toBe(1);
+    expect(err()).toContain('--need is required (or --tier as a shorthand)');
+    stderr = [];
+    expect(await main(['route', '--tier', 'daily', '--need', 'coding=low,agentic=low,reasoning=low'], io, deps)).toBe(1);
+    expect(err()).toContain('use either --need or --tier, not both');
+  });
+
+  it('warns once for each removed config key during routing', async () => {
+    writeFileSync(configPath(), JSON.stringify({ scoreWeight: 0.5, modelsDevTtlHours: 12 }));
+    expect(await main(['route', '--tier', 'light', '--json'], io, deps)).toBe(0);
+    expect(stderr.filter((s) => s.startsWith('warning: scoreWeight is no longer used'))).toHaveLength(1);
+    expect(stderr.filter((s) => s.startsWith('warning: modelsDevTtlHours is no longer used'))).toHaveLength(1);
+  });
   it.each([
     { agent: 'cursor', exe: 'cursor-agent', listing: 'gpt-6.1-sol-high - Example\n', model: 'gpt-6.1-sol-high', base: 'gpt-6.1-sol', effort: undefined },
     { agent: 'antigravity', exe: 'agy', listing: 'gemini-3.8-flash-high\tExample\n', model: 'gemini-3.8-flash-high', base: 'gemini-3.8-flash', effort: undefined },
@@ -193,7 +230,18 @@ describe('route', () => {
 });
 
 describe('status', () => {
-  it('reports agents, usage pools, tiers, unclassified models and the catalog', async () => {
+  it('reports evidence and hand-outs without legacy score metadata', async () => {
+    expect(await main(['status', '--json'], io, deps)).toBe(0);
+    const s = JSON.parse(out());
+    expect(s.evidence).toMatchObject({ source: 'snapshot', generatedAt: expect.any(String), models: expect.any(Number) });
+    expect(s.handouts).toEqual([]);
+    for (const key of ['catalog', 'scores', 'scored', 'scoreScale']) expect(s).not.toHaveProperty(key);
+    expect(s.placements).not.toHaveProperty('scoreScale');
+    stdout = [];
+    await main(['status'], io, deps);
+    expect(out()).toMatch(/^evidence: snapshot, \d+ models \(LLMBenchmark\.ai, CC BY 4\.0, data of \d{4}-\d{2}-\d{2}\), fetched /m);
+  });
+  it('reports agents, usage pools, tiers, unclassified models and evidence', async () => {
     expect(await main(['status', '--json'], io, deps)).toBe(0);
     const s = JSON.parse(out());
     expect(s.agents.find((a: { agent: string }) => a.agent === 'antigravity')).toMatchObject({ installed: false });
@@ -210,10 +258,9 @@ describe('status', () => {
     expect(s.tiers.frontier.pick).toMatchObject({ agent: 'claude', model: 'claude-opus-5-5' });
     expect(s.tiers.light.pick.agent).toBeDefined();
     expect(s.unclassified.length).toBeGreaterThan(0);
-    expect(s.catalog).toMatchObject({ source: 'snapshot' });
-    expect(s.scores).toMatchObject({ source: 'snapshot' });
-    expect(s.scores.models).toBeGreaterThan(0);
-    expect(s.scored).toEqual([]);
+    expect(s.evidence).toMatchObject({ source: 'snapshot' });
+    expect(s.evidence.models).toBeGreaterThan(0);
+    expect(s).not.toHaveProperty('scored');
     expect(s.unclassified).toContainEqual({ agent: 'cursor', model: 'auto' });
     for (const tier of ['light', 'daily', 'advanced', 'frontier']) {
       expect(s.tiers[tier].pick?.model).not.toBe('auto');
@@ -236,38 +283,87 @@ describe('status', () => {
     expect(out()).toMatch(/antigravity\s+not installed \(agy not found\)/);
     expect(out()).toMatch(/muse\s+0 models, usage unknown: Orca reports no usage for muse — skipped: no models/);
     expect(out()).toMatch(/frontier/);
-    expect(out()).toMatch(/catalog: snapshot/);
-    expect(out()).toMatch(/scores: snapshot, \d+ models/);
+    expect(out()).toMatch(/evidence: snapshot/);
+    expect(out()).toMatch(/evidence: snapshot, \d+ models/);
     expect(out()).toContain('unclassified (never routed):');
   });
 });
 
 describe('refresh', () => {
-  it('reloads the catalog and the Model Index and reports source and model counts', async () => {
+  it('reloads evidence and reports source and model counts', async () => {
     const snapshot = fixture('evidence-mini.json');
     const manifest = { schemaVersion: 1, generatedAt: JSON.parse(snapshot).generatedAt, bytes: Buffer.byteLength(snapshot), sha256: createHash('sha256').update(snapshot).digest('hex') };
     const fetchImpl = async (url: string | URL | Request) => new Response(String(url) === EVIDENCE_MANIFEST_URL ? JSON.stringify(manifest) : snapshot);
     const code = await main(['refresh'], io, { ...deps, fetchImpl: fetchImpl as typeof fetch });
     expect(code).toBe(0);
-    expect(out()).toMatch(/^models\.dev: network, \d+ models/);
-    expect(out()).toMatch(/\nmodel index: network, \d+ rated models/);
+    expect(out()).toMatch(/^evidence: network, \d+ models \(snapshot of /);
     expect(err()).toBe('');
   });
 
   it('reports when the network is unavailable', async () => {
     expect(await main(['refresh'], io, deps)).toBe(0);
     expect(out()).toMatch(/snapshot/);
-    expect(err()).toMatch(/could not reach models\.dev/);
-    expect(err()).toMatch(/could not load model scores from the OrcaCompass repository/);
+    expect(err()).toMatch(/could not reach the OrcaCompass repository/);
+    expect(stderr).toHaveLength(1);
   });
 
-  it('reports both sources as JSON', async () => {
+  it('reports evidence and placements as JSON', async () => {
     expect(await main(['refresh', '--json'], io, deps)).toBe(0);
-    expect(JSON.parse(out())).toMatchObject({ source: 'snapshot', scores: { source: 'snapshot' } });
+    expect(JSON.parse(out())).toMatchObject({ evidence: { source: 'snapshot', generatedAt: expect.any(String) }, placements: expect.any(Object) });
   });
 });
 
 describe('placement table in the CLI', () => {
+  it('ranks deduplicated profiles and exposes the snapshot sources', async () => {
+    expect(await main(['ranking'], io, deps)).toBe(0);
+    expect(out()).toMatch(/^claude-opus-5-5\s+frontier\s+coding 86\.2 F measured\(5\)/m);
+    expect(out()).toMatch(/auto\s+unranked.*coding unranked/);
+    stdout = [];
+    expect(await main(['ranking', '--json'], io, deps)).toBe(0);
+    const r = JSON.parse(out());
+    expect(r.models[0]).toMatchObject({ id: 'claude-fable-5-2', class: 'frontier' });
+    expect(r.sources).toContainEqual(expect.objectContaining({ label: 'LLMBenchmark.ai', license: 'CC BY 4.0' }));
+    expect(r.generatedAt).toEqual(expect.any(String));
+    expect(r.bands.coding).toEqual([68, 76, 84]);
+    expect(new Set(r.models.map((m: { id: string }) => m.id)).size).toBe(r.models.length);
+    expect(r.models.find((m: { id: string }) => m.id === 'claude-opus-5-5')).toMatchObject({ class: 'frontier', axes: { coding: { score: 86.2, band: 'frontier', label: 'measured', benchmarks: 5 } }, agents: ['claude', 'cursor'] });
+    stdout = [];
+    expect(await main(['ranking', '--axis', 'coding'], io, deps)).toBe(0);
+    expect(out()).not.toMatch(/agentic|reasoning/);
+    expect(out().indexOf('claude-opus-5-5')).toBeLessThan(out().indexOf('claude-fable-5-1'));
+  });
+
+  it('uses cached snapshot provenance and data date after refresh', async () => {
+    const snapshot = JSON.parse(fixture('evidence-mini.json'));
+    snapshot.generatedAt = '2026-11-11T04:00:00Z';
+    snapshot.sources[0].dataDate = '2026-11-09';
+    const text = JSON.stringify(snapshot);
+    const manifest = { schemaVersion: 1, generatedAt: snapshot.generatedAt, bytes: Buffer.byteLength(text), sha256: createHash('sha256').update(text).digest('hex') };
+    const fetchImpl = async (url: string | URL | Request) => new Response(String(url) === EVIDENCE_MANIFEST_URL ? JSON.stringify(manifest) : text);
+    expect(await main(['refresh', '--json'], io, { ...deps, fetchImpl: fetchImpl as typeof fetch })).toBe(0);
+    stdout = [];
+    expect(await main(['ranking', '--json'], io, deps)).toBe(0);
+    const ranking = JSON.parse(out());
+    expect(ranking.generatedAt).toBe(snapshot.generatedAt);
+    expect(ranking.sources).toEqual(snapshot.sources);
+    stdout = [];
+    expect(await main(['status'], io, deps)).toBe(0);
+    expect(out()).toContain('data of 2026-11-09');
+    stdout = [];
+    expect(await main(['refresh', '--json'], io, deps)).toBe(0);
+    expect(JSON.parse(out()).evidence.source).toBe('cache');
+    expect(err()).toContain('still using the cache from');
+  });
+
+  it('selects tiers by axis and rejects unknown axes for both views', async () => {
+    expect(await main(['tiers', '--axis', 'agentic'], io, deps)).toBe(0);
+    expect(out()).toMatch(/^agentic: light < 60 ≤ daily < 70 ≤ advanced < 80 ≤ frontier$/m);
+    expect(out()).not.toMatch(/^coding:|^reasoning:/m);
+    for (const command of ['tiers', 'ranking']) {
+      expect(await main([command, '--axis', 'Coding'], io, deps)).toBe(1);
+      expect(err()).toMatch(/unknown axis/);
+    }
+  });
   const HOUR = 3_600_000;
 
   it('route runs only orca account list when the table is fresh and says when it was built', async () => {
@@ -287,8 +383,8 @@ describe('placement table in the CLI', () => {
     expect(await main(['status', '--json'], io, { ...deps, now: NOW + 2 * HOUR })).toBe(0);
     const s = JSON.parse(out());
     expect(s.placements).toMatchObject({ builtAt: NOW, age: 2 * HOUR, version: VERSION, rebuilt: null, saveError: null });
-    expect(s.placements.scoreScale).toBeNull();
-    expect(s.scored).toEqual([]);
+    expect(s.placements).not.toHaveProperty('scoreScale');
+    expect(s).not.toHaveProperty('scored');
     stdout = [];
     expect(await main(['status'], io, { ...deps, now: NOW + 2 * HOUR })).toBe(0);
     expect(out()).toContain(`placements: built 2h ago (orcacompass ${VERSION})`);
@@ -298,9 +394,9 @@ describe('placement table in the CLI', () => {
     expect(await main(['tiers'], io, deps)).toBe(0);
     const text = out();
     expect(text).toContain(`placements: built now: no table yet (orcacompass ${VERSION})`);
-    expect(text).toMatch(/^catalog: snapshot, \d+ models; scores: snapshot, \d+ models$/m);
+    expect(text).toMatch(/^coding: light < 68 ≤ daily < 76 ≤ advanced < 84 ≤ frontier$/m);
     expect(text).toMatch(/^frontier:$/m);
-    expect(text).toMatch(/^  codex gpt-6-astra  family/m);
+    expect(text).toMatch(/^  codex gpt-6-astra  coding 85\.5 F measured\(5\)/m);
     expect(text).toMatch(/^  claude claude-haiku-5-5  /m);
     expect(text).toMatch(/^unclassified: \d+$/m);
     stdout = [];

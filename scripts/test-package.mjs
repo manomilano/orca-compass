@@ -51,7 +51,7 @@ try {
   const help = run([entry, '--help']);
   assert.equal(help.status, 0, help.stderr);
   assert.match(help.stdout, /usage: orcacompass <command>/);
-  assert.match(help.stdout, /route --tier <light\|daily\|advanced\|frontier>/);
+  assert.match(help.stdout, /route --need coding=<l>,agentic=<l>,reasoning=<l>/);
   assert.match(help.stdout, /install \[-g\|--global/);
   assert.equal(help.stderr, '');
   const invalid = run([entry, 'not-a-command']);
