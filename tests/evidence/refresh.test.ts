@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { buildSnapshot, calibrationChecks, DEFAULT_BANDS, diffSnapshots, displayName, estimateScores, familyOfSlug, hintPointsOf, mergeCurated } from '../../src/evidence/refresh.js';
+import { buildSnapshot, calibrationChecks, calibrationWarnings, DEFAULT_BANDS, diffSnapshots, displayName, estimateScores, familyOfSlug, hintPointsOf, mergeCurated } from '../../src/evidence/refresh.js';
 import { BENCHMARKS } from '../../src/evidence/scoring.js';
 import { parseSnapshot, type SnapshotModel, type SnapshotResult } from '../../src/evidence/snapshot.js';
 
@@ -285,11 +285,34 @@ describe('calibration and diffs', () => {
     expect(failures).toMatch(/claude-haiku-5-5.*light/i);
     expect(failures).toContain('claude-opus-5-5');
   });
-  it('allows measured cross-axis gaps and reports gaps without partial evidence on both axes', () => {
-    const extra: SnapshotModel = { id: 'extra', aliases: [], provider: 'test', name: 'Extra', results: [], scores: { coding: { score: 90, benchmarks: 2, kind: 'measured' }, agentic: { score: 40, benchmarks: 3, kind: 'measured' } } };
-    expect(calibrationChecks({ ...built, models: [...built.models, extra] }, 0.1)).toEqual([]);
-    extra.scores.agentic!.kind = 'estimated';
-    expect(calibrationChecks({ ...built, models: [...built.models, extra] }, 0.1).join('\n')).toMatch(/extra.*coding.*agentic/);
+  it.each([undefined, 'claude-sonnet'])('allows measured cross-axis gaps with family %s', (family) => {
+    const extra: SnapshotModel = { id: 'extra', family, aliases: [], provider: 'test', name: 'Extra', results: [], scores: { coding: { score: 90, benchmarks: 2, kind: 'measured' }, agentic: { score: 40, benchmarks: 3, kind: 'measured' } } };
+    const snapshot = { ...built, models: [...built.models, extra] };
+    expect(calibrationChecks(snapshot, 0.1)).toEqual([]);
+    expect(calibrationWarnings(snapshot, 0.1)).toEqual([]);
+  });
+  it('warns without failing for an unhinted sparse model with a cross-axis gap', () => {
+    const extra: SnapshotModel = { id: 'extra', aliases: [], provider: 'test', name: 'Extra', results: [], scores: { coding: { score: 70, benchmarks: 2, kind: 'measured' }, reasoning: { score: 90, benchmarks: 3, kind: 'estimated' } } };
+    const snapshot = { ...built, models: [...built.models, extra] };
+    expect(calibrationChecks(snapshot, 0.1)).toEqual([]);
+    expect(calibrationWarnings(snapshot, 0.1)).toEqual(['extra: coding daily and reasoning frontier differ by more than one band']);
+  });
+  it.each([
+    { id: 'extra', family: 'claude-sonnet' },
+    { id: 'gpt-6-2-sol', family: undefined },
+    { id: 'grok-4-7', family: 'grok' },
+  ])('fails for a hinted sparse model with a cross-axis gap: $id/$family', ({ id, family }) => {
+    const extra: SnapshotModel = { id, family, aliases: [], provider: 'test', name: 'Extra', results: [], scores: { coding: { score: 90, benchmarks: 2, kind: 'measured' }, agentic: { score: 40, benchmarks: 3, kind: 'estimated' } } };
+    const snapshot = { ...built, models: [...built.models, extra] };
+    expect(calibrationChecks(snapshot, 0.1)).toEqual([`${id}: coding frontier and agentic light differ by more than one band`]);
+    expect(calibrationWarnings(snapshot, 0.1)).toEqual([]);
+  });
+  it('does not warn for adjacent bands or an unranked axis', () => {
+    const extra: SnapshotModel = { id: 'extra', aliases: [], provider: 'test', name: 'Extra', results: [], scores: { coding: { score: 70, benchmarks: 2, kind: 'measured' }, reasoning: { score: 80, benchmarks: 3, kind: 'estimated' } } };
+    const snapshot = { ...built, models: [...built.models, extra] };
+    expect(calibrationWarnings(snapshot, 0.1)).toEqual([]);
+    delete extra.scores.coding;
+    expect(calibrationWarnings(snapshot, 0.1)).toEqual([]);
   });
   it('diffs bands and scores using the family-adjusted score', () => {
     const next = structuredClone(built);

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { buildSnapshot, calibrationChecks, DEFAULT_BANDS, diffSnapshots } from '../dist/evidence/refresh.js';
+import { buildSnapshot, calibrationChecks, calibrationWarnings, DEFAULT_BANDS, diffSnapshots } from '../dist/evidence/refresh.js';
 import { AXIS_WEIGHTS, BENCHMARKS } from '../dist/evidence/scoring.js';
 import { parseSnapshot } from '../dist/evidence/snapshot.js';
 
@@ -78,6 +78,7 @@ async function main() {
     const now = new Date().toISOString();
     const snapshot = buildSnapshot(dataset, { now, sourceFetchedAt: now, bands: previous?.bands ?? DEFAULT_BANDS, curated });
     const failures = calibrationChecks(snapshot, CLASS_WEIGHT);
+    for (const warning of calibrationWarnings(snapshot, CLASS_WEIGHT)) console.error(`WARNING: ${warning}`);
     if (failures.length) {
       for (const failure of failures) console.error(`Calibration failed: ${failure}`);
       process.exitCode = 1;

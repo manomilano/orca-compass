@@ -4,7 +4,7 @@ import { AXIS_WEIGHTS, axisScore, BENCHMARKS, MIN_BENCHMARKS, rescale } from './
 import { AXES, SNAPSHOT_SCHEMA, type Axis, type EvidenceSnapshot, type SnapshotModel, type SnapshotResult } from './snapshot.js';
 
 export const DEFAULT_BANDS: EvidenceSnapshot['bands'] = {
-  coding: [68, 76, 84], agentic: [60, 69, 80], reasoning: [70, 84, 88],
+  coding: [68, 76, 84], agentic: [60, 70, 80], reasoning: [70, 78, 86],
 };
 
 export const METRIC_MAP: Record<string, { benchmark: string; priority: number }> = {
@@ -297,7 +297,17 @@ export function calibrationChecks(snapshot: EvidenceSnapshot, classWeight: numbe
     const lower = sonnet && placement(sonnet, axis, snapshot, classWeight);
     if (!higher || !lower || higher.score <= lower.score) failures.push(`claude-fable-5-1 must rank above claude-sonnet-5-5 on ${axis}${!higher || !lower ? ' (missing model or score)' : ''}`);
   }
+  return [...failures, ...crossAxisFindings(snapshot, classWeight, true)];
+}
+
+export function calibrationWarnings(snapshot: EvidenceSnapshot, classWeight: number): string[] {
+  return crossAxisFindings(snapshot, classWeight, false);
+}
+
+function crossAxisFindings(snapshot: EvidenceSnapshot, classWeight: number, hinted: boolean): string[] {
+  const findings: string[] = [];
   for (const model of snapshot.models) {
+    if ((hintPointsOf(model) !== undefined) !== hinted) continue;
     const ranked = AXES.filter((axis) => model.scores[axis] !== undefined);
     const hasPartialEvidence = (axis: Axis): boolean => model.scores[axis]?.kind === 'measured' && model.scores[axis]!.benchmarks >= MIN_BENCHMARKS;
     for (let i = 0; i < ranked.length; i++) {
@@ -306,9 +316,9 @@ export function calibrationChecks(snapshot: EvidenceSnapshot, classWeight: numbe
         // Design 7.4 permits a large gap when both axes have independent evidence.
         if (hasPartialEvidence(a) && hasPartialEvidence(b)) continue;
         const first = placement(model, a, snapshot, classWeight)!, second = placement(model, b, snapshot, classWeight)!;
-        if (Math.abs(BANDS.indexOf(first.band) - BANDS.indexOf(second.band)) > 1) failures.push(`${model.id}: ${a} ${first.band} and ${b} ${second.band} differ by more than one band`);
+        if (Math.abs(BANDS.indexOf(first.band) - BANDS.indexOf(second.band)) > 1) findings.push(`${model.id}: ${a} ${first.band} and ${b} ${second.band} differ by more than one band`);
       }
     }
   }
-  return failures;
+  return findings;
 }
