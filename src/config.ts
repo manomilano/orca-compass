@@ -11,8 +11,10 @@ export const DEFAULT_CONFIG: Config = {
   thresholds: { longPercent: 95, sessionPercent: 90 },
   defaultEffort: { light: 'low', daily: 'medium', advanced: 'medium', frontier: 'high' },
   effortPolicy: 'balanced',
-  scoreWeight: 0.4,
-  modelsDevTtlHours: 24,
+  classWeight: 0.1,
+  handoutMinutes: 10,
+  handoutPercent: 5,
+  evidenceTtlHours: 24,
   placementsTtlHours: 5,
   usageStaleMinutes: 30,
   rejectionTtlHours: 168,
@@ -32,7 +34,7 @@ export class ConfigError extends Error {
 }
 
 /** Missing file → defaults. Otherwise the file is deep-merged over the defaults; unknown keys are ignored. */
-export function loadConfig(path = configPath()): Config {
+export function loadConfig(path = configPath(), warn?: (message: string) => void): Config {
   let text: string;
   try {
     text = readFileSync(path, 'utf8');
@@ -47,6 +49,10 @@ export function loadConfig(path = configPath()): Config {
     throw new ConfigError(path, `invalid JSON: ${(e as Error).message}`);
   }
   try {
+    if (isObj(raw)) {
+      if (Object.hasOwn(raw, 'scoreWeight')) warn?.('scoreWeight is no longer used (OrcaCompass 0.3 ranks models by benchmark evidence; see classWeight)');
+      if (Object.hasOwn(raw, 'modelsDevTtlHours')) warn?.('modelsDevTtlHours is no longer used (the evidence snapshot is the catalog; see evidenceTtlHours)');
+    }
     return merge(raw);
   } catch (e) {
     if (e instanceof Invalid) throw new ConfigError(path, e.message);
@@ -128,8 +134,10 @@ function merge(raw: unknown): Config {
     if (!EFFORT_POLICIES.includes(r.effortPolicy as EffortPolicy)) throw new Invalid(`effortPolicy must be one of ${EFFORT_POLICIES.join(', ')}`);
     c.effortPolicy = r.effortPolicy as EffortPolicy;
   }
-  if (r.scoreWeight !== undefined) c.scoreWeight = fraction(r.scoreWeight, 'scoreWeight');
-  if (r.modelsDevTtlHours !== undefined) c.modelsDevTtlHours = num(r.modelsDevTtlHours, 'modelsDevTtlHours');
+  if (r.classWeight !== undefined) c.classWeight = fraction(r.classWeight, 'classWeight');
+  if (r.handoutMinutes !== undefined) c.handoutMinutes = num(r.handoutMinutes, 'handoutMinutes');
+  if (r.handoutPercent !== undefined) c.handoutPercent = num(r.handoutPercent, 'handoutPercent');
+  if (r.evidenceTtlHours !== undefined) c.evidenceTtlHours = num(r.evidenceTtlHours, 'evidenceTtlHours');
   if (r.placementsTtlHours !== undefined) c.placementsTtlHours = num(r.placementsTtlHours, 'placementsTtlHours');
   if (r.usageStaleMinutes !== undefined) c.usageStaleMinutes = num(r.usageStaleMinutes, 'usageStaleMinutes');
   if (r.rejectionTtlHours !== undefined) c.rejectionTtlHours = num(r.rejectionTtlHours, 'rejectionTtlHours');

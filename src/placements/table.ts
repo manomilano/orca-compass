@@ -9,7 +9,7 @@ export const PLACEMENTS_FILE = 'placements.json';
 export const PLACEMENTS_SCHEMA = 2;
 
 export const builtWith = (config: Config): BuiltWith =>
-  structuredClone({ tierOverrides: config.tierOverrides, cursorAuto: config.cursorAuto, scoreWeight: config.scoreWeight });
+  structuredClone({ tierOverrides: config.tierOverrides, cursorAuto: config.cursorAuto, classWeight: config.classWeight });
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isInt = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) >= 0;
@@ -45,7 +45,7 @@ export function parseTable(text: string | undefined): PlacementTable | undefined
   }
   if (!isObj(raw) || raw.schemaVersion !== PLACEMENTS_SCHEMA || typeof raw.version !== 'string' || !isInt(raw.builtAt)) return undefined;
   const b = raw.builtWith;
-  if (!isObj(b) || !isObj(b.tierOverrides) || typeof b.cursorAuto !== 'boolean' || typeof b.scoreWeight !== 'number') return undefined;
+  if (!isObj(b) || !isObj(b.tierOverrides) || typeof b.cursorAuto !== 'boolean' || typeof b.classWeight !== 'number') return undefined;
   const s = raw.sources;
   if (!isObj(s) || !validSource(s.catalog) || (s.scores !== null && !validSource(s.scores))) return undefined;
   if (!Array.isArray(raw.agents) || !raw.agents.every(validAgent)) return undefined;
@@ -66,7 +66,7 @@ export function readTable(readFile: (p: string) => string | undefined, dir: stri
 export type Staleness = 'missing' | 'invalid' | 'version' | 'expired' | 'config' | 'agent-appeared';
 
 const canonical = (b: BuiltWith): string =>
-  JSON.stringify({ cursorAuto: b.cursorAuto, scoreWeight: b.scoreWeight, tierOverrides: Object.fromEntries(Object.entries(b.tierOverrides).sort()) });
+  JSON.stringify({ cursorAuto: b.cursorAuto, classWeight: b.classWeight, tierOverrides: Object.fromEntries(Object.entries(b.tierOverrides).sort()) });
 
 /** Why the table must be rebuilt, or undefined when it can be used as is. */
 export function staleness(read: ReadTable, opts: {

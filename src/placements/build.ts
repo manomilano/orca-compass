@@ -33,7 +33,7 @@ export const installedAgents = (deps: Locator): AgentId[] => AGENT_IDS.filter((a
 
 /** The scales the placements draw on, computed once over the whole datasets. */
 export function placementScales(ratings: RatedModel[] | undefined, config: Config): Scales {
-  const score = scoreScale(ratings, config.scoreWeight);
+  const score = scoreScale(ratings, config.classWeight);
   return score ? { score } : {};
 }
 
@@ -68,7 +68,7 @@ export interface Built {
 export async function buildPlacements(config: Config, deps: BuildDeps = {}): Promise<Built> {
   const now = deps.now ?? Date.now();
   const env = deps.env ?? process.env;
-  const opts = { ttlHours: config.modelsDevTtlHours, now, fetchImpl: deps.fetchImpl, refresh: deps.refresh };
+  const opts = { ttlHours: config.evidenceTtlHours, now, fetchImpl: deps.fetchImpl, refresh: deps.refresh };
   const catalogP = loadCatalog(opts);
   // Scores only add tiers for models outside the family table, so a failure must not stop the build.
   const ratingsP = loadRatings(opts).catch(() => undefined);

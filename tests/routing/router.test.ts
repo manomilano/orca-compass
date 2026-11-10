@@ -358,7 +358,7 @@ describe('score-placed models', () => {
   const scored: Environment = placed({
     ...env,
     discoveries: env.discoveries.map((d) => (d.agent === 'cursor' ? { ...d, models: [muse] } : d)),
-  }, { ratings });
+  }, { ratings, config: { ...DEFAULT_CONFIG, classWeight: 0.4 } });
 
   it('routes them with the score as the reason and at most medium confidence', () => {
     const d = route({ tier: 'daily', agents: ['cursor'] }, scored, DEFAULT_CONFIG);
@@ -376,7 +376,7 @@ describe('score-placed models', () => {
       discoveries: scored.discoveries.map((d) => (d.agent === 'cursor'
         ? { ...d, models: [kimi('kimi-k3', '2026-07-16', ['monthly', 'bucket:Other Models']), kimi('kimi-k2.7-code', '2026-06-12', ['monthly'])] }
         : d)),
-    }, { ratings });
+    }, { ratings, config: { ...DEFAULT_CONFIG, classWeight: 0.4 } });
     expect(route({ tier: 'daily', agents: ['cursor'] }, split, DEFAULT_CONFIG).route?.model).toBe('kimi-k3-medium');
     expect(route({ tier: 'light', agents: ['cursor'] }, split, DEFAULT_CONFIG).route?.model).toBe('kimi-k2.7-code-medium');
   });

@@ -40,8 +40,10 @@ describe('DEFAULT_CONFIG', () => {
       thresholds: { longPercent: 95, sessionPercent: 90 },
       defaultEffort: { light: 'low', daily: 'medium', advanced: 'medium', frontier: 'high' },
       effortPolicy: 'balanced',
-      scoreWeight: 0.4,
-      modelsDevTtlHours: 24,
+      classWeight: 0.1,
+      handoutMinutes: 10,
+      handoutPercent: 5,
+      evidenceTtlHours: 24,
       placementsTtlHours: 5,
       usageStaleMinutes: 30,
       rejectionTtlHours: 168,
@@ -85,8 +87,10 @@ describe('loadConfig', () => {
       pins: { frontier: { agent: 'claude', model: 'claude-fable-5-1' } },
       tierOverrides: { 'grok-4.7': 'advanced' },
       defaultEffort: { light: 'minimal' },
-      scoreWeight: 0.6,
-      modelsDevTtlHours: 12,
+      classWeight: 0.3,
+      handoutMinutes: 0,
+      handoutPercent: 12.5,
+      evidenceTtlHours: 1,
       usageStaleMinutes: 15,
       excludeNoZdr: true,
       cursorAuto: false,
@@ -96,14 +100,29 @@ describe('loadConfig', () => {
     expect(cfg.pins.frontier).toEqual({ agent: 'claude', model: 'claude-fable-5-1' });
     expect(cfg.tierOverrides).toEqual({ 'grok-4.7': 'advanced' });
     expect(cfg.defaultEffort).toEqual({ ...DEFAULT_CONFIG.defaultEffort, light: 'minimal' });
-    expect(cfg).toMatchObject({ scoreWeight: 0.6, modelsDevTtlHours: 12, usageStaleMinutes: 15, excludeNoZdr: true, cursorAuto: false });
+    expect(cfg).toMatchObject({ classWeight: 0.3, handoutMinutes: 0, handoutPercent: 12.5, evidenceTtlHours: 1, usageStaleMinutes: 15, excludeNoZdr: true, cursorAuto: false });
   });
 
   it('ignores the retired priceThresholds key', () => {
-    write('{"priceThresholds":{"light":"cheap"},"scoreWeight":0}');
+    write('{"priceThresholds":{"light":"cheap"},"classWeight":0}');
     const cfg = loadConfig();
-    expect(cfg).toEqual({ ...DEFAULT_CONFIG, scoreWeight: 0 });
+    expect(cfg).toEqual({ ...DEFAULT_CONFIG, classWeight: 0 });
     expect(cfg).not.toHaveProperty('priceThresholds');
+  });
+
+  it('ignores removed keys and warns once per key', () => {
+    write('{"scoreWeight":0.4,"modelsDevTtlHours":12}');
+    const warnings: string[] = [];
+    expect(loadConfig(configPath(), (message) => warnings.push(message))).toEqual(DEFAULT_CONFIG);
+    expect(warnings).toEqual([
+      'scoreWeight is no longer used (OrcaCompass 0.3 ranks models by benchmark evidence; see classWeight)',
+      'modelsDevTtlHours is no longer used (the evidence snapshot is the catalog; see evidenceTtlHours)',
+    ]);
+  });
+
+  it.each([['classWeight', 1.5], ['classWeight', 'a'], ['handoutMinutes', -1]])('reports invalid %s', (key, value) => {
+    write(JSON.stringify({ [key]: value }));
+    expect(configErrorOf(() => loadConfig()).message).toContain(key);
   });
 
   it('reads an explicit path', () => {
@@ -153,11 +172,11 @@ describe('loadConfig', () => {
       '{"allowAgents":[1]}',
       '{"thresholds":{"longPercent":"95"}}',
       '{"thresholds":5}',
-      '{"scoreWeight":"0.4"}',
-      '{"scoreWeight":1.5}',
-      '{"scoreWeight":-0.1}',
-      '{"scoreWeight":null}',
-      '{"modelsDevTtlHours":"24"}',
+      '{"classWeight":"0.4"}',
+      '{"classWeight":1.5}',
+      '{"classWeight":-0.1}',
+      '{"classWeight":null}',
+      '{"handoutMinutes":-1}',
       '{"placementsTtlHours":-1}',
       '{"placementsTtlHours":"5"}',
       '{"usageStaleMinutes":-1}',
@@ -235,7 +254,7 @@ describe('writeAgentChoice', () => {
       '    ]',
       '}',
     ].join('\r\n'));
-    expect(loadConfig()).toMatchObject({ allowAgents: ['claude'], denyAgents: ['codex', 'grok'], scoreWeight: 0.5 });
+    expect(loadConfig()).toMatchObject({ allowAgents: ['claude'], denyAgents: ['codex', 'grok'], classWeight: 0.1 });
   });
 
   it('removes allowAgents and denyAgents on reset', () => {
@@ -248,9 +267,9 @@ describe('writeAgentChoice', () => {
     write('{bad');
     expect(configErrorOf(() => writeAgentChoice({ denyAgents: ['grok'] })).message).toMatch(/invalid JSON/);
     expect(read()).toBe('{bad');
-    write('{"scoreWeight": 7}');
-    expect(configErrorOf(() => writeAgentChoice({ denyAgents: ['grok'] })).message).toMatch(/scoreWeight/);
-    expect(read()).toBe('{"scoreWeight": 7}');
+    write('{"classWeight": 7}');
+    expect(configErrorOf(() => writeAgentChoice({ denyAgents: ['grok'] })).message).toMatch(/classWeight/);
+    expect(read()).toBe('{"classWeight": 7}');
   });
 });
 

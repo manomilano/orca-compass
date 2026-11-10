@@ -10,7 +10,7 @@ const m = (family: string | undefined, outputCost?: number): ModelMeta & { outpu
 
 // Model Index numbers as of 2026-10-30 (scores and OpenRouter output prices).
 const ratings = toRatings(JSON.parse(readFileSync(new URL('../fixtures/modelindex-mini.json', import.meta.url), 'utf8')));
-const scale = scoreScale(ratings, DEFAULT_CONFIG.scoreWeight)!;
+const scale = scoreScale(ratings, 0.4)!;
 const tierOf = (id: string) => classifyModel(id, undefined, DEFAULT_CONFIG, scale)?.tier;
 
 describe('classifyModel', () => {
@@ -183,7 +183,7 @@ describe('capability score', () => {
 
   it('never places a model above Advanced', () => {
     const top: RatedModel = { id: 'mega-1', name: 'Mega 1', date: '2026-10-01', score: 205, out: 60 };
-    const big = scoreScale([...ratings, top], DEFAULT_CONFIG.scoreWeight)!;
+    const big = scoreScale([...ratings, top], 0.4)!;
     expect(combinedScore(big, top)).toBeGreaterThan(big.cuts[2]);
     expect(classifyModel('mega-1', undefined, DEFAULT_CONFIG, big)?.tier).toBe('advanced');
   });

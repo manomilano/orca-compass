@@ -131,7 +131,7 @@ export interface SourceInfo {
 }
 
 /** The config keys that move a model between tiers; a change rebuilds the table. */
-export type BuiltWith = Pick<Config, 'tierOverrides' | 'cursorAuto' | 'scoreWeight'>;
+export type BuiltWith = Pick<Config, 'tierOverrides' | 'cursorAuto' | 'classWeight'>;
 
 /** Every model's tiers, built from every source at once and cached for `placementsTtlHours`. */
 export interface PlacementTable {
@@ -275,15 +275,17 @@ export interface Config {
   defaultEffort: Record<Tier, Effort>;
   /** How a reasoning demand (--demand) maps to effort. */
   effortPolicy: EffortPolicy;
-  /** Intelligence weight of the capability score, 0..1; price gets the rest. */
-  scoreWeight: number;
-  modelsDevTtlHours: number;
+  /** Weight of the class hint in an evidence-based profile, 0..1. */
+  classWeight: number;
+  handoutMinutes: number;
+  handoutPercent: number;
+  evidenceTtlHours: number;
   /** How long the placement table (every model's tiers, built from every source) is reused; 0 rebuilds on every command. */
   placementsTtlHours: number;
   usageStaleMinutes: number;
   /** How long a model an agent refused at launch is skipped. */
   rejectionTtlHours: number;
   excludeNoZdr: boolean;
-  /** Route Cursor's `auto` in Light and Daily, ahead of named Cursor models. */
+  /** Offer Cursor's `auto` as a fallback when no named model can be routed. */
   cursorAuto: boolean;
 }

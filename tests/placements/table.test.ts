@@ -117,7 +117,7 @@ describe('staleness', () => {
     ['expired', read({ builtAt: NOW + 48 * HOUR }), {}],
     ['config', read(), { config: { ...DEFAULT_CONFIG, tierOverrides: { 'claude-opus-5-5': 'frontier' } } }],
     ['config', read(), { config: { ...DEFAULT_CONFIG, cursorAuto: false } }],
-    ['config', read(), { config: { ...DEFAULT_CONFIG, scoreWeight: 0.5 } }],
+    ['config', read(), { config: { ...DEFAULT_CONFIG, classWeight: 0.5 } }],
     ['agent-appeared', read(), { onPath: ['claude', 'muse'] }],
   ])('is %s', (expected, r, patch) => {
     expect(staleness(r, { ...fresh, ...patch })).toBe(expected);
@@ -129,7 +129,7 @@ describe('staleness', () => {
   });
 
   it('ignores key order in builtWith', () => {
-    const reordered = tableFixture({ builtWith: { scoreWeight: 0.4, cursorAuto: true, tierOverrides: {} } });
+    const reordered = tableFixture({ builtWith: { classWeight: 0.1, cursorAuto: true, tierOverrides: {} } });
     expect(staleness({ table: reordered, present: true }, fresh)).toBeUndefined();
   });
 
@@ -140,7 +140,7 @@ describe('staleness', () => {
 
 describe('builtWith and tableAge', () => {
   it('copies only the three placement keys', () => {
-    expect(builtWith({ ...DEFAULT_CONFIG, banModels: ['x'] })).toEqual({ tierOverrides: {}, cursorAuto: true, scoreWeight: 0.4 });
+    expect(builtWith({ ...DEFAULT_CONFIG, banModels: ['x'] })).toEqual({ tierOverrides: {}, cursorAuto: true, classWeight: 0.1 });
   });
 
   it('measures the age in milliseconds', () => {
