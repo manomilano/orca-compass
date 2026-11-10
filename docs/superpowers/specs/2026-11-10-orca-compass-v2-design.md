@@ -330,7 +330,13 @@ Evidence improves in stages, and the profiles always use the best they have:
    `benchmarks`). Each pair yields a candidate value "reference's axis score + gap"; the
    estimate is the **median over all pairs**, and it needs at least two shared
    benchmarks, otherwise the stage-1 value stays. Label `estimated`, with the number of
-   shared benchmarks. Vendor benchmark names are mapped to snapshot benchmark ids by a
+   shared benchmarks. **Same publication first** (added 2026-11-10 after the first
+   full-data build): a pair is formed only between rows with the same `source` (the
+   same board or the same vendor comparison table, so both numbers come from one
+   harness) whenever at least two shared benchmarks have such pairs; only when they do
+   not is the pool widened to every reference row on the benchmark. Without this,
+   Composer 2.5's two Cursor-table rows were compared with dozens of unrelated vendor
+   numbers and landed 13 points under Opus 4.7, the model the table puts it level with. Vendor benchmark names are mapped to snapshot benchmark ids by a
    small bridge table in the refresh script (for example `frontierswe-v2` ->
    `epoch_frontierswe`), extended as new names appear. Composer 2.5 is the curated
    example: its rows compare with Opus 4.7 and GPT-5.5 on Terminal-Bench 2.0 and
