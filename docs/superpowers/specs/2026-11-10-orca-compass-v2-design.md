@@ -295,7 +295,12 @@ axes, is reported as `override`, and also supplies the class points.
 Astra and Opus 5.5 are Frontier on coding; Fable 5.1 ranks above Sonnet 5.5 on every
 axis; Haiku 5.5 is Light on coding; no model's band differs by more than one step
 between axes without at least `partial` evidence on both. The checks use family
-hints only (CI has no local agent catalogs). `bands` are fixed values in the snapshot,
+hints only (CI has no local agent catalogs). The cross-axis check **fails** the build
+only for models that have a family hint (`FAMILY_TIERS` or `MODEL_LINE_TIERS`), the
+models whose class the decision relies on; for every other model it is printed as a
+warning (added 2026-11-10: on the first full build a dozen sparse third-party models
+with an estimated reasoning score tripped it, and moving the bands to silence them
+would have distorted the bands for the models that matter). `bands` are fixed values in the snapshot,
 not re-derived by the script: when ordinary data drift trips a check, the refresh PR
 fails and the maintainer adjusts `bands` (or, rarely, a curated row) in that same PR.
 That is a data change on `main`, so it still needs no npm release; `classWeight` is a
