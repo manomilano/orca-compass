@@ -628,6 +628,13 @@ warning stays on the roadmap.
   refresh PR.
 - Models.dev is dropped (owner's decision, 2026-11-10); the snapshot's model list is
   the catalog. Prices and context length are not used.
+- Starting bands in the bundled snapshot (set 2026-11-10 from the first full build):
+  coding 68 / 76 / 84, agentic 60 / 70 / 80, reasoning **72 / 80 / 88**. The reasoning
+  cuts sit higher than the others because reasoning scores run high across the board
+  (with 70 / 78 / 86, GPT-6.1 Terra's 79.1 made it Advanced class and GPT-6.1 Sol's
+  87.2 made it Frontier class on reasoning alone); with 72 / 80 / 88 Haiku 5.5 and
+  GPT-6 Luna are Light, Terra Daily, Sonnet 5.5 and Sol Advanced, Opus 5.5, Astra and
+  the Fables Frontier on every axis. The test fixture keeps its own bands.
 - The refresh is daily and run by the owner's automation (owner's decision,
   2026-11-10). What gets committed is the trimmed snapshot and manifest, never the raw
   dataset (my call, for the size of the git history).
