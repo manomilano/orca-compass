@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-10T14:54:03.893Z",
+  "generatedAt": "2026-11-10T15:43:40.968Z",
   "sources": [
     {
       "id": "llmbenchmark",
       "label": "LLMBenchmark.ai",
       "url": "https://llmbenchmark.ai",
       "license": "CC BY 4.0",
-      "fetchedAt": "2026-11-10T14:54:03.893Z",
+      "fetchedAt": "2026-11-10T15:43:40.968Z",
       "dataDate": "2026-11-10T04:18:08.098Z"
     }
   ],
@@ -170,9 +170,9 @@
       80
     ],
     "reasoning": [
-      70,
-      78,
-      86
+      72,
+      80,
+      88
     ]
   },
   "models": [

@@ -19,6 +19,17 @@ describe('profiles', () => {
     expect(calibrationChecks(bundled, DEFAULT_CONFIG.classWeight)).toEqual([]);
   });
 
+  it('keeps the bundled model classes aligned with the calibrated reasoning bands', () => {
+    const bundled = parseSnapshot(readFileSync(new URL('../../data/evidence-snapshot.json', import.meta.url), 'utf8'))!;
+    const expected = {
+      'claude-haiku-5-5': 'light', 'gpt-6-luna': 'light', 'gpt-6-1-terra': 'daily',
+      'claude-sonnet-5-5': 'advanced', 'gpt-6-1-sol': 'advanced', 'claude-opus-5-5': 'frontier',
+      'gpt-6-astra': 'frontier', 'claude-fable-5-1': 'frontier', 'claude-fable-5-2': 'frontier',
+    };
+    const classes = Object.fromEntries(Object.keys(expected).map((id) => [id, buildProfile(id, undefined, undefined, bundled, DEFAULT_CONFIG).class]));
+    expect(classes).toEqual(expected);
+  });
+
   it('scores Sonnet as Advanced on every axis and below Fable everywhere', () => {
     const sonnet = p('claude-sonnet-5-5');
     expect(sonnet.axes.coding).toMatchObject({ score: 80.9, evidence: 84.3, band: 'advanced', label: 'measured', benchmarks: 5 });

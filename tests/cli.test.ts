@@ -123,9 +123,9 @@ describe('route', () => {
   it('prints a compact text decision', async () => {
     expect(await main(['route', '--tier', 'daily'], io, deps)).toBe(0);
     const lines = out().split('\n');
-    expect(lines[0]).toBe('advanced → claude · claude-sonnet-5-5 · medium (high confidence)');
+    expect(lines[0]).toBe('daily → codex · gpt-6.1-terra · medium (high confidence)');
     expect(lines.slice(1, -1).every((l) => l.startsWith('  '))).toBe(true);
-    expect(lines.at(-1)).toBe('orca orchestration worker-start --spec "<task>" --agent claude --model claude-sonnet-5-5 --effort medium');
+    expect(lines.at(-1)).toBe('orca orchestration worker-start --spec "<task>" --agent codex --model gpt-6.1-terra --effort medium');
   });
 
   it('passes agent, exclude-agent, effort and no-downgrade through to the router', async () => {
@@ -136,7 +136,7 @@ describe('route', () => {
     expect(JSON.parse(out()).route.agent).toBe('claude');
     stdout = [];
     await main(['route', '--tier', 'advanced', '--agent', 'codex', '--no-downgrade', '--json'], io, deps);
-    expect(JSON.parse(out())).toMatchObject({ status: 'ok', tier: 'frontier', requestedTier: 'advanced', upgraded: true, downgraded: false, route: { agent: 'codex', model: 'gpt-6-astra' } });
+    expect(JSON.parse(out())).toMatchObject({ status: 'ok', tier: 'advanced', requestedTier: 'advanced', upgraded: false, downgraded: false, route: { agent: 'codex', model: 'gpt-6.1-sol' } });
   });
 
   it('routes cursor-only Daily to a named model', async () => {
@@ -458,9 +458,9 @@ describe('prefer', () => {
     expect(d.risk).toMatchObject({ pool: 'fableWeekly' });
     expect(d.alternatives[0].risk).toMatchObject({ projectedPercent: expect.any(Number) });
 
-    await main(['prefer', 'daily', 'codex', 'gpt-6.1-terra'], io, deps);
+    await main(['prefer', 'advanced', 'codex', 'gpt-6.1-terra'], io, deps);
     stdout = [];
-    await main(['route', '--tier', 'daily'], io, deps);
+    await main(['route', '--tier', 'advanced'], io, deps);
     expect(out()).toMatch(/warning: preferred codex gpt-6\.1-terra skipped: weekly on pace for 120% \(limit 100%\), resets in 5d/);
   });
 

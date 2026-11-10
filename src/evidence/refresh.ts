@@ -6,7 +6,7 @@ import { AXIS_WEIGHTS, axisScore, BENCHMARKS, MIN_BENCHMARKS, rescale } from './
 import { AXES, SNAPSHOT_SCHEMA, type Axis, type EvidenceSnapshot, type SnapshotModel, type SnapshotResult } from './snapshot.js';
 
 export const DEFAULT_BANDS: EvidenceSnapshot['bands'] = {
-  coding: [68, 76, 84], agentic: [60, 70, 80], reasoning: [70, 78, 86],
+  coding: [68, 76, 84], agentic: [60, 70, 80], reasoning: [72, 80, 88],
 };
 
 export const METRIC_MAP: Record<string, { benchmark: string; priority: number }> = {

@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// Build first with npm run build. Existing snapshot bands are retained; to change
+// the cuts, edit the previous snapshot's bands before running this script.
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
