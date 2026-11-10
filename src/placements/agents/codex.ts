@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { normalizeModelId } from '../ids.js';
 import { parseEffort } from '../../routing/effort.js';
 import { FAMILY_TIERS } from '../tiers.js';
 import type { AgentDiscovery, Effort, EffortSource, LaunchModel } from '../../types.js';
@@ -35,10 +36,11 @@ export async function discoverCodex(deps: AgentDeps): Promise<AgentDiscovery> {
     if (raw.length === 0) continue;
     const models: LaunchModel[] = raw.map(({ id, efforts, defaultEffort, description: lineup }) => {
       const native = defaultEffort === undefined ? undefined : parseEffort(defaultEffort);
+      const meta = deps.index[id] ?? deps.index[normalizeModelId(id)];
       return {
         agent: 'codex',
         modelId: id,
-        ...(deps.index[id] ? { meta: deps.index[id] } : {}),
+        ...(meta ? { meta } : {}),
         efforts: [...new Set(efforts.map(parseEffort).filter((e): e is Effort => e !== undefined))],
         effortSource,
         ...(native ? { defaultEffort: native } : {}),
@@ -49,20 +51,20 @@ export async function discoverCodex(deps: AgentDeps): Promise<AgentDiscovery> {
     });
     return { agent: 'codex', installed: true, models, note: `models from ${path}` };
   }
-  // Models.dev lists every OpenAI model; only the Codex lineup families are launchable here, and
+  // The evidence catalog lists every OpenAI model; only the Codex lineup families are launchable here, and
   // "-latest" ids are moving aliases.
   const families = Object.keys(FAMILY_TIERS).filter((f) => f.startsWith('gpt-'));
-  const models: LaunchModel[] = Object.values(deps.index)
+  const models: LaunchModel[] = [...new Map(Object.values(deps.index).map((m) => [m.id, m])).values()]
     .filter((m) => m.provider === 'openai' && m.family !== undefined && families.includes(m.family) && !m.id.endsWith('-latest'))
     .map((meta) => ({
       agent: 'codex',
       modelId: meta.id,
       meta,
-      efforts: (meta as typeof meta & { efforts?: Effort[] }).efforts?.length ? (meta as typeof meta & { efforts: Effort[] }).efforts : DEFAULT_EFFORTS,
-      effortSource: (meta as typeof meta & { efforts?: Effort[] }).efforts?.length ? 'catalog' : 'assumed',
+      efforts: DEFAULT_EFFORTS,
+      effortSource: 'assumed',
       launch: { kind: 'flag', model: meta.id },
       poolNames: ['session', 'weekly'],
     }));
-  if (models.length > 0) return { agent: 'codex', installed: true, models, note: 'models from Models.dev (Codex has not cached its model list yet)' };
+  if (models.length > 0) return { agent: 'codex', installed: true, models, note: 'models from the evidence catalog (Codex has not cached its model list yet)' };
   return { agent: 'codex', installed: true, models: [], note: 'no Codex model list found' };
 }

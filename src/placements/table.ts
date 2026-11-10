@@ -1,15 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { AXES } from '../evidence/snapshot.js';
 import { AGENT_IDS, CLASSIFICATION_SOURCES, TIERS, type AgentId, type BuiltWith, type Config, type PlacementTable } from '../types.js';
 
-// The placement table: every model's tiers, computed once from every source and reused until stale.
+// The placement table: every model's profile, computed from the snapshot and reused until stale.
 
 export const PLACEMENTS_FILE = 'placements.json';
-export const PLACEMENTS_SCHEMA = 2;
+export const PLACEMENTS_SCHEMA = 3;
 
 export const builtWith = (config: Config): BuiltWith =>
-  structuredClone({ tierOverrides: config.tierOverrides, cursorAuto: config.cursorAuto, classWeight: config.classWeight });
+  structuredClone({ tierOverrides: config.tierOverrides, classWeight: config.classWeight });
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isInt = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) >= 0;
@@ -23,11 +24,34 @@ function validLaunch(v: unknown): boolean {
   return isObj(v) && ((v.kind === 'flag' && typeof v.model === 'string') || (v.kind === 'variant' && isObj(v.ids)));
 }
 
+const nullableScore = (v: unknown): boolean => v === null || (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 100);
+const nullableTier = (v: unknown): boolean => v === null || TIERS.includes(v as never);
+const validHint = (v: unknown): boolean => v === null || (isObj(v) && TIERS.includes(v.tier as never) &&
+  CLASSIFICATION_SOURCES.includes(v.source as never) && (v.detail === undefined || typeof v.detail === 'string'));
+
+function validProfile(v: unknown): boolean {
+  if (!isObj(v) || !nullableTier(v.class) || !validHint(v.hint) || !isObj(v.axes)) return false;
+  const axes = v.axes;
+  return AXES.every((axis) => {
+    const p = axes[axis];
+    return isObj(p) && nullableScore(p.score) && nullableScore(p.evidence) && isInt(p.benchmarks) &&
+      ['measured', 'partial', 'estimated', 'assumed', 'unranked'].includes(p.label as string) && nullableTier(p.band) &&
+      (p.inheritedFrom === undefined || typeof p.inheritedFrom === 'string');
+  });
+}
+
+function validBands(v: unknown): boolean {
+  return isObj(v) && AXES.every((axis) => {
+    const cuts = v[axis];
+    return Array.isArray(cuts) && cuts.length === 3 && cuts.every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 100) &&
+      cuts[0] < cuts[1] && cuts[1] < cuts[2];
+  });
+}
+
 function validModel(v: unknown): boolean {
   if (!isObj(v)) return false;
   return typeof v.agent === 'string' && typeof v.modelId === 'string' && Array.isArray(v.efforts) && validLaunch(v.launch) &&
-    Array.isArray(v.poolNames) && Array.isArray(v.tiers) &&
-    Array.isArray(v.placements) && v.placements.every((p) => isObj(p) && TIERS.includes(p.tier as never) && CLASSIFICATION_SOURCES.includes(p.source as never));
+    Array.isArray(v.poolNames) && validProfile(v.profile);
 }
 
 function validAgent(v: unknown): boolean {
@@ -45,9 +69,9 @@ export function parseTable(text: string | undefined): PlacementTable | undefined
   }
   if (!isObj(raw) || raw.schemaVersion !== PLACEMENTS_SCHEMA || typeof raw.version !== 'string' || !isInt(raw.builtAt)) return undefined;
   const b = raw.builtWith;
-  if (!isObj(b) || !isObj(b.tierOverrides) || typeof b.cursorAuto !== 'boolean' || typeof b.classWeight !== 'number') return undefined;
+  if (!isObj(b) || !isObj(b.tierOverrides) || typeof b.classWeight !== 'number' || !Number.isFinite(b.classWeight) || b.classWeight < 0 || b.classWeight > 1) return undefined;
   const s = raw.sources;
-  if (!isObj(s) || !validSource(s.catalog) || (s.scores !== null && !validSource(s.scores))) return undefined;
+  if (!isObj(s) || !validSource(s.evidence) || !isObj(s.evidence) || typeof s.evidence.generatedAt !== 'string' || !Number.isFinite(Date.parse(s.evidence.generatedAt)) || !validBands(raw.bands)) return undefined;
   if (!Array.isArray(raw.agents) || !raw.agents.every(validAgent)) return undefined;
   return raw as unknown as PlacementTable;
 }
@@ -63,10 +87,10 @@ export function readTable(readFile: (p: string) => string | undefined, dir: stri
   return { table: parseTable(text), present: text !== undefined };
 }
 
-export type Staleness = 'missing' | 'invalid' | 'version' | 'expired' | 'config' | 'agent-appeared';
+export type Staleness = 'missing' | 'invalid' | 'version' | 'expired' | 'config' | 'agent-appeared' | 'evidence';
 
 const canonical = (b: BuiltWith): string =>
-  JSON.stringify({ cursorAuto: b.cursorAuto, classWeight: b.classWeight, tierOverrides: Object.fromEntries(Object.entries(b.tierOverrides).sort()) });
+  JSON.stringify({ classWeight: b.classWeight, tierOverrides: Object.fromEntries(Object.entries(b.tierOverrides).sort()) });
 
 /** Why the table must be rebuilt, or undefined when it can be used as is. */
 export function staleness(read: ReadTable, opts: {
@@ -76,6 +100,7 @@ export function staleness(read: ReadTable, opts: {
   config: Config;
   /** Agents whose executable is found now (looked up as discovery does), checked only against table entries with installed: false. */
   onPath: AgentId[];
+  evidenceGeneratedAt?: string;
 }): Staleness | undefined {
   if (!read.present) return 'missing';
   if (!read.table) return 'invalid';
@@ -84,6 +109,7 @@ export function staleness(read: ReadTable, opts: {
   // A build time in the future (clock set back, hand edit) is as untrustworthy as an old one.
   if (t.builtAt > opts.now || opts.now - t.builtAt >= opts.ttlHours * 3_600_000) return 'expired';
   if (canonical(t.builtWith) !== canonical(builtWith(opts.config))) return 'config';
+  if (opts.evidenceGeneratedAt !== undefined && t.sources.evidence.generatedAt !== opts.evidenceGeneratedAt) return 'evidence';
   if (t.agents.some((a) => !a.installed && AGENT_IDS.includes(a.agent) && opts.onPath.includes(a.agent))) return 'agent-appeared';
   return undefined;
 }

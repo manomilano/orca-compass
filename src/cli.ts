@@ -366,8 +366,8 @@ function buildStatus(gathered: Gathered, config: Config) {
   const scored: { agent: string; model: string; tier: Tier; detail: string }[] = [];
   for (const disc of env.discoveries) {
     for (const m of disc.models) {
-      if (m.placements.length === 0) unclassified.push({ agent: disc.agent, model: m.modelId });
-      for (const cls of m.placements) {
+      if (m.profile.class === null) unclassified.push({ agent: disc.agent, model: m.modelId });
+      for (const cls of (m.profile.hint ? [m.profile.hint] : [])) {
         if (cls.detail) scored.push({ agent: disc.agent, model: m.modelId, tier: cls.tier, detail: cls.detail });
       }
     }
@@ -375,8 +375,8 @@ function buildStatus(gathered: Gathered, config: Config) {
 
   return {
     now: env.now,
-    catalog: table.sources.catalog,
-    scores: table.sources.scores,
+    catalog: table.sources.evidence,
+    scores: table.sources.evidence,
     placements: placementsView(gathered, env.now),
     orcaAgents: env.orcaAgents ?? null,
     agents,
@@ -700,7 +700,8 @@ async function refreshCommand(args: string[], io: IO, deps: MainDeps): Promise<n
   const v = parse(args, { json: { type: 'boolean' } });
   const config = loadConfig();
   const { table, saveError } = await loadPlacements(config, { ...deps, refresh: true });
-  const { catalog: c, scores: r } = table.sources;
+  const c = table.sources.evidence;
+  const r = c;
   const at = (t: number) => new Date(t).toISOString();
   if (c.source !== 'network') io.err(`could not reach models.dev; still using the ${c.source} from ${at(c.fetchedAt)}`);
   if (r?.source !== 'network') {
@@ -733,6 +734,7 @@ const REBUILT_WORDS: Record<Staleness | 'refresh', string> = {
   config: 'config changed',
   'agent-appeared': 'new agent on PATH',
   refresh: 'refresh asked',
+  evidence: 'evidence changed',
 };
 
 function placementsView(g: Pick<Gathered, 'table' | 'rebuilt' | 'saveError'>, now: number) {
@@ -743,7 +745,7 @@ function placementsView(g: Pick<Gathered, 'table' | 'rebuilt' | 'saveError'>, no
     version: table.version,
     rebuilt: g.rebuilt ?? null,
     saveError: g.saveError ?? null,
-    scoreScale: table.sources.scoreScale,
+    scoreScale: null,
   };
 }
 
@@ -755,18 +757,19 @@ function placementsLines(p: ReturnType<typeof placementsView>, now: number): str
 }
 
 function tiersText(table: PlacementTable, view: ReturnType<typeof placementsView>, now: number): string[] {
-  const { catalog, scores } = table.sources;
+  const catalog = table.sources.evidence;
+  const scores = catalog;
   const lines = [
     ...placementsLines(view, now),
     `catalog: ${catalog.source}, ${catalog.models} models; scores: ${scores ? `${scores.source}, ${scores.models} models` : 'unavailable'}`,
   ];
-  const rows = table.agents.flatMap((a) => a.models.flatMap((m) => m.placements.map((c) => ({ agent: a.agent, model: m.modelId, tier: c.tier, detail: c.detail ?? c.source }))));
+  const rows = table.agents.flatMap((a) => a.models.flatMap((m) => (m.profile.hint ? [m.profile.hint] : []).map((c) => ({ agent: a.agent, model: m.modelId, tier: c.tier, detail: c.detail ?? c.source }))));
   rows.sort((x, y) => (x.agent < y.agent ? -1 : x.agent > y.agent ? 1 : x.model < y.model ? -1 : x.model > y.model ? 1 : 0));
   for (const tier of TIERS) {
     lines.push(`${tier}:`);
     for (const r of rows.filter((x) => x.tier === tier)) lines.push(`  ${r.agent} ${r.model}  ${r.detail}`);
   }
-  const unclassified = table.agents.flatMap((a) => a.models.filter((m) => m.placements.length === 0).map((m) => ({ agent: a.agent, model: m.modelId })));
+  const unclassified = table.agents.flatMap((a) => a.models.filter((m) => m.profile.class === null).map((m) => ({ agent: a.agent, model: m.modelId })));
   lines.push(`unclassified: ${unclassified.length}`);
   const byAgent = new Map<string, string[]>();
   for (const u of unclassified) byAgent.set(u.agent, [...(byAgent.get(u.agent) ?? []), u.model]);

@@ -349,7 +349,7 @@ function collectCandidates(agents: PlacedAgent[], env: Environment, config: Conf
     for (const model of d.models) {
       if (model.noZdr && config.excludeNoZdr) continue;
       // The table already holds the placement (built from every source); the route only reads it.
-      const placed = model.placements;
+      const placed = model.profile.hint ? [model.profile.hint] : [];
       const rejected = rejectionOf(model, env.rejections);
       const leftOut = banEntry(model, config.banModels) ? 'banned by you' : rejected ? rejectedText(rejected, env.now) : undefined;
       if (leftOut) {

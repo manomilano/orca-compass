@@ -15,7 +15,7 @@ describe('stored placement routing', () => {
       ...env,
       discoveries: env.discoveries.map((d) => (d.agent !== 'claude' ? d : {
         ...d,
-        models: d.models.map((m) => (m.modelId !== 'claude-fable-5-1' ? m : { ...m, placements: [{ tier: 'light' as const, source: 'override' as const }], tiers: ['light' as const] })),
+        models: d.models.map((m) => (m.modelId !== 'claude-fable-5-1' ? m : { ...m, profile: { ...m.profile, class: 'light' as const, hint: { tier: 'light' as const, source: 'override' as const } } })),
       })),
     };
     const light = route({ tier: 'light', agents: ['claude'] }, edited, DEFAULT_CONFIG);

@@ -154,8 +154,8 @@ describe('profileModels', () => {
     expect(placed[2].models[0].profile).toBe(placed[0].models[0].profile);
     expect(placed[1]).toMatchObject({ note: 'catalog', signedOut: false });
     expect(placed[1].models[1].profile).toMatchObject({ class: null, hint: null });
-    expect(placed[1].models[1].tiers).toEqual([]);
-    expect(placed[1].models[1].placements).toEqual([]);
+    expect(placed[1].models[1]).not.toHaveProperty('tiers');
+    expect(placed[1].models[1]).not.toHaveProperty('placements');
     expect(discoveries[0].models[0]).not.toHaveProperty('profile');
   });
 });

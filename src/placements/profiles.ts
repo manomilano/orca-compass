@@ -124,7 +124,7 @@ export function profileModels(discoveries: AgentDiscovery[], snapshot: EvidenceS
         profile = profiles.get(model.modelId) ?? buildProfile(model.modelId, metadata.get(model.modelId), lineups.get(model.modelId), snapshot, config);
         profiles.set(model.modelId, profile);
       }
-      return { ...model, profile, placements: profile.hint ? [profile.hint] : [], tiers: profile.class ? [profile.class] : [] };
+      return { ...model, profile };
     }),
   }));
 }

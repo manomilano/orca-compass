@@ -98,7 +98,7 @@ export function machineEnv(opts: PlaceOpts = {}): Environment {
       },
     },
   };
-  return placed({ now: NOW, discoveries, usage, catalogSource: 'snapshot', placementsBuiltAt: NOW }, opts);
+  return placed({ now: NOW, discoveries, usage, evidenceSource: 'snapshot', evidenceGeneratedAt: parseSnapshot(fixture('evidence-mini.json'))!.generatedAt, catalogSource: 'snapshot', scoreSource: 'snapshot', placementsBuiltAt: NOW }, opts);
 }
 
 /** Copy of env with one pool's fields overridden. */

@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { normalizeModelId } from '../ids.js';
 import { parseEffort } from '../../routing/effort.js';
 import type { AgentDiscovery, Effort, EffortSource, LaunchModel } from '../../types.js';
 import { homeDir } from '../../paths.js';
@@ -34,10 +35,11 @@ function fromClaudeCache(deps: AgentDeps, dir: string): { path: string; models: 
 }
 
 function toLaunch({ id, efforts, description: lineup }: RawModel, deps: AgentDeps, effortSource: EffortSource): LaunchModel {
+  const meta = deps.index[id] ?? deps.index[normalizeModelId(id)];
   return {
     agent: 'claude',
     modelId: id,
-    ...(deps.index[id] ? { meta: deps.index[id] } : {}),
+    ...(meta ? { meta } : {}),
     efforts: [...new Set(efforts.map(parseEffort).filter((e): e is Effort => e !== undefined))],
     effortSource,
     launch: { kind: 'flag', model: id },
@@ -46,7 +48,7 @@ function toLaunch({ id, efforts, description: lineup }: RawModel, deps: AgentDep
   };
 }
 
-/** Claude Code has no model list command: its account catalog, then Orca's probe, then the Models.dev catalog. */
+/** Claude Code has no model list command: its account catalog, then Orca's probe, then the evidence catalog. */
 export const locateClaude = (deps: Locator): string | undefined => deps.find('claude');
 
 export async function discoverClaude(deps: AgentDeps): Promise<AgentDiscovery> {
@@ -63,14 +65,14 @@ export async function discoverClaude(deps: AgentDeps): Promise<AgentDiscovery> {
     if (unique.size === 0) continue;
     return { agent: 'claude', installed: true, models: [...unique.values()].map((m) => toLaunch(m, deps, effortSource)), note: `models from ${path}` };
   }
-  const models: LaunchModel[] = Object.values(deps.index)
+  const models: LaunchModel[] = [...new Map(Object.values(deps.index).map((m) => [m.id, m])).values()]
     .filter((m) => m.provider === 'anthropic' && m.family?.startsWith('claude-'))
     .map((meta) => ({
       agent: 'claude',
       modelId: meta.id,
       meta,
-      efforts: (meta as typeof meta & { efforts?: Effort[] }).efforts?.length ? (meta as typeof meta & { efforts: Effort[] }).efforts : DEFAULT_EFFORTS,
-      effortSource: (meta as typeof meta & { efforts?: Effort[] }).efforts?.length ? 'catalog' : 'assumed',
+      efforts: DEFAULT_EFFORTS,
+      effortSource: 'assumed',
       launch: { kind: 'flag', model: meta.id },
       poolNames: poolNames(meta.id),
     }));

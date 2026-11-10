@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { readTextFile, type AgentDeps } from '../placements/agents/deps.js';
 import { buildPlacements, installedAgents } from '../placements/build.js';
 import { readTable, staleness, type Staleness } from '../placements/table.js';
@@ -35,11 +36,18 @@ export async function loadPlacements(config: Config, deps: GatherDeps = {}): Pro
   const now = deps.now ?? Date.now();
   const find = deps.find ?? findExecutable;
   const dir = deps.cacheDir ?? cacheDir();
-  const read = readTable(deps.readFile ?? readTextFile, dir);
+  const readFile = deps.readFile ?? readTextFile;
+  const read = readTable(readFile, dir);
+  let evidenceGeneratedAt: string | undefined;
+  try {
+    const check: unknown = JSON.parse(readFile(join(dir, 'evidence-check.json')) ?? '');
+    if (typeof check === 'object' && check !== null && 'generatedAt' in check && typeof check.generatedAt === 'string' &&
+      Number.isFinite(Date.parse(check.generatedAt))) evidenceGeneratedAt = check.generatedAt;
+  } catch { /* Missing or corrupt check metadata does not invalidate a fresh table. */ }
   const onPath = installedAgents({ find, env: deps.env ?? process.env });
   const why = deps.refresh
     ? 'refresh'
-    : staleness(read, { now, ttlHours: config.placementsTtlHours, version: deps.version ?? VERSION, config, onPath });
+    : staleness(read, { now, ttlHours: config.placementsTtlHours, version: deps.version ?? VERSION, config, onPath, evidenceGeneratedAt });
   if (why === undefined) return { table: read.table!, rebuilt: undefined };
   const built = await buildPlacements(config, { ...deps, now, cacheDir: dir });
   return { table: built.table, rebuilt: why, ...(built.saveError !== undefined ? { saveError: built.saveError } : {}) };
@@ -61,8 +69,10 @@ export async function gather(config: Config, deps: GatherDeps = {}): Promise<Gat
     usage,
     orcaAgents,
     placementsBuiltAt: table.builtAt,
-    catalogSource: table.sources.catalog.source,
-    ...(table.sources.scores ? { scoreSource: table.sources.scores.source } : {}),
+    evidenceSource: table.sources.evidence.source,
+    evidenceGeneratedAt: table.sources.evidence.generatedAt,
+    catalogSource: table.sources.evidence.source,
+    scoreSource: table.sources.evidence.source,
     ...(rejections.length > 0 ? { rejections } : {}),
   };
   return { env, ...placements };

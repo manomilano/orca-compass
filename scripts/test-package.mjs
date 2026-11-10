@@ -58,11 +58,11 @@ try {
   assert.equal(invalid.status, 1);
   assert.equal(invalid.stdout, '');
   assert.match(invalid.stderr, /unknown command: not-a-command/);
-  for (const name of ['models-snapshot.json', 'modelindex-snapshot.json']) {
-    const snapshot = JSON.parse(readFileSync(join(packageRoot, 'data', name), 'utf8'));
-    assert.ok(Object.keys(snapshot).length > 0, name + ' must contain bundled metadata');
-  }
-  for (const removed of ['data/benchmarks.json', 'dist/placements/benchmark.js', 'dist/placements/sources/benchmarks.js', 'dist/placements/sources/artificialanalysis.js']) {
+  const evidence = JSON.parse(readFileSync(join(packageRoot, 'data', 'evidence-snapshot.json'), 'utf8'));
+  assert.ok(evidence.models.length > 0, 'Evidence snapshot must contain bundled models');
+  const evidenceManifest = JSON.parse(readFileSync(join(packageRoot, 'data', 'evidence-manifest.json'), 'utf8'));
+  assert.match(evidenceManifest.sha256, /^[a-f0-9]{64}$/);
+  for (const removed of ['data/models-snapshot.json', 'data/modelindex-snapshot.json', 'dist/placements/sources/modelsdev.js', 'dist/placements/sources/modelindex.js', 'dist/placements/score.js', 'data/benchmarks.json', 'dist/placements/benchmark.js', 'dist/placements/sources/benchmarks.js', 'dist/placements/sources/artificialanalysis.js']) {
     assert.ok(!existsSync(join(packageRoot, removed)), `Removed data integration must not ship: ${removed}`);
   }
   assert.match(readFileSync(join(packageRoot, 'skills/orcacompass/SKILL.md'), 'utf8'), /orcacompass/);

@@ -209,7 +209,7 @@ describe('setup wizard', () => {
     expect(screen).toMatch(/^Favorites: none; every tier takes the route with the most room$/m);
     expect(screen).toMatch(/^Never used: nothing$/m);
     expect(screen).toMatch(/^ {2}light\s+claude · claude-haiku-5-5 · low$/m);
-    expect(screen).toMatch(/^ {2}frontier\s+claude · claude-fable-5-1 · high$/m);
+    expect(screen).toMatch(/^ {2}frontier\s+claude · claude-fable-5-2 · high$/m);
     expect(screen).toMatch(new RegExp(`Saved ${escape(configPath())}$`, 'm'));
     expect(config()).toEqual({});
   });

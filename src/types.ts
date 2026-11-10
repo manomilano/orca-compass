@@ -3,6 +3,7 @@
 
 export type { Axis } from './evidence/snapshot.js';
 export type { AxisProfile, EvidenceLabel, Profile } from './placements/profiles.js';
+import type { EvidenceSnapshot } from './evidence/snapshot.js';
 import type { Profile } from './placements/profiles.js';
 
 import type { Rejection } from './routing/rejection.js';
@@ -31,18 +32,6 @@ export interface ModelMeta {
 }
 export type ModelIndex = Record<string, ModelMeta>;
 
-/** A Model Index entry: capability score and OpenRouter output price (USD per million tokens). */
-export interface RatedModel {
-  id: string;
-  name: string;
-  date: string;
-  score: number;
-  out: number;
-  orId?: string;
-  hf?: string;
-  open?: boolean;
-}
-
 export type DataSource = 'network' | 'cache' | 'snapshot';
 
 export interface UsagePool {
@@ -69,13 +58,13 @@ export type Launch =
 
 /**
  * Where a model's supported efforts come from, most trusted first: the agent CLI's own model list or cache
- * (`provider`), Orca's catalog or effort menu (`orca`), Models.dev (`catalog`), or a built-in guess (`assumed`).
+ * (`provider`), Orca's catalog or effort menu (`orca`), or a built-in guess (`assumed`).
  */
-export type EffortSource = 'provider' | 'orca' | 'catalog' | 'assumed';
+export type EffortSource = 'provider' | 'orca' | 'assumed';
 
 export interface LaunchModel {
   agent: AgentId;
-  modelId: string; // Models.dev id when known, otherwise the raw id
+  modelId: string; // Canonical snapshot id when known, otherwise the raw id
   meta?: ModelMeta;
   efforts: Effort[];
   effortSource?: EffortSource;
@@ -112,10 +101,6 @@ export interface AgentDiscovery {
 /** A discovered model with its placement result, as stored in the placement table. */
 export interface PlacedModel extends LaunchModel {
   profile: Profile;
-  /** Transitional hint for the V1 router; removed when the profile table is wired. */
-  placements: Classification[];
-  /** Transitional highest band, for consumers awaiting the profile table. */
-  tiers: Tier[];
 }
 
 export interface PlacedAgent {
@@ -134,19 +119,18 @@ export interface SourceInfo {
 }
 
 /** The config keys that move a model between tiers; a change rebuilds the table. */
-export type BuiltWith = Pick<Config, 'tierOverrides' | 'cursorAuto' | 'classWeight'>;
+export type BuiltWith = Pick<Config, 'tierOverrides' | 'classWeight'>;
 
-/** Every model's tiers, built from every source at once and cached for `placementsTtlHours`. */
+/** Every discovered model's profile, cached for `placementsTtlHours`. */
 export interface PlacementTable {
-  schemaVersion: 2;
+  schemaVersion: 3;
   version: string;
   builtAt: number;
   builtWith: BuiltWith;
   sources: {
-    catalog: SourceInfo;
-    scores: SourceInfo | null;
-    scoreScale: { cuts: number[] } | null;
+    evidence: SourceInfo & { generatedAt: string };
   };
+  bands: EvidenceSnapshot['bands'];
   agents: PlacedAgent[];
 }
 
@@ -164,9 +148,12 @@ export interface Environment {
   orcaAgents?: OrcaAgents;
   /** When the placement table the discoveries come from was built. */
   placementsBuiltAt: number;
+  evidenceSource: DataSource;
+  evidenceGeneratedAt: string;
+  /** Compatibility alias of evidenceSource for one release. */
   catalogSource: DataSource;
-  /** Where the capability scores came from; absent when the table was built without them. */
-  scoreSource?: DataSource;
+  /** Compatibility alias of evidenceSource for one release. */
+  scoreSource: DataSource;
   /** Models an agent refused at launch recently (see `orcacompass verify`); routing skips them. */
   rejections?: Rejection[];
 }
@@ -265,7 +252,7 @@ export interface Config {
   pins: Partial<Record<Tier, Preference>>;
   /** Above this projected usage, replace the favorite only with a known within-limit alternative. */
   preferRiskLimit: number;
-  /** Model ids or Models.dev families the user never wants routed. */
+  /** Model ids or families the user never wants routed. */
   banModels: string[];
   /**
    * Agents used only when no other agent can take the job in any allowed tier (OpenCode: API keys cost per

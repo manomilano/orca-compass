@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readTextFile } from '../src/placements/agents/deps.js';
 import { fakeDeps, fixture, NOW, orcaDownRunner, runner } from './helpers/fakes.js';
-import { MODEL_INDEX_URL, toRatings } from '../src/placements/sources/modelindex.js';
+import { createHash } from 'node:crypto';
+import { EVIDENCE_MANIFEST_URL } from '../src/evidence/source.js';
 import type { Runner } from '../src/system/run.js';
 import { main, type MainDeps } from '../src/cli.js';
 import { DEFAULT_CONFIG } from '../src/config.js';
@@ -129,7 +130,7 @@ describe('route', () => {
 
   it('passes agent, exclude-agent, effort and no-downgrade through to the router', async () => {
     await main(['route', '--tier', 'frontier', '--agent', 'claude', '--effort', 'max', '--json'], io, deps);
-    expect(JSON.parse(out()).route).toEqual({ agent: 'claude', model: 'claude-fable-5-1', effort: 'max' });
+    expect(JSON.parse(out()).route).toEqual({ agent: 'claude', model: 'claude-fable-5-2', effort: 'max' });
     stdout = [];
     await main(['route', '--tier', 'frontier', '--exclude-agent', 'cursor', '--exclude-agent', 'codex', '--json'], io, deps);
     expect(JSON.parse(out()).route.agent).toBe('claude');
@@ -243,9 +244,9 @@ describe('status', () => {
 
 describe('refresh', () => {
   it('reloads the catalog and the Model Index and reports source and model counts', async () => {
-    const mini = fixture('modelsdev-mini.json');
-    const index = JSON.stringify({ fetchedAt: NOW, ratings: toRatings(JSON.parse(fixture('modelindex-mini.json'))) });
-    const fetchImpl = async (url: string | URL | Request) => new Response(String(url) === MODEL_INDEX_URL ? index : mini);
+    const snapshot = fixture('evidence-mini.json');
+    const manifest = { schemaVersion: 1, generatedAt: JSON.parse(snapshot).generatedAt, bytes: Buffer.byteLength(snapshot), sha256: createHash('sha256').update(snapshot).digest('hex') };
+    const fetchImpl = async (url: string | URL | Request) => new Response(String(url) === EVIDENCE_MANIFEST_URL ? JSON.stringify(manifest) : snapshot);
     const code = await main(['refresh'], io, { ...deps, fetchImpl: fetchImpl as typeof fetch });
     expect(code).toBe(0);
     expect(out()).toMatch(/^models\.dev: network, \d+ models/);
@@ -305,7 +306,7 @@ describe('placement table in the CLI', () => {
     stdout = [];
     expect(await main(['tiers', '--json'], io, { ...deps, now: NOW + HOUR })).toBe(0);
     const t = JSON.parse(out());
-    expect(t).toMatchObject({ schemaVersion: 2, version: VERSION, builtAt: NOW, age: HOUR });
+    expect(t).toMatchObject({ schemaVersion: 3, version: VERSION, builtAt: NOW, age: HOUR });
     expect(t.agents.map((a: { agent: string }) => a.agent)).toContain('codex');
   });
 
@@ -448,11 +449,11 @@ describe('prefer', () => {
   });
 
   it('routes to the preference and explains a skipped one', async () => {
-    await main(['prefer', 'frontier', 'claude', 'claude-fable-5-1'], io, deps);
+    await main(['prefer', 'frontier', 'claude', 'claude-fable-5-2'], io, deps);
     stdout = [];
     await main(['route', '--tier', 'frontier', '--json'], io, deps);
     const d = JSON.parse(out());
-    expect(d.route).toMatchObject({ agent: 'claude', model: 'claude-fable-5-1' });
+    expect(d.route).toMatchObject({ agent: 'claude', model: 'claude-fable-5-2' });
     expect(d.reasons).toContain('preferred route, on pace for 82%');
     expect(d.risk).toMatchObject({ pool: 'fableWeekly' });
     expect(d.alternatives[0].risk).toMatchObject({ projectedPercent: expect.any(Number) });
