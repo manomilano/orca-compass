@@ -28,7 +28,9 @@
   },
   "files": [
     "dist",
-    "data",
+    "data/evidence-snapshot.json",
+    "data/evidence-manifest.json",
+    "data/evidence-curated.json",
     "skills",
     "NOTICE"
   ],

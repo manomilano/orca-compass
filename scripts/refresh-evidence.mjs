@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-// Build first with npm run build. Existing snapshot bands are retained; to change
-// the cuts, edit the previous snapshot's bands before running this script.
+// Build first with npm run build. Reads the LLMBenchmark dataset committed at
+// data/llmbenchmark/dataset.json (or --from <file>; --fetch downloads a fresh copy
+// there first) and rebuilds data/evidence-snapshot.json and its manifest. Existing
+// snapshot bands are retained; to change the cuts, edit the previous snapshot's
+// bands before running this script.
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { buildSnapshot, calibrationChecks, calibrationWarnings, DEFAULT_BANDS, diffSnapshots } from '../dist/evidence/refresh.js';
@@ -13,6 +15,7 @@ import { parseSnapshot } from '../dist/evidence/snapshot.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DATASET_URL = 'https://llmbenchmark.ai/data/dataset.json';
+const DATASET_PATH = join(root, 'data', 'llmbenchmark', 'dataset.json');
 const METHODOLOGY_URL = 'https://llmbenchmark.ai/methodology';
 const CLASS_WEIGHT = 0.10;
 
@@ -57,6 +60,7 @@ function serializeSnapshot(snapshot) {
 async function main() {
   const { values } = parseArgs({ options: {
     from: { type: 'string' }, out: { type: 'string' }, diff: { type: 'string' },
+    fetch: { type: 'boolean', default: false },
     'check-methodology': { type: 'boolean', default: false },
   } });
   const out = resolve(values.out ?? join(root, 'data'));
@@ -68,42 +72,37 @@ async function main() {
   const curated = curatedText === undefined ? undefined : JSON.parse(curatedText);
   if (values['check-methodology']) await checkMethodology();
 
-  let temporary;
-  try {
-    let from = values.from;
-    if (!from) {
-      temporary = await mkdtemp(join(tmpdir(), 'orcacompass-evidence-'));
-      from = join(temporary, 'dataset.json');
-      await writeFile(from, await getText(DATASET_URL));
-    }
-    const dataset = JSON.parse(await readFile(from, 'utf8'));
-    const now = new Date().toISOString();
-    const snapshot = buildSnapshot(dataset, { now, sourceFetchedAt: now, bands: previous?.bands ?? DEFAULT_BANDS, curated });
-    const failures = calibrationChecks(snapshot, CLASS_WEIGHT);
-    for (const warning of calibrationWarnings(snapshot, CLASS_WEIGHT)) console.error(`WARNING: ${warning}`);
-    if (failures.length) {
-      for (const failure of failures) console.error(`Calibration failed: ${failure}`);
-      process.exitCode = 1;
-      return;
-    }
-    console.log('Calibration checks passed');
-    const bytes = Buffer.from(serializeSnapshot(snapshot));
-    const manifest = { generatedAt: snapshot.generatedAt, schemaVersion: snapshot.schemaVersion,
-      sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length };
-    const lines = diffSnapshots(previous, snapshot, CLASS_WEIGHT);
-    const diff = ['# Evidence snapshot refresh', '', ...(lines.length ? lines : ['No model profile changes.']), ''].join('\n');
-    await mkdir(out, { recursive: true });
-    await writeFile(snapshotPath, bytes);
-    await writeFile(join(out, 'evidence-manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
-    if (values.diff) await writeFile(values.diff, diff);
-    console.log(`Wrote ${snapshot.models.length} models (${bytes.length} bytes) to ${snapshotPath}`);
-    console.log(diff);
-  } finally {
-    // Only remove the temporary directory created by this invocation.
-    if (temporary && dirname(resolve(temporary)) === resolve(tmpdir()) && basename(temporary).startsWith('orcacompass-evidence-')) {
-      await rm(temporary, { recursive: true, force: true });
-    }
+  const from = resolve(values.from ?? DATASET_PATH);
+  if (values.fetch) {
+    if (values.from) throw new Error('--fetch replaces the repository dataset; it cannot be combined with --from');
+    await mkdir(dirname(from), { recursive: true });
+    await writeFile(from, await getText(DATASET_URL));
+    console.log(`Fetched ${DATASET_URL} to ${from}`);
   }
+  const datasetText = await optionalText(from);
+  if (datasetText === undefined) throw new Error(`dataset not found: ${from} (commit it there, pass --from <file>, or use --fetch)`);
+  const dataset = JSON.parse(datasetText);
+  const now = new Date().toISOString();
+  const snapshot = buildSnapshot(dataset, { now, sourceFetchedAt: now, bands: previous?.bands ?? DEFAULT_BANDS, curated });
+  const failures = calibrationChecks(snapshot, CLASS_WEIGHT);
+  for (const warning of calibrationWarnings(snapshot, CLASS_WEIGHT)) console.error(`WARNING: ${warning}`);
+  if (failures.length) {
+    for (const failure of failures) console.error(`Calibration failed: ${failure}`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log('Calibration checks passed');
+  const bytes = Buffer.from(serializeSnapshot(snapshot));
+  const manifest = { generatedAt: snapshot.generatedAt, schemaVersion: snapshot.schemaVersion,
+    sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length };
+  const lines = diffSnapshots(previous, snapshot, CLASS_WEIGHT);
+  const diff = ['# Evidence snapshot refresh', '', ...(lines.length ? lines : ['No model profile changes.']), ''].join('\n');
+  await mkdir(out, { recursive: true });
+  await writeFile(snapshotPath, bytes);
+  await writeFile(join(out, 'evidence-manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
+  if (values.diff) await writeFile(values.diff, diff);
+  console.log(`Wrote ${snapshot.models.length} models (${bytes.length} bytes) to ${snapshotPath}`);
+  console.log(diff);
 }
 
 main().catch((error) => { console.error(error.message); process.exitCode = 1; });

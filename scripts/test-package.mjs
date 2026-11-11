@@ -67,6 +67,7 @@ try {
   }
   assert.match(readFileSync(join(packageRoot, 'skills/orcacompass/SKILL.md'), 'utf8'), /orcacompass/);
   assert.ok(existsSync(join(packageRoot, 'NOTICE')), 'Metadata attribution must ship');
+  assert.ok(!existsSync(join(packageRoot, 'data', 'llmbenchmark')), 'The raw LLMBenchmark dataset must not ship');
   console.log('Packaged CLI: installation, help, exit codes, snapshots and Skill passed on ' + process.version);
 } finally {
   rmSync(temporary, { recursive: true, force: true });

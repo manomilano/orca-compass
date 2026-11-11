@@ -2,6 +2,9 @@ name: Refresh evidence snapshot
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [data/llmbenchmark/dataset.json]
 
 permissions:
   contents: write
@@ -18,6 +21,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      # Reads the committed data/llmbenchmark/dataset.json; nothing is downloaded here.
       - run: node scripts/refresh-evidence.mjs --diff /tmp/evidence-diff.md --check-methodology
       - name: Open a refresh pull request when data changes
         env:

@@ -5,9 +5,13 @@ benchmark evidence used for coding, agentic and reasoning profiles. It contains
 model identifiers, aliases, results with source URLs and dates, axis scores,
 weights, bands and licensed source metadata. No token prices are used.
 
-The owner runs the daily refresh from [LLMBenchmark.ai](https://llmbenchmark.ai)
-and reviews the resulting pull request. The raw dataset is not committed. The
-trimmed snapshot is licensed CC BY 4.0; see the repository NOTICE.
+The raw [LLMBenchmark.ai](https://llmbenchmark.ai) dataset is committed unchanged
+at `data/llmbenchmark/dataset.json` (about 22 MB, updated by the owner's
+automation). `npm run refresh-evidence` reads it, rebuilds the snapshot and
+manifest, and refuses to write when a calibration check fails; the workflow
+runs it when the dataset changes and opens a pull request with the profile
+diff. Only the trimmed snapshot ships in the npm package. Both files are
+licensed CC BY 4.0; see the repository NOTICE and `data/llmbenchmark/README.md`.
 
 Clients check `data/evidence-manifest.json` on the repository's public `main`
 at most once per `evidenceTtlHours` (24 by default). A changed manifest causes

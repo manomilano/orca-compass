@@ -86,8 +86,11 @@ will always be code, agentic and reasoning ... rank from low mid high the need o
   (https://llmbenchmark.ai/data/dataset.json, about 21 MB, rebuilt daily); its REST API
   is limited to 500 requests per IP per day and returns only top-10 lists for the
   computed indexes, so it is not used at runtime. Clients never contact LLMBenchmark
-  at all: the owner's daily automation runs the refresh script and the trimmed result
-  is committed to the repository (7.3).
+  at all. The owner's decision (2026-11-11): the raw dataset is committed unchanged at
+  `data/llmbenchmark/dataset.json`, updated by the owner's automation; the refresh
+  script reads it from there (`--fetch` downloads a fresh copy into place) and the
+  trimmed result is committed next to it (7.3). The raw file never ships in the npm
+  package.
 - The computed Coding / Agentic / Reasoning indexes are **not** in the download. They
   are recomputed from the raw rows with the weights and ranges LLMBenchmark publishes
   on https://llmbenchmark.ai/methodology (copied in section 7.3).
