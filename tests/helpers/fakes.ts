@@ -38,5 +38,8 @@ export const fakeDeps: GatherDeps = {
   fetchImpl: async () => {
     throw new Error('offline');
   },
+  // Offline, the loader falls back to the "bundled" snapshot: a frozen copy of the 2026-11-10
+  // production snapshot, so the daily data refresh never moves the scores these tests assert.
+  bundled: new URL('../fixtures/evidence-bundled.json', import.meta.url),
   now: NOW,
 };

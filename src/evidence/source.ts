@@ -7,7 +7,7 @@ import { parseSnapshot, SNAPSHOT_SCHEMA, type EvidenceSnapshot } from './snapsho
 
 export const EVIDENCE_MANIFEST_URL = 'https://raw.githubusercontent.com/manomilano/orca-compass/main/data/evidence-manifest.json';
 export const EVIDENCE_SNAPSHOT_URL = 'https://raw.githubusercontent.com/manomilano/orca-compass/main/data/evidence-snapshot.json';
-const BUNDLED_URL = new URL('../../data/evidence-snapshot.json', import.meta.url);
+export const BUNDLED_URL = new URL('../../data/evidence-snapshot.json', import.meta.url);
 const FETCH_TIMEOUT_MS = 10_000;
 
 export interface Manifest { generatedAt: string; schemaVersion: number; sha256: string; bytes: number }
@@ -42,6 +42,8 @@ export async function loadEvidence(opts: {
   fetchImpl?: typeof fetch;
   refresh?: boolean;
   cacheDir?: string;
+  /** The last-resort snapshot; the one shipped in the package unless a test supplies its own. */
+  bundled?: string | URL;
 }): Promise<Evidence> {
   const now = opts.now ?? Date.now();
   const directory = opts.cacheDir ?? defaultCacheDir();
@@ -82,7 +84,7 @@ export async function loadEvidence(opts: {
     if (cached) return { snapshot: cached, source: 'cache', fetchedAt: fetchedAt ?? 0 };
   }
 
-  const snapshot = parseSnapshot(await readText(BUNDLED_URL));
+  const snapshot = parseSnapshot(await readText(opts.bundled ?? BUNDLED_URL));
   if (!snapshot) throw new Error('bundled evidence snapshot unreadable');
   return { snapshot, source: 'snapshot', fetchedAt: Date.parse(snapshot.generatedAt) };
 }

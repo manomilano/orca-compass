@@ -21,6 +21,8 @@ export type GatherDeps = Partial<AgentDeps & {
   refresh: boolean;
   readOrcaAgents: () => Promise<OrcaAgents>;
   version: string;
+  /** Tests point the bundled-snapshot fallback at a fixture. */
+  bundled: string | URL;
 }>;
 
 export interface Gathered {

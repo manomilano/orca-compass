@@ -1,2 +1,5 @@
 # The manifest hashes the snapshot's bytes on every platform.
 data/evidence-snapshot.json text eol=lf
+# Committed unchanged from LLMBenchmark; one 22 MB line, so git shows it as changed, not diffed.
+data/llmbenchmark/dataset.json text eol=lf -diff
+tests/fixtures/evidence-bundled.json text eol=lf -diff

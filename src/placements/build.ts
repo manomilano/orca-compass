@@ -36,6 +36,8 @@ export type BuildDeps = Partial<AgentDeps> & {
   refresh?: boolean;
   now?: number;
   version?: string;
+  /** Tests point the bundled-snapshot fallback at a fixture; production uses the packaged file. */
+  bundled?: string | URL;
 };
 
 export interface Built {
@@ -49,7 +51,7 @@ export async function buildPlacements(config: Config, deps: BuildDeps = {}): Pro
   const now = deps.now ?? Date.now();
   const env = deps.env ?? process.env;
   const directory = deps.cacheDir ?? cacheDir();
-  const evidence = await loadEvidence({ ttlHours: config.evidenceTtlHours, now, fetchImpl: deps.fetchImpl, refresh: deps.refresh, cacheDir: directory });
+  const evidence = await loadEvidence({ ttlHours: config.evidenceTtlHours, now, fetchImpl: deps.fetchImpl, refresh: deps.refresh, cacheDir: directory, bundled: deps.bundled });
   const { snapshot } = evidence;
   const agentDeps: AgentDeps = {
     index: toModelIndex(snapshot),

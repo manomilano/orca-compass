@@ -4,6 +4,7 @@ import { cacheDir } from './paths.js';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { AXES, parseSnapshot, type Axis, type SnapshotSource } from './evidence/snapshot.js';
+import { BUNDLED_URL } from './evidence/source.js';
 import { readTextFile } from './placements/agents/deps.js';
 import { modelFamily } from './placements/tiers.js';
 import type { AxisProfile, Profile } from './placements/profiles.js';
@@ -801,7 +802,7 @@ function snapshotSources(table: PlacementTable, deps: MainDeps): SnapshotSource[
   const read = deps.readFile ?? readTextFile;
   const cached = parseSnapshot(read(join(deps.cacheDir ?? cacheDir(), 'evidence-snapshot.json')));
   if (cached?.generatedAt === table.sources.evidence.generatedAt) return cached.sources;
-  const bundled = parseSnapshot(readFileSync(new URL('../data/evidence-snapshot.json', import.meta.url), 'utf8'));
+  const bundled = parseSnapshot(readFileSync(deps.bundled ?? BUNDLED_URL, 'utf8'));
   return bundled?.generatedAt === table.sources.evidence.generatedAt ? bundled.sources : [];
 }
 
