@@ -617,6 +617,11 @@ warning stays on the roadmap.
 - `--tier` maps `light/daily/advanced/frontier` to `min/low/mid/high` on all three axes.
 - A model's class is its highest band across the axes; the fit group is the lowest
   class that covers the job. A blocked fit group downgrades or waits, never promotes.
+- Per agent, only the newest release of a family competes in each class (decided
+  2026-11-12): a day-0 release still replaces its older sibling of the same class, but
+  an older generation that evidence places in a lower class stays routable there. The
+  V1 rule hid every older generation, which left Grok 4.5 (Light) unreachable behind
+  Grok 4.7 (Daily) on Cursor.
 - Inside a group, quota still orders candidates first; evidence and the need-weighted
   score (`min 0, low 1, mid 2, high 3`) are tie-breaks only.
 - The job's evidence label is the weakest among the axes rated `low` or above.

@@ -30,6 +30,11 @@ not to bypass blocked usage. Preferences, bans and agent constraints still apply
 `quality` reports class, coverage, shortfall, overshoot and per-axis scores,
 needs and evidence. Estimated and assumed evidence is provisional.
 
+Within one agent, only the newest release of a family competes in each class: a
+day-0 release replaces its older sibling of the same class, while an older
+generation that the evidence places in a lower class stays routable there (Grok
+4.5 serves Light jobs next to the Daily-class Grok 4.7).
+
 ## Cursor auto fallback
 
 Cursor `auto` is not ranked as a model. It is a fallback when no named candidate

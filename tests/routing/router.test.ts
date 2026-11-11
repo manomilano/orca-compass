@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG } from '../../src/config.js';
+import { parseSnapshot, type SnapshotModel } from '../../src/evidence/snapshot.js';
+import { fixture } from '../helpers/fakes.js';
 import { agentSkipReason, formatLaunch, route } from '../../src/routing/router.js';
 import type { Config, Effort, Environment, LaunchModel, RouteRequest } from '../../src/types.js';
 import {
@@ -168,10 +170,37 @@ describe('route with synthetic usage', () => {
     expect(d.alternatives.every((a) => a.tier === 'light')).toBe(true);
   });
 
-  it('drops older generations of the same family', () => {
+  it('keeps an older generation that evidence places in a lower class', () => {
+    // Opus 5 is Advanced on the fixture evidence while Opus 5.5 is Frontier: it is a real Advanced option, not a stale duplicate.
     const d = r({ tier: 'advanced' });
-    expect(d.alternatives.some((a) => a.model === 'claude-opus-5')).toBe(false);
-    expect(d.alternatives.map((a) => a.agent)).toEqual(['cursor', 'codex']);
+    expect(d.route).toEqual({ agent: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' });
+    expect(d.alternatives.some((a) => a.agent === 'claude' && a.model === 'claude-opus-5')).toBe(true);
+    expect(r({ tier: 'frontier' }).alternatives.some((a) => a.model === 'claude-opus-5')).toBe(false);
+  });
+
+  it('routes every Grok generation on its own evidence instead of hiding the older ones', () => {
+    const grokModel = (id: string, releaseDate: string): LaunchModel => ({
+      agent: 'cursor', modelId: id, efforts: ['low', 'medium', 'high'],
+      meta: { id, provider: 'x-ai', name: id, family: 'grok', releaseDate },
+      launch: { kind: 'variant', ids: { low: `cursor-${id}-low`, medium: `cursor-${id}-medium`, high: `cursor-${id}-high` } },
+      poolNames: ['monthly', 'bucket:Cursor Models'],
+    });
+    const row = (id: string, releasedAt: string, coding: number, agentic: number, reasoning: number): SnapshotModel => ({
+      id, aliases: [], provider: 'x-ai', name: id, family: 'grok', releasedAt, results: [],
+      scores: Object.fromEntries(Object.entries({ coding, agentic, reasoning }).map(([axis, score]) => [axis, { score, benchmarks: 3, kind: 'measured' }])) as SnapshotModel['scores'],
+    });
+    const snapshot = parseSnapshot(fixture('evidence-mini.json'))!;
+    // 4.5 is Light on every axis; 4.6 and 4.7 are Daily on reasoning only, so neither covers a Daily job.
+    snapshot.models.push(row('grok-4-5', '2026-07-08', 52.3, 32.2, 65), row('grok-4-6', '2026-08-15', 63.9, 38.5, 76), row('grok-4-7', '2026-09-21', 65.8, 46.8, 75.1));
+    const e = placed(withCursorModels(env, [grokModel('grok-4.5', '2026-07-08'), grokModel('grok-4.6', '2026-08-15'), grokModel('grok-4.7', '2026-09-21')], 0.1), { snapshot });
+    const light = route({ tier: 'light' }, e, DEFAULT_CONFIG);
+    // Cursor launches by variant id, so the routed model carries the effort suffix.
+    expect([light.route, ...light.alternatives].some((a) => a?.agent === 'cursor' && /^cursor-grok-4.5-/.test(a.model))).toBe(true);
+    // Both Daily-class Groks miss the Daily needs; 4.7 is the newest of that class, so it is the one weighed and skipped,
+    // while 4.6 stays hidden behind it and 4.5 is kept as the Light-class Grok.
+    const daily = route({ tier: 'daily' }, e, DEFAULT_CONFIG);
+    expect(daily.skipped.some((s) => s.agent === 'cursor' && s.model === 'grok-4.7' && /^below need on /.test(s.reason))).toBe(true);
+    expect([...daily.alternatives, ...daily.skipped].some((s) => s.model === 'grok-4.6')).toBe(false);
   });
 
   it('lists skipped agents with a reason', () => {

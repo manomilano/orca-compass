@@ -352,13 +352,18 @@ function collectCandidates(agents: PlacedAgent[], env: Environment, config: Conf
       models.push(model);
     }
   }
-  return { candidates: newestPerFamily(models).map((model) => evaluate(model, env, config, req.needs)), fallback };
+  return { candidates: newestPerFamilyClass(models).map((model) => evaluate(model, env, config, req.needs)), fallback };
 }
 
-/** Keep the newest release of each family per agent, regardless of its class. */
-function newestPerFamily(models: PlacedModel[]): PlacedModel[] {
+/**
+ * Keep the newest release of each family per agent and class. A day-0 release replaces its
+ * older sibling in the same class, while an older generation that evidence places in a lower
+ * class stays routable there (Grok 4.5 serves Light jobs next to the Daily-class Grok 4.7).
+ */
+function newestPerFamilyClass(models: PlacedModel[]): PlacedModel[] {
   const newest = new Map<string, PlacedModel>();
-  const key = (model: PlacedModel) => `${model.agent}\u0000${modelFamily(model.modelId, model.meta) ?? `model:${model.modelId}`}`;
+  const key = (model: PlacedModel) =>
+    `${model.agent} ${modelFamily(model.modelId, model.meta) ?? `model:${model.modelId}`} ${model.profile.class ?? 'unclassified'}`;
   for (const model of models) {
     const previous = newest.get(key(model));
     if (!previous || compareRelease(model, previous) > 0) newest.set(key(model), model);
@@ -386,6 +391,7 @@ function compareRelease(a: LaunchModel, b: LaunchModel): number {
   const bd = b.meta?.releaseDate ?? '';
   return ad < bd ? -1 : ad > bd ? 1 : 0;
 }
+
 
 function evaluate(model: PlacedModel, env: Environment, config: Config, needs: Needs, auto = false): Candidate {
   const adequacy = coverage(model.profile, needs, env.bands);

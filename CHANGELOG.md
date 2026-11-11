@@ -10,6 +10,8 @@
 - Added `--need`, `needs`, `needsSource`, `quality`, `evidenceSource`, `ranking`
   and `tiers --axis`; `--tier` remains supported.
 - Recent hand-outs adjust pool usage. Cursor `auto` is now a fallback.
+- Older generations are hidden only behind a newer release of the same class; an
+  older model that evidence places in a lower class is routable there again.
 - Placement table schema 3 is rebuilt on first run.
 - The raw LLMBenchmark dataset is committed at `data/llmbenchmark/dataset.json`;
   the refresh script reads it from there (`--fetch` downloads a fresh copy) and the

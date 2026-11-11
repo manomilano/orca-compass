@@ -133,7 +133,8 @@ describe('setup --json', () => {
     expect(j.tiers.advanced).toMatchObject({
       pick: { agent: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' },
       preferred: { agent: 'claude', model: 'claude-sonnet-5-5' },
-      options: [{ agent: 'claude', model: 'claude-sonnet-5-5', blocked: false, onPacePercent: 55 }],
+      // Opus 5 is an Advanced-class release on the frozen evidence, so it stays listed next to Sonnet 5.5.
+      options: [{ agent: 'claude', model: 'claude-sonnet-5-5', blocked: false, onPacePercent: 55 }, { agent: 'claude', model: 'claude-opus-5', blocked: false, onPacePercent: 55 }],
     });
     expect(j.tiers.light.preferred).toBeNull();
 
@@ -223,8 +224,8 @@ describe('setup wizard', () => {
     expect(screen).toMatch(/^ {2}1\s+claude claude-sonnet-5-5\s+on pace for 55%$/m);
     expect(screen).toMatch(/^Favorites: Advanced claude claude-sonnet-5-5; above 120%, switch only to a known within-limit alternative$/m);
     expect(screen).toMatch(/^Never used: claude-haiku, grok-9$/m);
-    // Haiku is banned and Codex is off, so Light has no model left.
-    expect(screen).toMatch(/^ {2}light\s+claude · claude-sonnet-5-5 · low \(upgraded to advanced\)\n\s+warning: no light-class model covers the job; using advanced$/m);
+    // Haiku is banned and Codex is off; Sonnet 4.6 is the remaining Light-class Claude model.
+    expect(screen).toMatch(/^ {2}light\s+claude · claude-sonnet-4-6 · low$/m);
     const fromWizard = config();
     expect(fromWizard).toEqual({
       cursorAuto: false, banModels: ['claude-haiku', 'grok-9'], denyAgents: ['codex'],
@@ -260,7 +261,7 @@ describe('setup wizard', () => {
 
   it('asks again after a bad answer, notes an agent Orca has switched off, refuses an agent as a ban, and clears', async () => {
     writeFileSync(configPath(), JSON.stringify(CONFIGURED));
-    const { code, screen } = await wizard(['8', 'gemini', 'claude cursor', 'maybe', 'y', '0', '', 'codex', '99', 'none', 'y']);
+    const { code, screen } = await wizard(['8', 'gemini', 'claude cursor', 'maybe', 'y', '0', '0', '', 'codex', '99', 'none', 'y']);
     expect(code).toBe(0);
     expect(screen).toMatch(/"8" is not one of the agents above\./);
     expect(screen).toMatch(/"gemini" is not one of the agents above\./);
