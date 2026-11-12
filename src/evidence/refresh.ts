@@ -3,7 +3,7 @@ import { buildProfile, CLASS_POINTS, hintFor, type Profile } from '../placements
 import { knownModelVersion } from '../placements/tiers.js';
 import { TIERS } from '../types.js';
 import { AXIS_WEIGHTS, axisScore, BENCHMARKS, MIN_BENCHMARKS, rescale } from './scoring.js';
-import { AXES, SNAPSHOT_SCHEMA, type Axis, type EvidenceSnapshot, type SnapshotModel, type SnapshotResult } from './snapshot.js';
+import { AXES, SNAPSHOT_SCHEMA, type Axis, type EvidenceSnapshot, type SnapshotModel, type SnapshotPricing, type SnapshotResult } from './snapshot.js';
 
 export const DEFAULT_BANDS: EvidenceSnapshot['bands'] = {
   coding: [68, 76, 84], agentic: [60, 70, 80], reasoning: [72, 80, 88],
@@ -47,7 +47,7 @@ export function displayName(raw: string): string {
   return raw.replace(/^[^:]+: /, '');
 }
 
-interface DatasetModel { id: string; slug: string; provider: string; name: string; releasedAt?: string | null }
+interface DatasetModel { id: string; slug: string; provider: string; name: string; releasedAt?: string | null; pricing?: { inputPerM?: unknown; outputPerM?: unknown; basis?: unknown } | null }
 interface DatasetScore {
   modelId: string; metric: string; value: number; unit: string;
   source: string; observedAt: string; sourceUrl: string; setting?: string | null;
@@ -58,6 +58,12 @@ interface DatasetVendorReport {
 }
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const strings = (value: Record<string, unknown>, keys: string[]): boolean => keys.every((key) => typeof value[key] === 'string' && value[key] !== '');
+
+function validPricing(raw: unknown): SnapshotPricing | undefined {
+  if (!object(raw) || typeof raw.inputPerM !== 'number' || !Number.isFinite(raw.inputPerM) || raw.inputPerM < 0 ||
+    typeof raw.outputPerM !== 'number' || !Number.isFinite(raw.outputPerM) || raw.outputPerM < 0) return undefined;
+  return { inputPerM: raw.inputPerM, outputPerM: raw.outputPerM, ...(typeof raw.basis === 'string' ? { basis: raw.basis } : {}) };
+}
 
 function readDataset(dataset: unknown): { generatedAt: string; models: DatasetModel[]; scores: DatasetScore[]; vendorReports: DatasetVendorReport[] } {
   if (!object(dataset)) throw new Error('dataset: expected an object');
@@ -147,7 +153,9 @@ export function buildSnapshot(dataset: unknown, opts: BuildSnapshotOptions): Evi
         source: row.reportedBy, observedAt: row.observedAt, url: row.announcementUrl,
       });
     }
+    const pricing = validPricing(raw.pricing);
     return {
+      ...(pricing ? { pricing } : {}),
       id: raw.slug, aliases: [raw.id], provider: raw.provider, name: displayName(raw.name),
       family: familyOfSlug(raw.slug), ...(raw.releasedAt ? { releasedAt: raw.releasedAt } : {}), results, scores,
     };
@@ -185,14 +193,18 @@ export function mergeCurated(models: SnapshotModel[], curated: unknown): Snapsho
       };
     });
     const existing = byId.get(raw.id as string);
-    if (existing) existing.results.push(...results);
+    const pricing = validPricing(raw.pricing);
+    if (existing) {
+      existing.results.push(...results);
+      if (pricing) existing.pricing = pricing;
+    }
     else {
       const model: SnapshotModel = {
         id: raw.id as string, provider: raw.provider as string, name: raw.name as string,
         aliases: raw.aliases === undefined ? [] : [...raw.aliases as string[]],
         ...(raw.family !== undefined ? { family: raw.family as string } : {}),
         ...(raw.releasedAt !== undefined ? { releasedAt: raw.releasedAt as string } : {}),
-        results, scores: {},
+        results, scores: {}, ...(pricing ? { pricing } : {}),
       };
       merged.push(model);
       byId.set(model.id, model);

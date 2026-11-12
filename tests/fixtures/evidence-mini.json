@@ -184,6 +184,7 @@
       "provider": "anthropic",
       "name": "Claude Haiku 5.5",
       "family": "claude-haiku",
+      "pricing": { "inputPerM": 0.1, "outputPerM": 0.5, "basis": "maker" },
       "releasedAt": "2026-10-07",
       "results": [],
       "scores": {
@@ -212,6 +213,7 @@
       "provider": "anthropic",
       "name": "Claude Sonnet 5.5",
       "family": "claude-sonnet",
+      "pricing": { "inputPerM": 2, "outputPerM": 10, "basis": "maker" },
       "releasedAt": "2026-09-28",
       "results": [],
       "scores": {
@@ -240,6 +242,7 @@
       "provider": "anthropic",
       "name": "Claude Opus 5.5",
       "family": "claude-opus",
+      "pricing": { "inputPerM": 4, "outputPerM": 20, "basis": "maker" },
       "releasedAt": "2026-09-22",
       "results": [],
       "scores": {
@@ -268,6 +271,7 @@
       "provider": "anthropic",
       "name": "Claude Opus 5",
       "family": "claude-opus",
+      "pricing": { "inputPerM": 5, "outputPerM": 25, "basis": "maker" },
       "releasedAt": "2026-07-24",
       "results": [],
       "scores": {
@@ -296,6 +300,7 @@
       "provider": "anthropic",
       "name": "Claude Fable 5.1",
       "family": "claude-fable",
+      "pricing": { "inputPerM": 10, "outputPerM": 50, "basis": "maker" },
       "releasedAt": "2026-09-01",
       "results": [],
       "scores": {
@@ -324,6 +329,7 @@
       "provider": "anthropic",
       "name": "Claude Fable 5.2",
       "family": "claude-fable",
+      "pricing": { "inputPerM": 8, "outputPerM": 40, "basis": "maker" },
       "releasedAt": "2026-11-07",
       "results": [],
       "scores": {
@@ -352,6 +358,7 @@
       "provider": "openai",
       "name": "GPT-6 Luna",
       "family": "gpt-luna",
+      "pricing": { "inputPerM": 0.1, "outputPerM": 0.5, "basis": "maker" },
       "releasedAt": "2026-09-22",
       "results": [],
       "scores": {
@@ -380,6 +387,7 @@
       "provider": "openai",
       "name": "GPT-6.1 Terra",
       "family": "gpt-terra",
+      "pricing": { "inputPerM": 1, "outputPerM": 5, "basis": "maker" },
       "releasedAt": "2026-10-26",
       "results": [],
       "scores": {
@@ -408,6 +416,7 @@
       "provider": "openai",
       "name": "GPT-6.1 Sol",
       "family": "gpt-sol",
+      "pricing": { "inputPerM": 2, "outputPerM": 10, "basis": "maker" },
       "releasedAt": "2026-09-29",
       "results": [],
       "scores": {
@@ -436,6 +445,7 @@
       "provider": "openai",
       "name": "GPT-6 Astra",
       "family": "gpt-astra",
+      "pricing": { "inputPerM": 10, "outputPerM": 50, "basis": "maker" },
       "releasedAt": "2026-09-04",
       "results": [],
       "scores": {

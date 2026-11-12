@@ -346,3 +346,22 @@ describe('calibration and diffs', () => {
     expect(diffSnapshots(next, previous, 0.1).join('\n')).toMatch(/unknown.*coding.*1\.4.*0\.4/);
   });
 });
+
+it('copies valid dataset pricing and drops unusable prices without failing', () => {
+  expect(model('claude-sonnet-5-5').pricing).toEqual({ inputPerM: 2, outputPerM: 10, basis: 'maker' });
+  for (const pricing of [undefined, null, { inputPerM: null, outputPerM: 10 }, { inputPerM: -1, outputPerM: 10 }, { inputPerM: Infinity, outputPerM: 10 }]) {
+    const broken = structuredClone(dataset);
+    broken.models.find((m: { slug: string }) => m.slug === 'claude-sonnet-5-5').pricing = pricing;
+    expect(buildSnapshot(broken, opts).models.find((m) => m.id === 'claude-sonnet-5-5')?.pricing).toBeUndefined();
+  }
+  const noBasis = structuredClone(dataset);
+  noBasis.models.find((m: { slug: string }) => m.slug === 'claude-sonnet-5-5').pricing = { inputPerM: 0, outputPerM: 10, basis: 3 };
+  expect(buildSnapshot(noBasis, opts).models.find((m) => m.id === 'claude-sonnet-5-5')?.pricing).toEqual({ inputPerM: 0, outputPerM: 10 });
+});
+it('keeps valid curated pricing for new and existing rows', () => {
+  const curated = { models: [{ id: 'composer-2-5', provider: 'cursor', name: 'Composer 2.5', results: [], pricing: { inputPerM: 1.25, outputPerM: 6 } }] };
+  expect(mergeCurated([], curated)[0].pricing).toEqual({ inputPerM: 1.25, outputPerM: 6 });
+  expect(mergeCurated([entry('composer-2-5', [])], curated)[0].pricing).toEqual({ inputPerM: 1.25, outputPerM: 6 });
+  curated.models[0].pricing.inputPerM = -1;
+  expect(mergeCurated([], curated)[0].pricing).toBeUndefined();
+});

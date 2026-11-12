@@ -21,3 +21,13 @@ it('builds the catalog with aliases normalized', () => {
   expect(index['gpt-6-1-terra']).toEqual({ id: 'gpt-6-1-terra', provider: 'openai', name: 'GPT-6.1 Terra', family: 'gpt-terra', releaseDate: '2026-10-26' });
   expect(index['gpt-6-1-terra']).toBe(index[normalizeModelId('openai/gpt-6.1-terra')]);
 });
+
+it('accepts models with and without maker pricing', () => {
+  const priced = { ...mini, models: [{ ...mini.models[0], pricing: { inputPerM: 2, outputPerM: 10, basis: 'maker' } }, { ...mini.models[1], pricing: undefined }] };
+  const parsed = parseSnapshot(JSON.stringify(priced))!;
+  expect(parsed.models[0].pricing).toEqual({ inputPerM: 2, outputPerM: 10, basis: 'maker' });
+  expect(parsed.models[1].pricing).toBeUndefined();
+});
+it.each([{ inputPerM: -1, outputPerM: 1 }, { inputPerM: 1 }, { inputPerM: '2', outputPerM: 10 }, { inputPerM: Infinity, outputPerM: 1 }, { inputPerM: 0, outputPerM: 1, basis: 1 }, null])('rejects malformed pricing %j', (pricing) => {
+  expect(parseSnapshot(JSON.stringify({ ...mini, models: [{ ...mini.models[0], pricing }] }))).toBeUndefined();
+});
