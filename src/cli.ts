@@ -381,13 +381,14 @@ function buildStatus(gathered: Gathered, config: Config) {
         skipped.set(s.agent, s.reason);
       }
     }
-    // A structural upgrade belongs to another tier; this view lists only the tier's own candidates.
-    const own = d.tier === undefined || d.tier === tier;
+    // Cheaper covering picks belong here; structural upgrades still belong to another tier.
+    const own = !d.upgraded;
     const view: TierView = { status: own ? d.status : 'none', alternatives: own ? d.alternatives : [], warnings: own ? d.warnings : [] };
     if (own && d.route) {
       const prefix = `${d.route.agent} ${d.route.model}: `;
       const reason = d.reasons[0] ?? '';
-      view.pick = { ...d.route, confidence: d.confidence, reason: reason.startsWith(prefix) ? reason.slice(prefix.length) : reason };
+      const costLabel = d.tier && d.tier !== tier ? ` (${d.tier} cost tier)` : '';
+      view.pick = { ...d.route, confidence: d.confidence, reason: (reason.startsWith(prefix) ? reason.slice(prefix.length) : reason) + costLabel };
     }
     if (own && d.waitUntil !== undefined) view.waitUntil = d.waitUntil;
     tiers[tier] = view;
@@ -807,7 +808,7 @@ function snapshotSources(table: PlacementTable, deps: MainDeps): SnapshotSource[
 }
 
 function rankingModels(table: PlacementTable, axis?: Axis) {
-  const models = new Map<string, { id: string; class: Profile['class']; hint: Profile['hint']; axes: Profile['axes']; agents: AgentId[]; family?: string }>();
+  const models = new Map<string, { id: string; class: Profile['class']; cost: Profile['cost']; hint: Profile['hint']; axes: Profile['axes']; agents: AgentId[]; family?: string }>();
   for (const agent of table.agents) for (const m of agent.models) {
     const existing = models.get(m.modelId);
     if (existing) {
@@ -816,7 +817,7 @@ function rankingModels(table: PlacementTable, axis?: Axis) {
   }
   const score = (m: { axes: Profile['axes'] }) => axis ? m.axes[axis].score ?? -Infinity : AXES.reduce((n, a) => n + (m.axes[a].score ?? 0), 0);
   return [...models.values()].sort((a, b) =>
-    (axis ? 0 : TIERS.indexOf(b.class!) - TIERS.indexOf(a.class!)) || score(b) - score(a) || a.id.localeCompare(b.id));
+    (axis ? 0 : TIERS.indexOf(b.cost?.tier as Tier) - TIERS.indexOf(a.cost?.tier as Tier) || TIERS.indexOf(b.class!) - TIERS.indexOf(a.class!)) || score(b) - score(a) || a.id.localeCompare(b.id));
 }
 
 async function rankingCommand(args: string[], io: IO, deps: MainDeps): Promise<number> {
@@ -830,16 +831,32 @@ async function rankingCommand(args: string[], io: IO, deps: MainDeps): Promise<n
       models: models.map(({ family, ...model }) => model) }, null, 2));
   } else {
     const axes = axis ? [axis] : AXES;
-    io.out(models.map((m) => `${m.id}  ${m.class ?? 'unranked'}  ${axes.map((a) => axisText(a, m.axes[a])).join('  ')}  agents: ${m.agents.join(', ')}${m.hint ? `  hint: ${m.hint.source}${m.family ? ` ${m.family}` : ''} (${m.hint.tier})${m.hint.detail ? ` ${m.hint.detail}` : ''}` : ''}`).join('\n'));
+    io.out(models.map((m) => `${m.id}  ${costText(m.cost)}  evidence ${m.class ?? 'unranked'}  ${axes.map((a) => axisText(a, m.axes[a])).join('  ')}  agents: ${m.agents.join(', ')}${m.hint && m.cost?.source === m.hint.source ? `  hint: ${m.hint.source}${m.family ? ` ${m.family}` : ''} (${m.hint.tier})${m.hint.detail ? ` ${m.hint.detail}` : ''}` : ''}`).join('\n'));
   }
   return 0;
+}
+
+function costText(cost: Profile['cost']): string {
+  return cost ? `${cost.tier} ${cost.blended === null ? 'no price' : `$${cost.blended.toFixed(2)}/M`} ${cost.source}` : 'unranked no price';
 }
 
 function tiersText(table: PlacementTable, view: ReturnType<typeof placementsView>, now: number, axis?: Axis): string[] {
   const lines = placementsLines(view, now);
   const rows = table.agents.flatMap((a) => a.models.map((m) => ({ agent: a.agent, model: m.modelId, profile: m.profile })));
   rows.sort((a, b) => a.agent.localeCompare(b.agent) || a.model.localeCompare(b.model));
-  for (const a of axis ? [axis] : AXES) {
+  if (!axis) {
+    const [daily, advanced, frontier] = table.builtWith.costBands;
+    lines.push(`cost: light < $${daily} ≤ daily < $${advanced} ≤ advanced < $${frontier} ≤ frontier (per million tokens, 3:1 blended)`);
+    for (const tier of TIERS) {
+      lines.push(`${tier}:`);
+      for (const r of rows.filter((r) => r.profile.cost?.tier === tier)) lines.push(`  ${r.agent} ${r.model}  ${costText(r.profile.cost)}  evidence ${r.profile.class ?? 'unranked'}  ${AXES.map((a) => axisText(a, r.profile.axes[a])).join('  ')}`);
+    }
+    const unranked = rows.filter((r) => r.profile.cost === null);
+    lines.push(`unclassified: ${unranked.length}`);
+    for (const r of unranked) lines.push(`  ${r.agent} ${r.model}  unranked (no cost tier)`);
+    return lines;
+  }
+  for (const a of [axis]) {
     const [daily, advanced, frontier] = table.bands[a];
     lines.push(`${a}: light < ${daily} ≤ daily < ${advanced} ≤ advanced < ${frontier} ≤ frontier`);
     for (const tier of TIERS) {

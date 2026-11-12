@@ -64,7 +64,8 @@ describe('buildPlacements', () => {
     expect(table).toMatchObject({ schemaVersion: 4, version: VERSION, builtAt: NOW, builtWith: builtWith(DEFAULT_CONFIG) });
     expect(table.sources.evidence.source).toBe('snapshot');
     expect(table.sources.evidence.generatedAt).toBeDefined();
-    expect(table.bands.coding).toEqual([68, 76, 84]);
+    // The frozen bundled fixture was refreshed once for raw-evidence scoring and its new cuts.
+    expect(table.bands.coding).toEqual([70, 78, 82]);
     expect(table.agents.find((a) => a.agent === 'claude')!.models.every((m) => m.profile)).toBe(true);
     expect(table.agents.map((a) => a.agent)).toEqual([...AGENT_IDS]);
     const codex = table.agents.find((a) => a.agent === 'codex')!;

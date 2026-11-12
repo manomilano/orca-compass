@@ -102,7 +102,7 @@ source fields and `placementsBuiltAt`:
 | Field | Meaning |
 | --- | --- |
 | `status` | `ok`, `wait`, or `none` |
-| `requestedTier`, `tier` | What was asked, what was chosen (absent without a route) |
+| `requestedTier`, `tier` | Requested needs shorthand and the pick's cost tier (absent without a route); a cheaper covering tier is neither a downgrade nor an upgrade |
 | `tierReason` | The coordinator's explanation of the requested tier, when supplied. Also included in `reasons`, even when there is no route |
 | `downgraded`, `upgraded` | Whether fallback changed the tier |
 | `route` | `{ agent, model, effort }`; `effort` is `null` when it is in the model id or not set |
@@ -111,13 +111,15 @@ source fields and `placementsBuiltAt`:
 | `launch` | Readable template with a `<task>` placeholder; not shell-escaped, not for automation |
 | `confidence` | `high`, `medium`, `low` |
 | `risk` | `{ pool, usedPercent, elapsedPercent, projectedPercent, tooEarly, resetsAt }` for the route; `null` when usage is unknown |
-| `reasons` | One line per fact behind the choice |
+| `reasons` | One line per fact behind the choice; the needs line includes `fit group: daily cost tier (3 models)`, and a route adds `cost: daily ($4.00/M blended, maker price)` (tier, count, price and source vary) |
 | `warnings` | Downgrade, upgrade, skipped preference, last-resort use |
 | `alternatives` | Up to five other candidates from the chosen tier (requested tier without a pick): `agent`, `model`, `effort`, `tier`, `headroom` (fraction, or `null`), `confidence`, `blocked`, `risk`, `reason` |
 | `skipped` | `{ agent, model?, reason }` for excluded agents and banned/refused models in the requested tier. Superseded releases and no-ZDR exclusions are omitted. Preference exclusions appear in `warnings` |
 | `waitUntil` | Epoch ms when a blocked requested-tier candidate resets; with `wait`, sometimes with `none` |
 | `needs`, `needsSource` | The three requested levels and whether they came from `need` or `tier` |
-| `quality` | Class, coverage, shortfall or overshoot, evidence and per-axis scores, bands, needs and cuts; also on alternatives |
+| `quality` | Evidence class, cost, coverage, shortfall or overshoot, evidence and per-axis scores, bands, needs and cuts; also on alternatives |
+| `quality.class` | Highest evidence band across the axes; independent of cost |
+| `quality.cost` | `{ tier, blended, source }` or `null`; `blended` is USD per million tokens, `(3 × inputPerM + outputPerM) / 4`, rounded to two decimals, or `null` without a price; `source` is `override`, `price`, `family`, `lineup`, or `evidence` |
 | `evidenceSource` | `network`, `cache`, or `snapshot`; `catalogSource` and `scoreSource` are compatibility aliases |
 | `placementsBuiltAt` | Epoch ms when the placement table this route read was built (see [`tiers`](#tiers)); the evidence source says what that build used |
 
@@ -164,8 +166,8 @@ number forgotten by `--clear` (0 otherwise).
 ## `status`
 
 Shows: installed agents with their notes, usage pools with headroom, the pick
-and up to three alternatives per tier (each tier on its own, without
-fallbacks), models placed by the provider's lineup or the
+and up to three alternatives per requested tier (including cheaper covering
+cost tiers, without downgrade or structural upgrade fallbacks), models placed by the provider's lineup or the
 capability score with the words and numbers behind them, unclassified models,
 the age and source of the metadata, and when the placement table was built
 (`placements: built 2h ago (orcacompass <version>)`, or `built now: no table
@@ -182,15 +184,39 @@ when the cache folder is not writable). `--json` has `now`, `catalog`,
 
 ## `tiers`
 
-Prints the placement table: when it was built and by which version, what
-each metadata source contributed, then every model under each tier it may
-serve with the words and numbers behind that placement, and the unclassified
-models. A model that spans two tiers appears under both. The table is
-rebuilt first when it is stale (see [Tiers and
-routing](tiers-and-routing.md#when-placement-runs)). `--json` prints the
-table file itself (`schemaVersion`, `version`, `builtAt`, `builtWith`,
-`sources`, `agents` with each model's `placements` and `tiers`) plus `age`
-in milliseconds.
+Prints the placement table's build time, version and sources, then models grouped
+by cost tier with their evidence profiles. The header shows the configured
+`costBands`, by default:
+
+```text
+cost: light < $1 ≤ daily < $5 ≤ advanced < $12 ≤ frontier (per million tokens, 3:1 blended)
+```
+
+`--axis <coding|agentic|reasoning>` instead groups by that axis's evidence bands
+and prints its capability cuts. The table is rebuilt first when stale (see
+[Tiers and routing](tiers-and-routing.md#when-placement-runs)). `--json` prints
+the table file (`schemaVersion: 4`, `version`, `builtAt`, `builtWith` containing
+`tierOverrides` and `costBands`, `sources`, `bands`, and `agents` with each model's
+`profile`) plus `age` in milliseconds.
+
+## `ranking`
+
+Lists each discovered model once, with its agents. Rows show the cost tier,
+blended price (or `no price`) and source, then `evidence <class>` and the three
+axes' scores, bands and evidence labels. A hint appears only when it decided the
+cost tier. The default order is descending cost tier, descending evidence class,
+descending total axis score (equal weights), then model id; `--axis` instead
+sorts by that axis's score and prints only that axis.
+
+`--json` returns `generatedAt`, `sources`, `bands` and `models`:
+
+| Model field | Meaning |
+| --- | --- |
+| `id`, `agents` | Base model id and agents that offer it |
+| `class` | Highest evidence band, or `null` when unranked |
+| `cost` | `{ tier, blended, source }` or `null`, with the same meaning as `quality.cost` in route JSON |
+| `axes` | Per-axis raw score, band, evidence label, benchmark count and provenance |
+| `hint` | Classification hint or `null`; retained in JSON even when price decides the cost tier |
 
 ## `agents`
 

@@ -64,7 +64,8 @@ describe('route', () => {
     expect(line).toBeDefined();
     expect(line.match(/\((?:below need on |unranked:)/g)).toHaveLength(6);
     expect(line).toContain(`… ${models.size - 6} more (route --json lists them)`);
-    expect(line).toContain('claude claude-haiku-5-5 (below need on coding 64.2 < 84, agentic 50.7 < 80, reasoning 69.7 < 88)');
+    // Raw evidence replaces the hint nudge; the refreshed snapshot uses the spec's raw-score cuts.
+    expect(line).toContain('claude claude-haiku-5-5 (below need on coding 68.4 < 82, agentic 53.5 < 80, reasoning 74.6 < 89)');
     for (const skip of decision.skipped.filter((s: { reason: string }) => !/^(below need on |unranked:)/.test(s.reason))) {
       expect(line).toContain(`${skip.agent}${skip.model ? ` ${skip.model}` : ''} (${skip.reason})`);
     }
@@ -85,8 +86,9 @@ describe('route', () => {
     expect(await main(['route', '--need', 'reasoning=low,coding=high,agentic=mid', '--json'], io, deps)).toBe(0);
     const d = JSON.parse(out());
     expect(d).toMatchObject({ needs: { coding: 'high', agentic: 'mid', reasoning: 'low' }, needsSource: 'need', evidenceSource: 'snapshot', scoreSource: 'snapshot', catalogSource: 'snapshot', placementsBuiltAt: NOW });
+    // The refreshed snapshot's Frontier coding cut is 82 on raw evidence.
     for (const quality of [d.quality, ...d.alternatives.map((a: { quality: unknown }) => a.quality)]) {
-      expect(quality.axes.coding).toMatchObject({ score: expect.any(Number), band: expect.any(String), evidence: expect.any(String), benchmarks: expect.any(Number), need: 'high', cut: 84 });
+      expect(quality.axes.coding).toMatchObject({ score: expect.any(Number), band: expect.any(String), evidence: expect.any(String), benchmarks: expect.any(Number), need: 'high', cut: 82 });
     }
     const entries = JSON.parse(readFileSync(join(process.env.ORCACOMPASS_HOME!, 'cache', 'handouts.json'), 'utf8')).handouts;
     expect(entries).toHaveLength(1);
@@ -180,9 +182,10 @@ describe('route', () => {
   it('prints a compact text decision', async () => {
     expect(await main(['route', '--tier', 'daily'], io, deps)).toBe(0);
     const lines = out().split('\n');
-    expect(lines[0]).toBe('daily → codex · gpt-6.1-terra · medium (high confidence)');
+    // Sonnet now competes at Daily cost and wins on subscription headroom.
+    expect(lines[0]).toBe('daily → claude · claude-sonnet-5-5 · medium (high confidence)');
     expect(lines.slice(1, -1).every((l) => l.startsWith('  '))).toBe(true);
-    expect(lines.at(-1)).toBe('orca orchestration worker-start --spec "<task>" --agent codex --model gpt-6.1-terra --effort medium');
+    expect(lines.at(-1)).toBe('orca orchestration worker-start --spec "<task>" --agent claude --model claude-sonnet-5-5 --effort medium');
   });
 
   it('passes agent, exclude-agent, effort and no-downgrade through to the router', async () => {
@@ -193,7 +196,8 @@ describe('route', () => {
     expect(JSON.parse(out()).route.agent).toBe('claude');
     stdout = [];
     await main(['route', '--tier', 'advanced', '--agent', 'codex', '--no-downgrade', '--json'], io, deps);
-    expect(JSON.parse(out())).toMatchObject({ status: 'ok', tier: 'advanced', requestedTier: 'advanced', upgraded: false, downgraded: false, route: { agent: 'codex', model: 'gpt-6.1-sol' } });
+    // Sol covers Advanced needs at Daily cost; a cheaper covering pick is not a downgrade.
+    expect(JSON.parse(out())).toMatchObject({ status: 'ok', tier: 'daily', requestedTier: 'advanced', upgraded: false, downgraded: false, route: { agent: 'codex', model: 'gpt-6.1-sol' } });
   });
 
   it('routes cursor-only Daily to a named model', async () => {
@@ -275,6 +279,8 @@ describe('status', () => {
       blocked: false,
       expired: false,
     });
+    // Advanced needs are covered by Daily-cost Sonnet; Frontier needs by Advanced-cost Opus.
+    expect(s.tiers.advanced.pick).toMatchObject({ agent: 'claude', model: 'claude-sonnet-5-5', reason: expect.stringContaining('(daily cost tier)') });
     expect(s.tiers.frontier.pick).toMatchObject({ agent: 'claude', model: 'claude-opus-5-5' });
     expect(s.tiers.light.pick.agent).toBeDefined();
     expect(s.unclassified.length).toBeGreaterThan(0);
@@ -334,19 +340,69 @@ describe('refresh', () => {
 });
 
 describe('placement table in the CLI', () => {
+  it('shows cost and evidence separately in ranking text and JSON', async () => {
+    expect(await main(['ranking'], io, deps)).toBe(0);
+    expect(out()).toMatch(/^claude-sonnet-5-5\s+daily \$4\.00\/M price\s+evidence frontier\s+coding 84\.3 F measured\(5\)/m);
+    expect(out().split('\n').find((l) => l.startsWith('claude-sonnet-5-5  '))).not.toContain('hint:');
+    stdout = [];
+    expect(await main(['ranking', '--json'], io, deps)).toBe(0);
+    const r = JSON.parse(out());
+    expect(r.models.find((m: { id: string }) => m.id === 'claude-sonnet-5-5')).toMatchObject({ cost: { tier: 'daily', blended: 4, source: 'price' } });
+    expect(r.models[0].cost.tier).toBe('frontier');
+    const tiers = ['light', 'daily', 'advanced', 'frontier'];
+    for (let i = 1; i < r.models.length; i++) {
+      const a = r.models[i - 1], b = r.models[i];
+      expect(tiers.indexOf(a.cost?.tier) >= tiers.indexOf(b.cost?.tier)).toBe(true);
+      if (a.cost?.tier === b.cost?.tier) {
+        expect(tiers.indexOf(a.class) >= tiers.indexOf(b.class)).toBe(true);
+        if (a.class === b.class) {
+          const score = (m: typeof a) => ['coding', 'agentic', 'reasoning'].reduce((sum, axis) => sum + (m.axes[axis].score ?? 0), 0);
+          expect(score(a)).toBeGreaterThanOrEqual(score(b));
+          if (score(a) === score(b)) expect(a.id.localeCompare(b.id)).toBeLessThanOrEqual(0);
+        }
+      }
+    }
+  });
+
+  it('groups tiers by cost and keeps evidence cuts in the axis view', async () => {
+    expect(await main(['tiers'], io, deps)).toBe(0);
+    expect(out()).toMatch(/^cost: light < \$1 ≤ daily < \$5 ≤ advanced < \$12 ≤ frontier \(per million tokens, 3:1 blended\)$/m);
+    expect(out()).toMatch(/^daily:\n(.*\n)*? {2}claude claude-sonnet-5-5 /m);
+    expect(out()).not.toMatch(/^coding:/m);
+    stdout = [];
+    expect(await main(['tiers', '--axis', 'coding'], io, deps)).toBe(0);
+    expect(out()).toMatch(/^coding: light < 70 ≤ daily < 78 ≤ advanced < 82 ≤ frontier$/m);
+    expect(out()).not.toMatch(/^cost:/m);
+  });
+
+  it('uses configured cost cuts in the tiers header', async () => {
+    writeFileSync(configPath(), JSON.stringify({ costBands: [0.5, 4, 10] }));
+    expect(await main(['tiers'], io, deps)).toBe(0);
+    expect(out()).toContain('cost: light < $0.5 ≤ daily < $4 ≤ advanced < $10 ≤ frontier');
+  });
+
+  it('carries quality.cost and the cost reason in route JSON', async () => {
+    expect(await main(['route', '--tier', 'daily', '--json'], io, deps)).toBe(0);
+    const d = JSON.parse(out());
+    expect(d.quality.cost).toEqual({ tier: 'daily', blended: 4, source: 'price' });
+    expect(d.reasons).toContain('cost: daily ($4.00/M blended, maker price)');
+    expect(d.reasons.some((s: string) => /fit group: daily cost tier \(\d+ models\)$/.test(s))).toBe(true);
+  });
+
   it('ranks deduplicated profiles and exposes the snapshot sources', async () => {
     expect(await main(['ranking'], io, deps)).toBe(0);
-    expect(out()).toMatch(/^claude-opus-5-5\s+frontier\s+coding 86\.2 F measured\(5\)/m);
-    expect(out()).toMatch(/auto\s+unranked.*coding unranked/);
+    expect(out()).toMatch(/^claude-opus-5-5\s+advanced \$8\.00\/M price\s+evidence frontier\s+coding 87\.3 F measured\(5\)/m);
+    expect(out()).toMatch(/auto\s+unranked no price\s+evidence unranked.*coding unranked/);
     stdout = [];
     expect(await main(['ranking', '--json'], io, deps)).toBe(0);
     const r = JSON.parse(out());
     expect(r.models[0]).toMatchObject({ id: 'claude-fable-5-2', class: 'frontier' });
     expect(r.sources).toContainEqual(expect.objectContaining({ label: 'LLMBenchmark.ai', license: 'CC BY 4.0' }));
     expect(r.generatedAt).toEqual(expect.any(String));
-    expect(r.bands.coding).toEqual([68, 76, 84]);
+    // The one-time fixture refresh includes the raw-evidence bands and scores.
+    expect(r.bands.coding).toEqual([70, 78, 82]);
     expect(new Set(r.models.map((m: { id: string }) => m.id)).size).toBe(r.models.length);
-    expect(r.models.find((m: { id: string }) => m.id === 'claude-opus-5-5')).toMatchObject({ class: 'frontier', axes: { coding: { score: 86.2, band: 'frontier', label: 'measured', benchmarks: 5 } }, agents: ['claude', 'cursor'] });
+    expect(r.models.find((m: { id: string }) => m.id === 'claude-opus-5-5')).toMatchObject({ class: 'frontier', axes: { coding: { score: 87.3, band: 'frontier', label: 'measured', benchmarks: 5 } }, agents: ['claude', 'cursor'] });
     stdout = [];
     expect(await main(['ranking', '--axis', 'coding'], io, deps)).toBe(0);
     expect(out()).not.toMatch(/agentic|reasoning/);
@@ -377,7 +433,8 @@ describe('placement table in the CLI', () => {
 
   it('selects tiers by axis and rejects unknown axes for both views', async () => {
     expect(await main(['tiers', '--axis', 'agentic'], io, deps)).toBe(0);
-    expect(out()).toMatch(/^agentic: light < 60 ≤ daily < 70 ≤ advanced < 80 ≤ frontier$/m);
+    // The refreshed raw-evidence snapshot moves the Advanced agentic cut from 70 to 72.
+    expect(out()).toMatch(/^agentic: light < 60 ≤ daily < 72 ≤ advanced < 80 ≤ frontier$/m);
     expect(out()).not.toMatch(/^coding:|^reasoning:/m);
     for (const command of ['tiers', 'ranking']) {
       expect(await main([command, '--axis', 'Coding'], io, deps)).toBe(1);
@@ -414,15 +471,16 @@ describe('placement table in the CLI', () => {
     expect(await main(['tiers'], io, deps)).toBe(0);
     const text = out();
     expect(text).toContain(`placements: built now: no table yet (orcacompass ${VERSION})`);
-    expect(text).toMatch(/^coding: light < 68 ≤ daily < 76 ≤ advanced < 84 ≤ frontier$/m);
+    expect(text).toMatch(/^cost: light < \$1 ≤ daily < \$5 ≤ advanced < \$12 ≤ frontier/m);
     expect(text).toMatch(/^frontier:$/m);
-    expect(text).toMatch(/^  codex gpt-6-astra  coding 85\.5 F measured\(5\)/m);
+    // Astra's coding score is now the raw 83.8, without the Frontier hint nudge.
+    expect(text).toMatch(/^  codex gpt-6-astra  frontier \$20\.00\/M price  evidence frontier  coding 83\.8 F measured\(5\)/m);
     expect(text).toMatch(/^  claude claude-haiku-5-5  /m);
     expect(text).toMatch(/^unclassified: \d+$/m);
     stdout = [];
     expect(await main(['tiers', '--json'], io, { ...deps, now: NOW + HOUR })).toBe(0);
     const t = JSON.parse(out());
-    expect(t).toMatchObject({ schemaVersion: 3, version: VERSION, builtAt: NOW, age: HOUR });
+    expect(t).toMatchObject({ schemaVersion: 4, version: VERSION, builtAt: NOW, age: HOUR });
     expect(t.agents.map((a: { agent: string }) => a.agent)).toContain('codex');
   });
 

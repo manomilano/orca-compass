@@ -133,8 +133,8 @@ describe('setup --json', () => {
     expect(j.tiers.advanced).toMatchObject({
       pick: { agent: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' },
       preferred: { agent: 'claude', model: 'claude-sonnet-5-5' },
-      // Opus 5 is an Advanced-class release on the frozen evidence, so it stays listed next to Sonnet 5.5.
-      options: [{ agent: 'claude', model: 'claude-sonnet-5-5', blocked: false, onPacePercent: 55 }, { agent: 'claude', model: 'claude-opus-5', blocked: false, onPacePercent: 55 }],
+      // Sonnet covers Advanced needs at Daily cost; older Opus 5 shares Opus 5.5's cost tier and is hidden.
+      options: [{ agent: 'claude', model: 'claude-sonnet-5-5', blocked: false, onPacePercent: 55 }],
     });
     expect(j.tiers.light.preferred).toBeNull();
 
@@ -210,22 +210,23 @@ describe('setup wizard', () => {
     expect(screen).toMatch(/^Favorites: none; every tier takes the route with the most room$/m);
     expect(screen).toMatch(/^Never used: nothing$/m);
     expect(screen).toMatch(/^ {2}light\s+claude · claude-haiku-5-5 · low$/m);
-    expect(screen).toMatch(/^ {2}frontier\s+claude · claude-opus-5-5 · high$/m);
+    expect(screen).toMatch(/^ {2}frontier\s+claude · claude-opus-5-5 · high \(advanced cost tier\)$/m);
+    expect(screen).toMatch(/^ {2}advanced\s+claude · claude-sonnet-5-5 · medium \(daily cost tier\)$/m);
     expect(screen).toMatch(new RegExp(`Saved ${escape(configPath())}$`, 'm'));
     expect(config()).toEqual({});
   });
 
   it('writes the answers exactly as the agents, prefer and ban commands do, keeping other keys', async () => {
     writeFileSync(configPath(), INITIAL);
-    // claude only; favorites: Advanced → option 1, limit 120%; bans: family 2 (claude-haiku) and grok-9; save.
-    const { code, screen } = await wizard(['1', 'y', '', '1', '', '120%', '2, grok-9', 'y']);
+    // Daily and Advanced both offer Sonnet now; keep Daily empty and choose Advanced option 1, limit 120%; bans: family 2 (claude-haiku) and grok-9; save.
+    const { code, screen } = await wizard(['1', 'y', '', '', '1', '', '120%', '2, grok-9', 'y']);
     expect(code).toBe(0);
     expect(screen).toMatch(/^Advanced: now claude · claude-sonnet-5-5 · medium; favorite: none$/m);
     expect(screen).toMatch(/^ {2}1\s+claude claude-sonnet-5-5\s+on pace for 55%$/m);
     expect(screen).toMatch(/^Favorites: Advanced claude claude-sonnet-5-5; above 120%, switch only to a known within-limit alternative$/m);
     expect(screen).toMatch(/^Never used: claude-haiku, grok-9$/m);
-    // Haiku is banned and Codex is off; Sonnet 4.6 is the remaining Light-class Claude model.
-    expect(screen).toMatch(/^ {2}light\s+claude · claude-sonnet-4-6 · low$/m);
+    // Haiku is banned and Codex is off; the next cost tier is Daily Sonnet 5.5.
+    expect(screen).toMatch(/^ {2}light\s+claude · claude-sonnet-5-5 · low \(upgraded to daily\)$/m);
     const fromWizard = config();
     expect(fromWizard).toEqual({
       cursorAuto: false, banModels: ['claude-haiku', 'grok-9'], denyAgents: ['codex'],
