@@ -15,9 +15,10 @@ describe('adequacy', () => {
     expect(['min', 'low', 'mid', 'high'].map((n) => cutFor(n as 'min' | 'low' | 'mid' | 'high', [60, 70, 80]))).toEqual([null, 60, 70, 80]);
   });
   it('counts shortfall on each needed axis without compensating with stronger axes', () => {
-    expect(coverage(profile('claude-sonnet-5-5'), needs)).toMatchObject({ covers: false, shortfall: 1, below: [{ axis: 'coding', score: 80.9, cut: 84 }] });
+    // Sol misses only the coding high cut; Haiku misses only the agentic low cut on raw evidence.
+    expect(coverage(profile('gpt-6-1-sol'), needs, snapshot.bands)).toMatchObject({ covers: false, shortfall: 1, below: [{ axis: 'coding', score: 82.2, cut: 84 }] });
     expect(coverage(profile('claude-fable-5-2'), needs)).toMatchObject({ covers: true, shortfall: 0, overshoot: 3 });
-    expect(coverage(profile('claude-haiku-5-5'), needsFromTier('daily')).shortfall).toBe(3);
+    expect(coverage(profile('claude-haiku-5-5'), needsFromTier('daily')).shortfall).toBe(1);
   });
   it('ignores an unranked axis only for min', () => {
     const composer = profile('composer-2-5');
@@ -33,13 +34,14 @@ describe('adequacy', () => {
     expect(jobEvidence(p, needsFromTier('light'))).toBe('measured');
     expect(jobEvidence(profile('composer-2-5'), needs)).toBe('unranked');
   });
-  it('weights scores only for tie-breaking', () => {
-    expect(needWeightedScore(profile('claude-fable-5-1'), needsFromTier('frontier'))).toBeCloseTo(770.4);
-    expect(needWeightedScore(profile('claude-opus-5-5'), needsFromTier('frontier'))).toBeCloseTo(769.5);
+  it('weights raw scores only for tie-breaking', () => {
+    // High needs weight each raw axis by 3: Fable (82.8+81.1+88.1)*3; Opus (87.4+82+90.6)*3.
+    expect(needWeightedScore(profile('claude-fable-5-1'), needsFromTier('frontier'))).toBeCloseTo(756);
+    expect(needWeightedScore(profile('claude-opus-5-5'), needsFromTier('frontier'))).toBeCloseTo(780);
     expect(needWeightedScore(profile('composer-2-5'), needsFromTier('light'))).toBe(0);
   });
   it('reports custom snapshot cuts and respects overridden bands', () => {
-    const p = profile('claude-sonnet-5-5');
+    const p = profile('gpt-6-1-sol');
     expect(coverage(p, needs, { ...snapshot.bands, coding: [70, 80, 90] }).below[0].cut).toBe(90);
     p.axes.coding.band = 'frontier';
     expect(coverage(p, needs).covers).toBe(true);

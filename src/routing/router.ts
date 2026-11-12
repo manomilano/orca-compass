@@ -149,7 +149,7 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
   const target = plan.target;
   const warnings: string[] = [];
   const overRisk = new Set<Candidate>();
-  const needLine = `needs ${AXES.map((axis) => `${axis}=${req.needs[axis]}`).join(' ')}${req.needsSource === 'tier' ? ` from tier ${requested}` : ''}; fit group: ${fit[0]?.tier ?? 'none'} class (${fit.length} models)`;
+  const needLine = `needs ${AXES.map((axis) => `${axis}=${req.needs[axis]}`).join(' ')}${req.needsSource === 'tier' ? ` from tier ${requested}` : ''}; fit group: ${fit[0]?.tier ?? 'none'} cost tier (${fit.length} models)`;
   for (const c of named) {
     for (const { axis, score, cut } of c.below) skipped.push({ agent: c.model.agent, model: c.model.modelId, reason: `below need on ${axis} (${score ?? 'unranked'} < ${cut})` });
   }
@@ -168,6 +168,12 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
     const up = quality?.covers === true && cand.tier !== null && TIERS.indexOf(cand.tier) > TIERS.indexOf(requested);
     const others = group.filter((c) => c !== cand && !overRisk.has(c));
     const reasons = [`${cand.model.agent} ${chosen.model}: ${describe(cand, env.now)}`, needLine];
+    if (quality?.cost) {
+      const { tier, blended, source } = quality.cost;
+      const sourceText = { override: 'your override', price: 'maker price', family: 'family hint', lineup: "provider's lineup", evidence: 'evidence class' }[source];
+      const price = blended === null ? `${sourceText}, no price` : `$${blended.toFixed(2)}/M blended, ${sourceText}`;
+      reasons.push(`cost: ${tier} (${price})`);
+    }
     if (quality) reasons.push(AXES.map((axis) => `${axis} ${quality.axes[axis].score ?? 'unranked'} ${quality.axes[axis].evidence}`).join(', '));
     else reasons.push('cursor auto: fallback, no named model could be routed (Cursor picks the model)');
     if (cand.model.agent === 'opencode') reasons.push('opencode: Orca takes --model for OpenCode only in an existing worktree (--worktree current or a selector)');
@@ -182,8 +188,8 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
       warnings.push(`${cand.model.modelId} falls short of the job's needs by ${quality!.shortfall} band step${quality!.shortfall === 1 ? '' : 's'} (${cand.below.map(({ axis }) => axis).join(', ')}); effort is not raised to make up for it: split the job or add stronger checks`);
     }
     if (up) {
-      reasons.push(`upgraded from ${requested}: no ${requested}-class model covers the job`);
-      warnings.push(`no ${requested}-class model covers the job; using ${cand.tier}`);
+      reasons.push(`upgraded from ${requested}: no model in the ${requested} cost tier covers the job`);
+      warnings.push(`no model in the ${requested} cost tier covers the job; using ${cand.tier}`);
     }
     const next = others.find((c) => !c.blocked);
     if (next) reasons.push(`next best: ${next.model.agent} ${resolve(next, target).model} (${summary(next, env.now)})`);
@@ -352,18 +358,18 @@ function collectCandidates(agents: PlacedAgent[], env: Environment, config: Conf
       models.push(model);
     }
   }
-  return { candidates: newestPerFamilyClass(models).map((model) => evaluate(model, env, config, req.needs)), fallback };
+  return { candidates: newestPerFamilyTier(models).map((model) => evaluate(model, env, config, req.needs)), fallback };
 }
 
 /**
- * Keep the newest release of each family per agent and class. A day-0 release replaces its
- * older sibling in the same class, while an older generation that evidence places in a lower
- * class stays routable there (Grok 4.5 serves Light jobs next to the Daily-class Grok 4.7).
+ * Keep the newest release of each family per agent and cost tier. A day-0 release replaces
+ * its older sibling in the same cost tier; an older release in a different cost tier stays
+ * routable there (Advanced-cost Sonnet 4.6 alongside Daily-cost Sonnet 5.5).
  */
-function newestPerFamilyClass(models: PlacedModel[]): PlacedModel[] {
+function newestPerFamilyTier(models: PlacedModel[]): PlacedModel[] {
   const newest = new Map<string, PlacedModel>();
   const key = (model: PlacedModel) =>
-    `${model.agent}\u0000${modelFamily(model.modelId, model.meta) ?? `model:${model.modelId}`}\u0000${model.profile.class ?? 'unclassified'}`;
+    `${model.agent}\u0000${modelFamily(model.modelId, model.meta) ?? `model:${model.modelId}`}\u0000${model.profile.cost?.tier ?? 'unclassified'}`;
   for (const model of models) {
     const previous = newest.get(key(model));
     if (!previous || compareRelease(model, previous) > 0) newest.set(key(model), model);
@@ -404,7 +410,7 @@ function evaluate(model: PlacedModel, env: Environment, config: Config, needs: N
     })) as Quality['axes'],
   };
   const base: Candidate = {
-    model, tier: model.profile.class, quality: auto ? null : quality, below: adequacy.below, weightedScore: needWeightedScore(model.profile, needs),
+    model, tier: model.profile.cost?.tier ?? null, quality: auto ? null : quality, below: adequacy.below, weightedScore: needWeightedScore(model.profile, needs),
     headroom: null, rank: null, blocked: false, blockedPools: [], expiredPools: [], confidence: 'low', projections: {}, handoutMinutes: config.handoutMinutes, handoutPercent: config.handoutPercent,
   };
   if (model.poolNames.length === 0) return { ...base, usageNote: `no usage window: ${model.billing ?? 'limits not tracked'}` };

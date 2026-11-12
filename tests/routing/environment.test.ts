@@ -50,11 +50,14 @@ describe('loadPlacements', () => {
   });
 
   it('applies a changed tierOverride in the rebuilt table', async () => {
-    await loadPlacements(DEFAULT_CONFIG, fakeDeps);
+    const deps = { ...fakeDeps, bundled: new URL('../fixtures/evidence-mini.json', import.meta.url) };
+    await loadPlacements(DEFAULT_CONFIG, deps);
     const config: Config = { ...DEFAULT_CONFIG, tierOverrides: { 'claude-haiku-5-5': 'frontier' } };
-    const { table } = await loadPlacements(config, fakeDeps);
+    const { table } = await loadPlacements(config, deps);
     const haiku = table.agents.find((a) => a.agent === 'claude')!.models.find((m) => m.modelId === 'claude-haiku-5-5')!;
-    expect(haiku.profile.class).toBe('frontier');
+    // The mini fixture keeps its own bands; the override affects cost only, leaving evidence Daily.
+    expect(haiku.profile.class).toBe('daily');
+    expect(haiku.profile.cost).toEqual({ tier: 'frontier', blended: 0.2, source: 'override' });
     expect(haiku.profile.hint).toEqual({ tier: 'frontier', source: 'override' });
   });
 
@@ -96,7 +99,7 @@ describe('loadPlacements', () => {
     writeFileSync(join(home, 'cache', 'placements.json'), JSON.stringify(legacy));
     const rebuilt = await loadPlacements(DEFAULT_CONFIG, { ...fakeDeps, now: NOW + HOUR });
     expect(rebuilt.rebuilt).toBe('invalid');
-    expect(rebuilt.table.schemaVersion).toBe(3);
+    expect(rebuilt.table.schemaVersion).toBe(4);
     expect(rebuilt.table.agents.find((a) => a.agent === 'claude')!.models.find((m) => m.modelId === 'claude-opus-5-5')!).toMatchObject({ profile: { class: 'frontier', hint: { tier: 'advanced', source: 'family' } } });
   });
 

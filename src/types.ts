@@ -242,6 +242,7 @@ export interface Decision {
   quality?: Quality | null;
   source?: Classification['source'] | 'evidence' | 'auto';
   tierReason?: string;
+  /** The cost tier of the selected model; absent when no cost tier is known, including Cursor auto. */
   tier?: Tier;
   downgraded: boolean;
   upgraded: boolean;
