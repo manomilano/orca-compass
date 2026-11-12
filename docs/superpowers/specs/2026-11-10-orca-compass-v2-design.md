@@ -105,13 +105,13 @@ will always be code, agentic and reasoning ... rank from low mid high the need o
 | Evidence source | LLMBenchmark.ai full dataset, for its CC BY 4.0 license and daily refresh. Its license is treated as covering every row it publishes; no per-board license check |
 | Model catalog | Models.dev is dropped. Names, providers, families and release dates come from the evidence snapshot's model list; effort lists come from the agents' own catalogs with the existing assumed fallback |
 | Refresh | Daily, run by the owner's own automation: it runs the repository's refresh script and opens the PR. The trimmed snapshot lands in the repository, never the raw dataset. Switching provider later is one adapter in the script |
-| Who decides a band | Benchmarks. The family table and provider descriptions only nudge |
-| Price in capability | Never |
+| Who decides a band | Benchmarks alone. Amended 2026-11-12 (section 10): the hint nudge on scores is removed; hints and prices decide the cost tier, never a band |
+| Price in capability | Never. Amended 2026-11-12 (section 10): the maker's API price from the dataset decides the **cost tier**, which is a statement about what a model costs, not about what it can do |
 | Axes | Three: coding, agentic, reasoning. Every job has all three; the coordinator rates the need of each (`min`, `low`, `mid`, `high`) on every call |
 | Job tier | Replaced by the three needs. `--tier` stays as a shorthand for the same need on all three axes |
-| Adequate, not best | The job goes to the lowest class of model that covers all three needs; a higher class is used only when that class is blocked or absent |
+| Adequate, not best | Amended 2026-11-12 (section 10): the job goes to the **cheapest cost tier** among the models whose evidence covers all three needs; a dearer tier is used only when that tier has no route at all. (Before: the lowest evidence class that covers.) |
 | Newer beats bigger | A newer release of a smaller model may outrank an older flagship (Opus 5.5 over Fable 5.1 on coding) |
-| Lower class stays lower | Sonnet 5.5 must not rank above Fable 5.1 |
+| Cheaper stays cheaper | Amended 2026-11-12: Sonnet 5.5 sits in a cheaper cost tier than Fable 5.1 whatever the benchmarks say, and is therefore tried first for every job it covers. The evidence may still place Sonnet ahead of Fable 5.1 on an axis (it does on coding), and `ranking` shows both facts. (Replaces "Sonnet 5.5 must not rank above Fable 5.1".) |
 | New models | Route immediately once an estimate exists; no hold for verification |
 | Parallel workers | Keep a short-lived local record of routes just handed out |
 | Naming | "Reasoning" is an axis only. The thinking a job needs is "effort demand" |
@@ -249,6 +249,10 @@ snapshot shape and the clients do not change. `NOTICE` credits LLMBenchmark.ai u
 CC BY 4.0 and drops The Model Index and Models.dev.
 
 ### 7.4 Step 2: model profiles
+
+> Amended 2026-11-12, see section 10: class points and the `classWeight` nudge (steps 2
+> and 3 below) are removed, `S_a = E_a`, and the profile gains a **cost tier** next to the
+> evidence class. The rest of this section stands.
 
 Built locally on each machine from the snapshot, the local discoveries, the hints and
 the user's config, and cached in the placement table as today (`placements.json`,
@@ -411,10 +415,10 @@ that does not cover is the sum, over axes, of band steps below the need; the
 **Candidate groups**, in order (this generalizes V1's "requested tier, then downgrade,
 upgrade only when structurally empty"):
 
-1. **Fit group**: the models that cover the job and belong to the **lowest class**
-   (7.4) among all covering models. This is the token-waste guard: a Frontier-class
-   model enters the fit group for a `low/low/low` job only when no Daily-class or
-   Advanced-class model covers it.
+1. **Fit group**: the models that cover the job and belong to the **cheapest cost tier**
+   (section 10; before 2026-11-12: the lowest evidence class) among all covering
+   models. This is the token-waste guard: a Frontier-cost model enters the fit group
+   for a `low/low/low` job only when no Daily-cost or Advanced-cost model covers it.
 2. **Downgrade groups**, used only when every route in the fit group is blocked by
    usage: the models that do not cover, by increasing shortfall (shortfall 1, then 2,
    ...), each group tried as V1 tries the next lower tier. `--no-downgrade` and `wait`
@@ -632,6 +636,142 @@ warning stays on the roadmap.
 - The family table outranks the provider's description for class points, because Claude
   Code's own wording would otherwise read Sonnet as Advanced and Haiku as Daily.
 - `confidence` is about usage only; placement certainty lives in `quality.evidence`.
+
+## 10. Amendment 2026-11-12: cost tiers from price; evidence decides capability only
+
+### 10.1 Why
+
+The owner's review of the 2026-11-11 build found Sonnet 5.5 classed Advanced and
+therefore never eligible for a Daily job (the fit group was the lowest *evidence* class
+that covers, and Sonnet's evidence is Advanced on all three axes). The scores were
+verified against LLMBenchmark's published indexes and are exact: Sonnet 5.5 is about
+three points behind Opus 5.5 on every axis and ahead of Fable 5.1 on coding. The owner's
+objection ("no way Sonnet is Advanced, it is a daily worker, faster and cheaper") is a
+statement about **cost and role**, not about measured capability. The design had
+collapsed the two into one number. They are now two:
+
+- **Capability** comes from benchmark evidence only and answers "which models can do
+  this job?" (the needs cuts, unchanged).
+- **Cost tier** comes from the model's price and answers "which of those is cheapest?".
+  The dataset already carries each model's maker API price (owner's observation,
+  2026-11-12: "we can take it from the llmbenchmark"), so no hand-maintained ladder is
+  needed; the family table remains only as the fallback for models without a price.
+
+The decision becomes: eligible by evidence, then the cheapest cost tier, then the most
+subscription headroom inside that tier.
+
+### 10.2 Cost tier
+
+- **Price.** The refresh copies each dataset model's `pricing` into the snapshot as
+  `pricing: { inputPerM, outputPerM, basis }` (USD per million tokens, the maker's own
+  API price when the maker serves the model on OpenRouter, else LLMBenchmark's median
+  across providers; `basis` says which). Curated rows may carry a `pricing` object too
+  (Composer 2.5 from cursor.com). 39 of 430 dataset models have no price today.
+- **Blended price** `P = (3 · inputPerM + outputPerM) / 4`, the usual 3:1 input to
+  output convention; it is a sorting key, never shown as a bill.
+- **Cost bands** `costBands` in config, default `[1, 5, 12]` USD per million blended:
+  Light below 1, Daily below 5, Advanced below 12, Frontier at or above 12. On the
+  2026-11-11 data this reproduces every vendor's ladder from the price alone:
+
+  | Blended $/M | Models | Cost tier |
+  | --- | --- | --- |
+  | 0.20 | Haiku 5.5, GPT-6 Luna | Light |
+  | 2.00 – 4.00 | GPT-6.1 Terra, Grok 4.5, Grok 4.7, Sonnet 5.5, GPT-6.1 Sol, Gemini 4 Carbon | Daily |
+  | 6.00 – 11.25 | Sonnet 4.6, Kimi K3, Opus 5.5, Opus 5, Opus 4.8, GPT-5.5 | Advanced |
+  | 16.00 – 20.00 | Fable 5.2, GPT-6 Astra, Fable 5.1 | Frontier |
+
+- **Source order** for a model's cost tier, first that applies: the user's
+  `tierOverrides` (`override`; by id, then family: an override now means "treat this
+  model as this cost tier"), the snapshot price (`price`), the family and model-line
+  tables and the provider's lineup words (`family` / `lineup`, the same `hintFor` as
+  today), the model's evidence class (`evidence`), else `null` (an unranked model with
+  no hint is never routed unless pinned, as today).
+- **Day-0** models have no snapshot row and so no price: the hint gives the cost tier
+  and the evidence is inherited from the vendor's best measured model at or below that
+  tier (7.5, unchanged). Once the model has a snapshot row its price takes over.
+- The profile carries `cost: { tier, blended, source } | null`; `Profile.class` stays
+  the evidence class (highest band), used for display and as the fallback above.
+
+### 10.3 Capability
+
+- `S_a = E_a`. Class points and the `classWeight` nudge are removed; the config key warns
+  and is ignored like `scoreWeight`. Hints never touch a score or a band again.
+- `bands` are re-set on raw evidence. Starting values on the 2026-11-11 data (the
+  builder confirms them with the checks): coding `[70, 78, 82]`, agentic `[60, 72, 80]`,
+  reasoning `[76, 84, 89]`. With them Haiku 5.5 is Light and Terra is Daily on every
+  axis; Sonnet 5.5 and Sol are Advanced (Sonnet Frontier on coding alone); Opus 5.5,
+  Astra and the Fables are Frontier.
+- **Calibration checks** on raw scores: Haiku 5.5 Light and GPT-6.1 Terra Daily on
+  coding; Opus 5.5, Fable 5.1 and GPT-6 Astra Frontier on coding; the cross-axis check as
+  before (fails for hinted families, warns otherwise). The "Fable 5.1 ranks above Sonnet
+  5.5 on every axis" check is **removed**: the data contradicts it on coding and the
+  cost tier now carries what that check was protecting.
+
+### 10.4 Decision
+
+- **Eligible**: covers the needs (7.6, unchanged cuts). **Fit group**: the eligible
+  models in the cheapest cost tier present. **Higher tiers**: the next cost tier with an
+  eligible route, only when the fit group has no route at all (structural, as before).
+  **Downgrade groups** (non-covering, by shortfall) and `wait` are unchanged; a blocked
+  fit group still never promotes.
+- Per agent, the newest release of a family competes **per cost tier** (replaces "per
+  class" of 2026-11-12 morning): Sonnet 4.6 (Advanced cost) stays visible but never
+  beats Sonnet 5.5 (Daily cost) for a job Sonnet 5.5 covers; Grok 4.5 and 4.7 are both
+  Daily cost, so only 4.7 competes, which is right because 4.7 covers everything 4.5
+  does (an older same-tier release is hidden again).
+- Order inside a group: unchanged (unblocked, headroom, hot session, confidence,
+  evidence, need-weighted score, non-fast, newest, agent, model).
+- `Decision.tier` is the cost tier of the pick; `quality.class` stays the evidence
+  class; `quality.cost = { tier, blended, source }` is added. `requestedTier` unchanged.
+
+Worked example on the owner's machine, 2026-11-11 data, raw scores, bands of 10.3:
+
+| Job (`--tier`) | Eligible by evidence | Cheapest cost tier present | Pick by headroom |
+| --- | --- | --- | --- |
+| light | everyone ranked | Light: Haiku, Luna | Haiku (Claude 40%) or Luna (Codex 25%) |
+| daily | Terra, Sonnet, Sol, Opus 5.5, Astra, Fables | Daily: Terra, Sonnet, Sol | Sonnet |
+| advanced | Sonnet, Sol, Opus 5.5, Astra, Fables | Daily: Sonnet, Sol | Sonnet |
+| frontier | Opus 5.5, Fable 5.2 (Astra 83.8 and Fable 5.1 82.8 are a point under the coding cut of 84 on the old bands; on the new coding cut of 82 both cover) | Advanced: Opus 5.5 | Opus 5.5 |
+
+Grok 4.7 (Daily cost) stays out of the Daily group because its evidence does not cover
+(coding 65.8, agentic 46.8); Composer 2.5 likewise. The free "Cursor Models" pool is
+reached for Light jobs through Grok 4.5 only if Grok 4.7 is hidden behind nothing
+cheaper, which is the per-tier rule above: both are Daily cost, so Light jobs go to
+Haiku and Luna. The owner accepted that on 2026-11-12.
+
+### 10.5 Output
+
+- `ranking` prints, per model: id, **cost tier with the blended price and its source**
+  (`daily $4.00/M price`, `frontier family`, `light evidence`), the evidence class, the
+  three axes as today, agents, and the hint only when it decided the cost tier.
+  `ranking --json` adds `cost`. The order is by cost tier, then evidence.
+- `tiers` groups models by **cost tier**; `tiers --axis` keeps showing evidence bands by
+  axis with the cuts line.
+- `route` reasons: `fit group: daily cost tier (3 models)` and one line
+  `cost: daily ($4.00/M blended, maker price)`; the `quality` line is unchanged.
+- `status` unchanged.
+
+### 10.6 Snapshot and config
+
+- `SnapshotModel.pricing?: { inputPerM: number; outputPerM: number; basis?: string }`;
+  schema version stays 1 (no release has shipped; the field is optional and the parser
+  accepts rows without it). `data/evidence-curated.json` rows may carry `pricing`.
+- `costBands: [number, number, number]` (ascending, non-negative), default `[1, 5, 12]`.
+  `classWeight` removed with a warning. `tierOverrides` keep their shape and now set the
+  cost tier.
+
+### 10.7 Skill
+
+The rubric for needs is unchanged. The explanation of a pick becomes "the cheapest cost
+tier whose evidence covers the job, then the most headroom"; `tiers` is described as the
+cost-tier view and `ranking` as the evidence view.
+
+### 10.8 Left to the builder
+
+- Exact starting `bands` (10.3 gives the values to start from; confirm with the checks).
+- The `ranking` column layout.
+- Whether the frozen CLI fixture `tests/fixtures/evidence-bundled.json` is regenerated
+  once from the new snapshot (recommended: yes, then frozen again).
 - Bands are fixed in the snapshot; a tripped calibration check is fixed by hand in the
   refresh PR.
 - Models.dev is dropped (owner's decision, 2026-11-10); the snapshot's model list is
