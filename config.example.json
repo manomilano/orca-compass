@@ -12,7 +12,7 @@
     "advanced": "medium",
     "frontier": "high"
   },
-  "classWeight": 0.1,
+  "costBands": [1, 5, 12],
   "handoutMinutes": 10,
   "handoutPercent": 5,
   "evidenceTtlHours": 24,
