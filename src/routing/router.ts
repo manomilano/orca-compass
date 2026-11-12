@@ -363,7 +363,7 @@ function collectCandidates(agents: PlacedAgent[], env: Environment, config: Conf
 function newestPerFamilyClass(models: PlacedModel[]): PlacedModel[] {
   const newest = new Map<string, PlacedModel>();
   const key = (model: PlacedModel) =>
-    `${model.agent} ${modelFamily(model.modelId, model.meta) ?? `model:${model.modelId}`} ${model.profile.class ?? 'unclassified'}`;
+    `${model.agent}\u0000${modelFamily(model.modelId, model.meta) ?? `model:${model.modelId}`}\u0000${model.profile.class ?? 'unclassified'}`;
   for (const model of models) {
     const previous = newest.get(key(model));
     if (!previous || compareRelease(model, previous) > 0) newest.set(key(model), model);
