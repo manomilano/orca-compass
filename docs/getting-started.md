@@ -198,8 +198,8 @@ model for classification.
    a missing file means defaults, an invalid one is exit code 2.
 2. **Read the placement table** from the cache. When it is missing, older
    than `placementsTtlHours`, from another OrcaCompass version, built with
-   other `tierOverrides` or `classWeight`, a changed snapshot, or a newly
-   detected agent, it is rebuilt. The manifest checks the repository evidence
+   other `tierOverrides` or `costBands`, an older placement schema, a changed
+   snapshot, or a newly detected agent, it is rebuilt. The manifest checks the repository evidence
    snapshot with cached and bundled fallbacks (24 hours by default).
    2b. **Discover agents** in parallel. For each one: find the executable,
    read its model list, note its effort levels and which usage pools it draws
@@ -209,8 +209,11 @@ model for classification.
    fails. A listing that asks you to sign in marks the agent `not signed in`.
    `agy models` runs with its background auto-updater off, so listing models
    never updates Antigravity; `agy` still updates itself when you or Orca run it.
-   2c. **Profile every model** from evidence and hints; `orcacompass ranking`
-   shows the result and `orcacompass tiers` shows the axis bands.
+   2c. **Profile every model** with raw evidence scores and a separate cost tier
+   from snapshot prices (3:1 input/output blend, `costBands` default `[1, 5, 12]`),
+   falling back to hints and evidence class without a price. `orcacompass ranking`
+   is the evidence view; `orcacompass tiers` groups by cost tier and
+   `orcacompass tiers --axis coding` shows evidence bands.
 3. **Read usage** with `orca account list --json` (20 s timeout). Each agent gets
    a status (`ok`, `unavailable`, `unknown`) and its usage pools. A pool with a
    missing number is skipped, never read as 0%. This is the only command a
@@ -222,7 +225,10 @@ model for classification.
    still younger than `rejectionTtlHours`.
 
 Then the pure routing core (`src/routing/router.ts`, no I/O) turns that
-environment, your request and your config into a `Decision`. See
+environment, your request and your config into a `Decision`: the cheapest cost
+tier whose evidence covers the job, then the most headroom. A cheaper covering
+pick is accepted in setup and status with a label such as `(daily cost tier)`
+for Advanced needs; it is not a downgrade. See
 [Tiers and routing](tiers-and-routing.md).
 
 A run that builds the table checks the evidence manifest before discovery, so it can
@@ -243,6 +249,7 @@ A healthy `route` prints a line like:
 ```text
 daily → claude · claude-sonnet-5-5 · medium (high confidence)
   claude claude-sonnet-5-5: weekly 20% used, 56% of window elapsed (headroom 60%) → on pace for 36% before reset in 3d
+  cost: daily ($4.00/M blended, maker price)
   effort: medium from tier default, passed as --effort
 orca orchestration worker-start --spec "<task>" --agent claude --model claude-sonnet-5-5 --effort medium
 ```

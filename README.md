@@ -29,13 +29,17 @@ as an Agent Skill backed by a small TypeScript CLI.
 ## How it works
 
 1. **Rate the job** on coding, agentic and reasoning needs.
-2. **OrcaCompass builds profiles** from LLMBenchmark evidence and class hints.
-3. **It chooses a route** from the lowest class covering the needs, accounting
-   for usage and recent hand-outs. Cursor `auto` is a fallback.
+2. **OrcaCompass builds profiles** with raw LLMBenchmark capability evidence
+   and separate cost tiers from price (3:1 input/output blend, `costBands`
+   default `[1, 5, 12]`; hints are the fallback when price is missing).
+3. **It chooses a route** from the cheapest cost tier whose evidence covers
+   the job, then the most headroom, accounting for recent hand-outs.
+   Cursor `auto` is a fallback.
 
 ```sh
 orcacompass route --need coding=mid,agentic=low,reasoning=low --demand moderate --json
-orcacompass ranking --axis coding
+orcacompass ranking --axis coding  # evidence view
+orcacompass tiers                  # cost-tier view
 ```
 
 `--tier` remains a shorthand for equal needs on all axes. See
@@ -110,14 +114,14 @@ Everything `setup` does is also a command of its own:
 
 ```sh
 orcacompass status                        # agents, usage, and the pick for each tier
-orcacompass tiers                         # every model's tiers, with the numbers behind them
+orcacompass tiers                         # cost tiers, prices and capability evidence
 orcacompass agents                        # which agents are used, and why not
 orcacompass agents disable grok           # never route to Grok Build
 orcacompass prefer daily codex            # Codex first for everyday jobs, unless it runs too hot
 orcacompass ban claude-haiku              # never route a Claude Haiku model
 orcacompass route --tier daily --json     # a route for an everyday job
 orcacompass route --tier advanced --agent claude --agent codex --demand high
-orcacompass route --tier frontier --no-downgrade --json   # never fall back to a lower tier
+orcacompass route --tier frontier --no-downgrade --json   # never accept a capability shortfall
 ```
 
 With the Skill installed, the orchestrator does this for you: it rates each
@@ -136,8 +140,9 @@ For example, a routing decision can look like this (illustrative numbers):
 
 ```text
 $ orcacompass route --tier advanced
-advanced → claude · claude-opus-5-5 · medium (high confidence)
-  claude claude-opus-5-5: weekly 40% used, 62% of window elapsed (headroom 34%) → on pace for 65% before reset in 2d
+advanced → claude · claude-sonnet-5-5 · medium (high confidence)
+  cost: daily ($4.00/M blended, maker price)
+  claude claude-sonnet-5-5: weekly 40% used, 62% of window elapsed (headroom 34%) → on pace for 65% before reset in 2d
 ```
 
 ## User guide

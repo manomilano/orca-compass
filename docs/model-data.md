@@ -3,7 +3,17 @@
 The schema 1 `data/evidence-snapshot.json` is both the model catalog and the
 benchmark evidence used for coding, agentic and reasoning profiles. It contains
 model identifiers, aliases, results with source URLs and dates, axis scores,
-weights, bands and licensed source metadata. No token prices are used.
+weights, bands and licensed source metadata. Optional model `pricing` is
+`{ inputPerM, outputPerM, basis? }`, in USD per million tokens. The refresh
+copies LLMBenchmark pricing: the maker API price when the maker serves the
+model on OpenRouter, otherwise the median across providers; `basis` records
+which. Curated rows can carry pricing too. Missing or unusable dataset prices
+are omitted; schema 1 still accepts rows without pricing.
+
+Price decides the cost tier only, using a 3:1 input/output blend and configurable
+`costBands` (default `[1, 5, 12]`). It never changes evidence scores, bands or
+need cuts. Models without a price fall back to family/lineup hints and then
+evidence class; user cost-tier overrides take precedence over price.
 
 The raw [LLMBenchmark.ai](https://llmbenchmark.ai) dataset is committed unchanged
 at `data/llmbenchmark/dataset.json` (about 22 MB, updated by the owner's

@@ -36,7 +36,7 @@ milliseconds), and `models`: an array of `{ "id": "..." }` objects with an optio
 provider `label` (Cursor keeps its labels, including `NO ZDR`). They store provider
 observations only. Computed tiers live in `placements.json`, which records the
 OrcaCompass version and the placement keys of the configuration
-(`tierOverrides`, `classWeight`) it was built with, so a change
+(`tierOverrides`, `costBands`) in `builtWith` (schema 4), so a change
 to any of them rebuilds it. Recent hand-outs are stored temporarily; usage is read on each run. User preferences remain in `config.json`.
 
 The listing commands run when the placement table is built, not on every
@@ -57,7 +57,10 @@ cache; OrcaCompass writes it when it invokes that command during discovery.
   effect and no warning. Unknown tier keys inside `pins` or `defaultEffort`
   are errors.
 - Known keys must have the documented types; numbers must be finite and
-  non-negative; `classWeight` at most 1.
+  non-negative. `costBands` must contain exactly three strictly ascending,
+  non-negative numbers; invalid values are a config error naming the key.
+- `classWeight` is no longer used: it warns and is ignored, like `scoreWeight`
+  and `modelsDevTtlHours`.
 - Commands that write the file change only their own keys. Every other key
   keeps its value and position, and the file keeps its indentation and line
   endings. The write replaces the file in one step, so a crash never leaves
@@ -75,7 +78,7 @@ cache; OrcaCompass writes it when it invokes that command during discovery.
 | `preferRiskLimit` | `100` | Projected usage percentage above which a within-limit alternative replaces the favorite. Retain the favorite when no unblocked alternative has known usage within this limit | `prefer --risk-limit` |
 | `banModels` | `[]` | Model ids or families never routed | `ban`, `unban` |
 | `lastResortAgents` | `["opencode"]` | Agents used only when no other agent can take the job in any allowed tier (or instead of waiting). `--agent <id>` or a preference for the tier lifts it; `[]` makes them ordinary | by hand |
-| `tierOverrides` | `{}` | Model id or family to a tier: `{ "gemma4:12b": "light", "grok": "daily" }`. Sets the band on all axes; `auto` overrides are ignored | by hand |
+| `tierOverrides` | `{}` | Model id or family to a tier: `{ "gemma4:12b": "light", "grok": "daily" }`. Sets the cost tier only, leaving evidence bands and coverage unchanged; `auto` overrides are ignored | by hand |
 | `excludeNoZdr` | `false` | Exclude models marked no-ZDR (zero data retention). Relies on Cursor's `NO ZDR` labels only | by hand |
 | `cursorAuto` | `true` | Offer Cursor `auto` as a fallback when no named model can be routed | by hand |
 
@@ -101,7 +104,7 @@ config requires the spelling `xhigh`.
 
 | Key | Default | Purpose |
 | --- | --- | --- |
-| `classWeight` | `0.10` | Weight of the class hint, from 0 to 1 |
+| `costBands` | `[1, 5, 12]` | USD per million blended tokens: Light below 1, Daily below 5, Advanced below 12, Frontier at or above 12; blend `(3 × input + output) / 4` |
 | `handoutMinutes` | `10` | Lifetime of recent hand-outs |
 | `handoutPercent` | `5` | Usage points added per hand-out per pool |
 | `evidenceTtlHours` | `24` | Manifest check interval |
@@ -112,9 +115,10 @@ config requires the spelling `xhigh`.
 
 [`config.example.json`](https://github.com/manomilano/orca-compass/blob/main/config.example.json) shows a typical setup rather than the defaults: it limits routing to Claude,
 Codex and Cursor (`allowAgents`), pins Claude Sonnet for Daily and adds one tier
-override (`grok-4.7` is already Advanced built in, so that line only shows the
-syntax). Remove those three to keep automatic selection; the other keys it
-lists are at their defaults, and keys it omits (`effortPolicy`,
+override (treating `grok-4.7` as Advanced cost without changing its evidence).
+Its legacy `classWeight` is no longer used and warns; use `costBands` instead.
+Remove the agent restriction, pin and override to keep automatic selection;
+the other keys it lists are at their defaults, and keys it omits (`effortPolicy`,
 `placementsTtlHours`, `rejectionTtlHours`, `lastResortAgents`) keep theirs.
 
 ```json

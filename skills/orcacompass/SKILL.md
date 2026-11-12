@@ -131,8 +131,9 @@ route without `--effort`.
 
    Add `--demand <low|moderate|high|exceptional>`. Restrict agents with
    repeated `--agent <id>` or `--exclude-agent <id>`. Use `--effort <e>` only
-   for an effort the user asked for; `--no-downgrade` prevents fallback to a
-   lower tier. Agent ids are `claude`, `codex`, `cursor`,
+   for an effort the user asked for; `--no-downgrade` prevents capability
+   shortfalls and Cursor auto fallback. A cheaper cost tier that covers the
+   needs is still allowed. Agent ids are `claude`, `codex`, `cursor`,
    `grok`, `antigravity`, `opencode`, and `muse` (detected only, never routed: Orca has no
    Muse model list). An unknown id adds a warning with a likely match
    (`did you mean cursor?`); fix the id and route again.
@@ -144,7 +145,9 @@ route without `--effort`.
    If the user specifies an exact model, honor that choice directly; the CLI
    has no model selection flag.
 
-3. Parse JSON and inspect `status`, `reasons`, `warnings`, `confidence`,
+3. Routing chooses the cheapest cost tier whose evidence covers the job, then
+   the most headroom. Price determines cost only; scores and need cuts use raw
+   evidence. Parse JSON and inspect `status`, `reasons`, `warnings`, `confidence`,
    `downgraded`, and `upgraded`. Exit code 0 alone does not mean a route exists.
 4. For `status: "ok"`, append the returned `launchArgs` array to:
 
@@ -209,8 +212,9 @@ route without `--effort`.
 - A warning `… is a last-resort agent (lastResortAgents) …`: the route costs
   money per token or runs on this machine; tell the user before launching
   several workers on it.
-- `upgraded: true`: surface the warning. This occurs only when the requested
-  and all lower tiers have no candidates, never to work around usage limits.
+- `upgraded: true`: surface the warning. The covering pick's cost tier is
+  higher than the requested tier because no cheaper route covers the job;
+  routing never promotes to bypass blocked usage.
 - `status: "wait"`: inspect `waitUntil` (epoch milliseconds); wait until reset
   or retry without `--no-downgrade` if user constraints permit a downgrade.
 - `status: "none"`: launch using Orca's normal default without `--model`
@@ -225,14 +229,18 @@ route without `--effort`.
   Do not invent headroom or percentages. `catalogSource` is `network`, `cache`,
   or `snapshot`.
 - `evidenceSource: "snapshot"` means the bundled evidence was used; run
-  `orcacompass refresh` when online. Profiles use LLMBenchmark evidence with
-  family, lineup or override hints as a nudge. Class is the highest axis band;
-  the fit group is the lowest class covering the needs. Inspect profiles with
-  `orcacompass ranking`.
-- `quality` reports class, coverage, shortfall, overshoot and axis scores and
-  evidence. Labels include `measured`, `partial`, `estimated`, `assumed` and
+  `orcacompass refresh` when online. Profiles use raw LLMBenchmark evidence;
+  evidence class is the highest axis band. Cost tier comes from a user override,
+  then snapshot price, family/model-line hint, provider lineup or evidence class.
+  Prices use a 3:1 input/output blend, with `costBands` default `[1, 5, 12]`.
+  Inspect evidence with `orcacompass ranking` and cost tiers with `orcacompass tiers`.
+- `quality` reports evidence class, cost (`tier`, `blended`, `source`), coverage,
+  shortfall, overshoot, axis scores and evidence. Labels include `measured`, `partial`, `estimated`, `assumed` and
   `unranked`; estimated and assumed placements are provisional and worth
-  mentioning when asked why a model was chosen. Cursor auto has no quality.
+  mentioning when asked why a model was chosen. `tier` is the pick's cost tier;
+  a cheaper covering pick is not a downgrade. Setup and status label it with
+  `(daily cost tier)`, for example. Cursor auto has no quality or cost tier;
+  it never appears in ranking or competes in Light or Daily.
 
 Use `orcacompass status --json` to inspect discovery, pools, and skipped agents
 (each skipped agent carries its reason, such as `excluded by config` or
@@ -240,8 +248,8 @@ Use `orcacompass status --json` to inspect discovery, pools, and skipped agents
 agent refused at launch as `refused by <agent> …`; `orcacompass rejected`
 lists those and `orcacompass rejected --clear` forgets them);
 use `orcacompass refresh` to refetch metadata and rebuild the placement
-table, and `orcacompass tiers` to see every model's tiers. Send only the short classification
-explanation via `--tier-reason`. Keep the full task specification and repository
+table, and `orcacompass tiers --axis coding` to inspect evidence bands.
+Send only the short classification explanation via `--tier-reason`. Keep the full task specification and repository
 contents in the worker launch.
 
 Recent hand-outs are remembered and applied to usage, so spreading workers
