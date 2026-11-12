@@ -17,7 +17,6 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DATASET_URL = 'https://llmbenchmark.ai/data/dataset.json';
 const DATASET_PATH = join(root, 'data', 'llmbenchmark', 'dataset.json');
 const METHODOLOGY_URL = 'https://llmbenchmark.ai/methodology';
-const CLASS_WEIGHT = 0.10;
 
 async function optionalText(path) {
   try { return await readFile(path, 'utf8'); } catch (error) {
@@ -84,8 +83,8 @@ async function main() {
   const dataset = JSON.parse(datasetText);
   const now = new Date().toISOString();
   const snapshot = buildSnapshot(dataset, { now, sourceFetchedAt: now, bands: previous?.bands ?? DEFAULT_BANDS, curated });
-  const failures = calibrationChecks(snapshot, CLASS_WEIGHT);
-  for (const warning of calibrationWarnings(snapshot, CLASS_WEIGHT)) console.error(`WARNING: ${warning}`);
+  const failures = calibrationChecks(snapshot);
+  for (const warning of calibrationWarnings(snapshot)) console.error(`WARNING: ${warning}`);
   if (failures.length) {
     for (const failure of failures) console.error(`Calibration failed: ${failure}`);
     process.exitCode = 1;
@@ -95,7 +94,7 @@ async function main() {
   const bytes = Buffer.from(serializeSnapshot(snapshot));
   const manifest = { generatedAt: snapshot.generatedAt, schemaVersion: snapshot.schemaVersion,
     sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length };
-  const lines = diffSnapshots(previous, snapshot, CLASS_WEIGHT);
+  const lines = diffSnapshots(previous, snapshot);
   const diff = ['# Evidence snapshot refresh', '', ...(lines.length ? lines : ['No model profile changes.']), ''].join('\n');
   await mkdir(out, { recursive: true });
   await writeFile(snapshotPath, bytes);

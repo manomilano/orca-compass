@@ -396,7 +396,7 @@ function compareRelease(a: LaunchModel, b: LaunchModel): number {
 function evaluate(model: PlacedModel, env: Environment, config: Config, needs: Needs, auto = false): Candidate {
   const adequacy = coverage(model.profile, needs, env.bands);
   const quality: Quality = {
-    class: model.profile.class, covers: adequacy.covers, shortfall: adequacy.shortfall, overshoot: adequacy.overshoot,
+    class: model.profile.class, cost: model.profile.cost, covers: adequacy.covers, shortfall: adequacy.shortfall, overshoot: adequacy.overshoot,
     evidence: jobEvidence(model.profile, needs),
     axes: Object.fromEntries(AXES.map((axis) => {
       const p = model.profile.axes[axis];

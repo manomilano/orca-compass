@@ -27,7 +27,7 @@ const fable: PlacedModel = {
 
 function tableFixture(patch: Partial<PlacementTable> = {}): PlacementTable {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     version: '0.1.0',
     builtAt: NOW,
     builtWith: builtWith(DEFAULT_CONFIG),
@@ -68,6 +68,19 @@ describe('writeTable and readTable', () => {
 });
 
 describe('parseTable', () => {
+  it('rejects a schema 3 table with the old builtWith shape', () => {
+    expect(parseTable(JSON.stringify({ ...tableFixture(), schemaVersion: 3, builtWith: { classWeight: 0.1, tierOverrides: {} } }))).toBeUndefined();
+  });
+
+  it.each([undefined, null, [5, 1, 12], [1, 5], ['1', 5, 12], [-1, 5, 12], [1, 1, 12]])('rejects invalid cached costBands %j', (costBands) => {
+    expect(parseTable(JSON.stringify({ ...tableFixture(), builtWith: { tierOverrides: {}, costBands } }))).toBeUndefined();
+  });
+
+  it.each([undefined, {}, { tier: 'ultra', blended: 4, source: 'price' }, { tier: 'daily', blended: -1, source: 'price' }, { tier: 'daily', blended: '4', source: 'price' }, { tier: 'daily', blended: null, source: 'unknown' }])('rejects invalid cached cost %j', (cost) => {
+    const table = tableFixture();
+    expect(parseTable(JSON.stringify({ ...table, agents: [{ ...table.agents[0], models: [{ ...fable, profile: { ...fable.profile, cost } }] }] }))).toBeUndefined();
+  });
+
   it('accepts the written shape', () => {
     expect(parseTable(JSON.stringify(tableFixture()))).toEqual(tableFixture());
   });
@@ -103,7 +116,7 @@ describe('parseTable', () => {
   });
 
   it('accepts an unranked profile', () => {
-    const profile = { class: null, hint: null, axes: Object.fromEntries(['coding', 'agentic', 'reasoning'].map((axis) =>
+    const profile = { class: null, cost: null, hint: null, axes: Object.fromEntries(['coding', 'agentic', 'reasoning'].map((axis) =>
       [axis, { score: null, evidence: null, benchmarks: 0, label: 'unranked', band: null }])) };
     const raw = tableFixture();
     expect(parseTable(JSON.stringify({ ...raw, agents: [{ ...raw.agents[0], models: [{ ...fable, profile }] }] }))).toBeDefined();
@@ -144,7 +157,7 @@ describe('staleness', () => {
     ['expired', read(), { ttlHours: 0 }],
     ['expired', read({ builtAt: NOW + 48 * HOUR }), {}],
     ['config', read(), { config: { ...DEFAULT_CONFIG, tierOverrides: { 'claude-opus-5-5': 'frontier' } } }],
-    ['config', read(), { config: { ...DEFAULT_CONFIG, classWeight: 0.5 } }],
+    ['config', read(), { config: { ...DEFAULT_CONFIG, costBands: [1, 3, 12] } }],
     ['agent-appeared', read(), { onPath: ['claude', 'muse'] }],
   ])('is %s', (expected, r, patch) => {
     expect(staleness(r, { ...fresh, ...patch })).toBe(expected);
@@ -161,7 +174,7 @@ describe('staleness', () => {
   });
 
   it('ignores key order in builtWith', () => {
-    const reordered = tableFixture({ builtWith: { classWeight: 0.1, tierOverrides: {} } });
+    const reordered = tableFixture({ builtWith: { costBands: [1, 5, 12], tierOverrides: {} } });
     expect(staleness({ table: reordered, present: true }, fresh)).toBeUndefined();
   });
 
@@ -172,7 +185,7 @@ describe('staleness', () => {
 
 describe('builtWith and tableAge', () => {
   it('copies only the two placement keys', () => {
-    expect(builtWith({ ...DEFAULT_CONFIG, banModels: ['x'] })).toEqual({ tierOverrides: {}, classWeight: 0.1 });
+    expect(builtWith({ ...DEFAULT_CONFIG, banModels: ['x'] })).toEqual({ tierOverrides: {}, costBands: [1, 5, 12] });
   });
 
   it('measures the age in milliseconds', () => {

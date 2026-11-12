@@ -1,4 +1,4 @@
-import { AXES, type Axis, type EvidenceSnapshot, type SnapshotModel, type SnapshotScore } from '../evidence/snapshot.js';
+import { AXES, type Axis, type EvidenceSnapshot, type SnapshotModel, type SnapshotPricing, type SnapshotScore } from '../evidence/snapshot.js';
 import { TIERS, type AgentDiscovery, type Classification, type Config, type ModelMeta, type PlacedAgent, type Tier } from '../types.js';
 import { compact, normalizeModelId, stripVersion } from './ids.js';
 import { FAMILY_TIERS, lineupTier, MODEL_LINE_TIERS, modelFamily } from './tiers.js';
@@ -12,13 +12,18 @@ export interface AxisProfile {
   band: Tier | null;
   inheritedFrom?: string;
 }
+export type CostSource = 'override' | 'price' | 'family' | 'lineup' | 'evidence';
+export interface CostTier {
+  tier: Tier;
+  blended: number | null;
+  source: CostSource;
+}
 export interface Profile {
   class: Tier | null;
+  cost: CostTier | null;
   hint: Classification | null;
   axes: Record<Axis, AxisProfile>;
 }
-
-export const CLASS_POINTS: Record<Tier, number> = { light: 25, daily: 50, advanced: 75, frontier: 100 };
 
 /** Overrides, built-in model lines and families, then the provider's description. */
 export function hintFor(modelId: string, meta: ModelMeta | undefined, lineup: string | undefined, config: Config): Classification | undefined {
@@ -32,6 +37,22 @@ export function hintFor(modelId: string, meta: ModelMeta | undefined, lineup: st
   if (family !== undefined && Object.hasOwn(FAMILY_TIERS, family)) return { tier: FAMILY_TIERS[family], source: 'family' };
   const tier = lineupTier(lineup);
   return tier === undefined ? undefined : { tier, source: 'lineup', detail: `the provider's lineup ("${lineup}")` };
+}
+
+/** Maker price per million tokens, blended at three input tokens per output token. */
+export function blendedPrice(pricing: SnapshotPricing): number {
+  return Math.round((3 * pricing.inputPerM + pricing.outputPerM) / 4 * 100) / 100;
+}
+
+/** Cost is independent of evidence: override, maker price, hint, then evidence class. */
+export function costTierFor(modelId: string, meta: ModelMeta | undefined, lineup: string | undefined,
+  snapshotModel: SnapshotModel | undefined, evidenceClass: Tier | null, config: Config): CostTier | null {
+  const hint = hintFor(modelId, meta, lineup, config);
+  const blended = snapshotModel?.pricing ? blendedPrice(snapshotModel.pricing) : null;
+  if (hint?.source === 'override') return { tier: hint.tier, blended, source: 'override' };
+  if (blended !== null) return { tier: bandOf(blended, config.costBands), blended, source: 'price' };
+  if (hint) return { tier: hint.tier, blended: null, source: hint.source };
+  return evidenceClass === null ? null : { tier: evidenceClass, blended: null, source: 'evidence' };
 }
 
 export function bandOf(score: number, bands: [number, number, number]): Tier {
@@ -62,8 +83,7 @@ const metaOf = (model: SnapshotModel): ModelMeta => ({
   id: model.id, provider: model.provider, name: model.name, family: model.family, releaseDate: model.releasedAt,
 });
 const unranked = (): AxisProfile => ({ score: null, evidence: null, benchmarks: 0, label: 'unranked', band: null });
-const emptyProfile = (): Profile => ({ class: null, hint: null, axes: { coding: unranked(), agentic: unranked(), reasoning: unranked() } });
-const round1 = (score: number): number => Math.round(score * 10) / 10;
+const emptyProfile = (): Profile => ({ class: null, cost: null, hint: null, axes: { coding: unranked(), agentic: unranked(), reasoning: unranked() } });
 
 function inherit(axis: Axis, family: string | undefined, vendor: string | undefined, hint: Classification, snapshot: EvidenceSnapshot, config: Config): SnapshotModel | undefined {
   if (vendor === undefined) return undefined;
@@ -79,7 +99,7 @@ function inherit(axis: Axis, family: string | undefined, vendor: string | undefi
     || a.id.localeCompare(b.id))[0];
 }
 
-/** A model's independent evidence, nudged by its class hint and cut into per-axis bands. */
+/** A model's raw independent evidence and its separate cost tier. */
 export function buildProfile(modelId: string, meta: ModelMeta | undefined, lineup: string | undefined, snapshot: EvidenceSnapshot, config: Config): Profile {
   const matched = findSnapshotModel(modelId, snapshot);
   const identity = meta ?? (matched ? metaOf(matched) : undefined);
@@ -92,15 +112,16 @@ export function buildProfile(modelId: string, meta: ModelMeta | undefined, lineu
     const direct = matched?.scores[axis];
     const inherited = !direct && hint ? inherit(axis, family, vendor, hint, snapshot, config) : undefined;
     const evidence: SnapshotScore | undefined = direct ?? inherited?.scores[axis];
-    const score = evidence ? round1(hint ? (1 - config.classWeight) * evidence.score + config.classWeight * CLASS_POINTS[hint.tier] : evidence.score) : null;
+    const score = evidence?.score ?? null;
     profile.axes[axis] = {
       score, evidence: evidence?.score ?? null, benchmarks: evidence?.benchmarks ?? 0,
       label: inherited ? 'assumed' : !evidence ? 'unranked' : evidence.kind === 'estimated' ? 'estimated' : evidence.benchmarks >= 3 ? 'measured' : 'partial',
-      band: hint?.source === 'override' ? hint.tier : score === null ? null : bandOf(score, snapshot.bands[axis]),
+      band: score === null ? null : bandOf(score, snapshot.bands[axis]),
       ...(inherited ? { inheritedFrom: inherited.id } : {}),
     };
   }
   profile.class = [...TIERS].reverse().find((tier) => AXES.some((axis) => profile.axes[axis].band === tier)) ?? null;
+  profile.cost = costTierFor(modelId, identity, lineup, matched, profile.class, config);
   return profile;
 }
 

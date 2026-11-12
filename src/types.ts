@@ -2,9 +2,9 @@
 // adapters turn the machine into an Environment and the router turns that into a Decision.
 
 export type { Axis } from './evidence/snapshot.js';
-export type { AxisProfile, EvidenceLabel, Profile } from './placements/profiles.js';
+export type { AxisProfile, CostSource, CostTier, EvidenceLabel, Profile } from './placements/profiles.js';
 import type { Axis, EvidenceSnapshot } from './evidence/snapshot.js';
-import type { EvidenceLabel, Profile } from './placements/profiles.js';
+import type { CostTier, EvidenceLabel, Profile } from './placements/profiles.js';
 import type { Need, Needs } from './routing/needs.js';
 export type { Need, Needs } from './routing/needs.js';
 
@@ -122,11 +122,11 @@ export interface SourceInfo {
 }
 
 /** The config keys that move a model between tiers; a change rebuilds the table. */
-export type BuiltWith = Pick<Config, 'tierOverrides' | 'classWeight'>;
+export type BuiltWith = Pick<Config, 'tierOverrides' | 'costBands'>;
 
 /** Every discovered model's profile, cached for `placementsTtlHours`. */
 export interface PlacementTable {
-  schemaVersion: 3;
+  schemaVersion: 4;
   version: string;
   builtAt: number;
   builtWith: BuiltWith;
@@ -226,6 +226,7 @@ export interface Alternative {
 
 export interface Quality {
   class: Tier | null;
+  cost: CostTier | null;
   covers: boolean;
   shortfall: number;
   overshoot: number;
@@ -284,8 +285,8 @@ export interface Config {
   defaultEffort: Record<Tier, Effort>;
   /** How a reasoning demand (--demand) maps to effort. */
   effortPolicy: EffortPolicy;
-  /** Weight of the class hint in an evidence-based profile, 0..1. */
-  classWeight: number;
+  /** Ascending blended maker-price cuts in USD per million tokens (3:1 input/output). */
+  costBands: [number, number, number];
   handoutMinutes: number;
   handoutPercent: number;
   evidenceTtlHours: number;

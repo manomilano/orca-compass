@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { buildSnapshot, calibrationChecks, calibrationWarnings, DEFAULT_BANDS, diffSnapshots, displayName, estimateScores, familyOfSlug, hintPointsOf, mergeCurated } from '../../src/evidence/refresh.js';
+import { buildSnapshot, calibrationChecks, calibrationWarnings, DEFAULT_BANDS, diffSnapshots, displayName, estimateScores, familyOfSlug, mergeCurated } from '../../src/evidence/refresh.js';
 import { BENCHMARKS } from '../../src/evidence/scoring.js';
 import { parseSnapshot, type SnapshotModel, type SnapshotResult } from '../../src/evidence/snapshot.js';
 
@@ -253,34 +253,27 @@ describe('model hints', () => {
     expect(displayName('Claude Opus 5.5')).toBe('Claude Opus 5.5');
     expect(displayName('Provider: Model: Variant')).toBe('Model: Variant');
   });
-  it('uses family points, then model lines, and leaves unknown models without a hint', () => {
-    expect(hintPointsOf(model('claude-haiku-5-5'))).toBe(25);
-    expect(hintPointsOf(model('claude-sonnet-5-5'))).toBe(50);
-    expect(hintPointsOf(model('claude-opus-5-5'))).toBe(75);
-    expect(hintPointsOf(model('claude-fable-5-1'))).toBe(100);
-    expect(hintPointsOf({ ...model('gpt-6-luna'), id: 'grok-4-7', family: 'grok' })).toBe(75);
-    expect(hintPointsOf({ ...model('gpt-6-luna'), id: 'unknown', family: 'unknown' })).toBeUndefined();
-  });
+
 });
 
 describe('calibration and diffs', () => {
   it('passes the calibration checks on the real numbers', () => {
-    expect(calibrationChecks(built, 0.1)).toEqual([]);
+    expect(calibrationChecks(built)).toEqual([]);
   });
-  it.each(['coding', 'agentic', 'reasoning'] as const)('reports a Sonnet above Fable on %s as a failure', (axis) => {
-    const bad = structuredClone(built);
-    bad.models.find((m) => m.id === 'claude-fable-5-1')!.scores[axis]!.score = 60;
-    expect(calibrationChecks(bad, 0.1).join('\n')).toMatch(new RegExp(`fable-5-1.*sonnet-5-5.*${axis}|${axis}.*fable-5-1.*sonnet-5-5`, 'i'));
+  it('calibrates raw scores with the spec bands without comparing Fable to Sonnet', () => {
+    const snapshot = buildSnapshot(dataset, { ...opts, bands: { coding: [70, 78, 82], agentic: [60, 72, 80], reasoning: [76, 84, 89] } });
+    expect(snapshot.models.find((m) => m.id === 'claude-sonnet-5-5')!.scores.coding!.score).toBeGreaterThan(snapshot.models.find((m) => m.id === 'claude-fable-5-1')!.scores.coding!.score);
+    expect(calibrationChecks(snapshot)).toEqual([]);
   });
-  it.each(['claude-fable-5-1', 'gpt-6-astra', 'claude-opus-5-5', 'claude-haiku-5-5', 'claude-sonnet-5-5'])('reports missing calibration model %s', (id) => {
-    expect(calibrationChecks({ ...built, models: built.models.filter((m) => m.id !== id) }, 0.1).join('\n')).toContain(id);
+  it.each(['claude-fable-5-1', 'gpt-6-astra', 'claude-opus-5-5', 'claude-haiku-5-5', 'gpt-6-1-terra'])('reports missing calibration model %s', (id) => {
+    expect(calibrationChecks({ ...built, models: built.models.filter((m) => m.id !== id) }).join('\n')).toContain(id);
   });
   it('checks the expected coding bands and missing evidence', () => {
     const bad = structuredClone(built);
     bad.models.find((m) => m.id === 'gpt-6-astra')!.scores.coding!.score = 50;
     bad.models.find((m) => m.id === 'claude-haiku-5-5')!.scores.coding!.score = 95;
     delete bad.models.find((m) => m.id === 'claude-opus-5-5')!.scores.coding;
-    const failures = calibrationChecks(bad, 0.1).join('\n');
+    const failures = calibrationChecks(bad).join('\n');
     expect(failures).toMatch(/gpt-6-astra.*frontier/i);
     expect(failures).toMatch(/claude-haiku-5-5.*light/i);
     expect(failures).toContain('claude-opus-5-5');
@@ -288,14 +281,14 @@ describe('calibration and diffs', () => {
   it.each([undefined, 'claude-sonnet'])('allows measured cross-axis gaps with family %s', (family) => {
     const extra: SnapshotModel = { id: 'extra', family, aliases: [], provider: 'test', name: 'Extra', results: [], scores: { coding: { score: 90, benchmarks: 2, kind: 'measured' }, agentic: { score: 40, benchmarks: 3, kind: 'measured' } } };
     const snapshot = { ...built, models: [...built.models, extra] };
-    expect(calibrationChecks(snapshot, 0.1)).toEqual([]);
-    expect(calibrationWarnings(snapshot, 0.1)).toEqual([]);
+    expect(calibrationChecks(snapshot)).toEqual([]);
+    expect(calibrationWarnings(snapshot)).toEqual([]);
   });
   it('warns without failing for an unhinted sparse model with a cross-axis gap', () => {
     const extra: SnapshotModel = { id: 'extra', aliases: [], provider: 'test', name: 'Extra', results: [], scores: { coding: { score: 70, benchmarks: 2, kind: 'measured' }, reasoning: { score: 90, benchmarks: 3, kind: 'estimated' } } };
     const snapshot = { ...built, models: [...built.models, extra] };
-    expect(calibrationChecks(snapshot, 0.1)).toEqual([]);
-    expect(calibrationWarnings(snapshot, 0.1)).toEqual(['extra: coding daily and reasoning frontier differ by more than one band']);
+    expect(calibrationChecks(snapshot)).toEqual([]);
+    expect(calibrationWarnings(snapshot)).toEqual(['extra: coding daily and reasoning frontier differ by more than one band']);
   });
   it.each([
     { id: 'extra', family: 'claude-sonnet' },
@@ -304,46 +297,46 @@ describe('calibration and diffs', () => {
   ])('fails for a hinted sparse model with a cross-axis gap: $id/$family', ({ id, family }) => {
     const extra: SnapshotModel = { id, family, aliases: [], provider: 'test', name: 'Extra', results: [], scores: { coding: { score: 90, benchmarks: 2, kind: 'measured' }, agentic: { score: 40, benchmarks: 3, kind: 'estimated' } } };
     const snapshot = { ...built, models: [...built.models, extra] };
-    expect(calibrationChecks(snapshot, 0.1)).toEqual([`${id}: coding frontier and agentic light differ by more than one band`]);
-    expect(calibrationWarnings(snapshot, 0.1)).toEqual([]);
+    expect(calibrationChecks(snapshot)).toEqual([`${id}: coding frontier and agentic light differ by more than one band`]);
+    expect(calibrationWarnings(snapshot)).toEqual([]);
   });
   it('does not warn for adjacent bands or an unranked axis', () => {
     const extra: SnapshotModel = { id: 'extra', aliases: [], provider: 'test', name: 'Extra', results: [], scores: { coding: { score: 70, benchmarks: 2, kind: 'measured' }, reasoning: { score: 80, benchmarks: 3, kind: 'estimated' } } };
     const snapshot = { ...built, models: [...built.models, extra] };
-    expect(calibrationWarnings(snapshot, 0.1)).toEqual([]);
+    expect(calibrationWarnings(snapshot)).toEqual([]);
     delete extra.scores.coding;
-    expect(calibrationWarnings(snapshot, 0.1)).toEqual([]);
+    expect(calibrationWarnings(snapshot)).toEqual([]);
   });
-  it('diffs bands and scores using the family-adjusted score', () => {
+  it('diffs bands and scores using raw evidence scores', () => {
     const next = structuredClone(built);
     next.models.find((m) => m.id === 'claude-haiku-5-5')!.scores.coding!.score = 80;
-    expect(diffSnapshots(built, next, 0.1).join('\n')).toMatch(/claude-haiku-5-5.*coding.*light.*daily/i);
-    expect(diffSnapshots(undefined, built, 0.1)[0]).toMatch(/added/i);
-    expect(diffSnapshots(built, built, 0.1)).toEqual([]);
+    expect(diffSnapshots(built, next).join('\n')).toMatch(/claude-haiku-5-5.*coding.*light.*advanced/i);
+    expect(diffSnapshots(undefined, built)[0]).toMatch(/added/i);
+    expect(diffSnapshots(built, built)).toEqual([]);
     next.models = next.models.filter((m) => m.id !== 'gpt-6-luna');
-    expect(diffSnapshots(built, next, 0.1).join('\n')).toMatch(/removed.*gpt-6-luna/i);
+    expect(diffSnapshots(built, next).join('\n')).toMatch(/removed.*gpt-6-luna/i);
   });
   it('reports score movements of at least one point, band changes, and newly ranked axes', () => {
     const next = structuredClone(built);
     const haiku = next.models.find((m) => m.id === 'claude-haiku-5-5')!;
+    haiku.scores.coding!.score += 0.5;
+    expect(diffSnapshots(built, next)).toEqual([]);
     haiku.scores.coding!.score += 1;
-    expect(diffSnapshots(built, next, 0.1)).toEqual([]);
-    haiku.scores.coding!.score += 1;
-    expect(diffSnapshots(built, next, 0.1).join('\n')).toMatch(/claude-haiku-5-5.*coding/);
+    expect(diffSnapshots(built, next).join('\n')).toMatch(/claude-haiku-5-5.*coding/);
     delete haiku.scores.reasoning;
-    expect(diffSnapshots(built, next, 0.1).join('\n')).toMatch(/claude-haiku-5-5.*reasoning.*unranked/i);
-    expect(diffSnapshots(next, built, 0.1).join('\n')).toMatch(/claude-haiku-5-5.*reasoning/);
+    expect(diffSnapshots(built, next).join('\n')).toMatch(/claude-haiku-5-5.*reasoning.*unranked/i);
+    expect(diffSnapshots(next, built).join('\n')).toMatch(/claude-haiku-5-5.*reasoning/);
     const edge = structuredClone(built);
-    edge.models.find((m) => m.id === 'claude-fable-5-1')!.scores.coding!.score = 82.1;
-    expect(diffSnapshots(built, edge, 0.1).join('\n')).toMatch(/claude-fable-5-1.*coding.*frontier.*advanced/i);
+    edge.models.find((m) => m.id === 'claude-fable-5-1')!.scores.coding!.score = 81.9;
+    expect(diffSnapshots(built, edge).join('\n')).toMatch(/claude-fable-5-1.*coding.*frontier.*advanced/i);
   });
   it('includes exact one-point movements despite floating-point rounding', () => {
     const extra: SnapshotModel = { id: 'unknown', aliases: [], provider: 'test', name: 'Unknown', results: [], scores: { coding: { score: 0.4, benchmarks: 2, kind: 'measured' } } };
     const previous = { ...built, models: [...built.models, extra] };
     const next = structuredClone(previous);
     next.models.find((m) => m.id === 'unknown')!.scores.coding!.score = 1.4;
-    expect(diffSnapshots(previous, next, 0.1).join('\n')).toMatch(/unknown.*coding.*0\.4.*1\.4/);
-    expect(diffSnapshots(next, previous, 0.1).join('\n')).toMatch(/unknown.*coding.*1\.4.*0\.4/);
+    expect(diffSnapshots(previous, next).join('\n')).toMatch(/unknown.*coding.*0\.4.*1\.4/);
+    expect(diffSnapshots(next, previous).join('\n')).toMatch(/unknown.*coding.*1\.4.*0\.4/);
   });
 });
 

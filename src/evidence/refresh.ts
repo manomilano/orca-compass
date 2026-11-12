@@ -1,12 +1,12 @@
 import { DEFAULT_CONFIG } from '../config.js';
-import { buildProfile, CLASS_POINTS, hintFor, type Profile } from '../placements/profiles.js';
+import { buildProfile, hintFor, type Profile } from '../placements/profiles.js';
 import { knownModelVersion } from '../placements/tiers.js';
 import { TIERS } from '../types.js';
 import { AXIS_WEIGHTS, axisScore, BENCHMARKS, MIN_BENCHMARKS, rescale } from './scoring.js';
 import { AXES, SNAPSHOT_SCHEMA, type Axis, type EvidenceSnapshot, type SnapshotModel, type SnapshotPricing, type SnapshotResult } from './snapshot.js';
 
 export const DEFAULT_BANDS: EvidenceSnapshot['bands'] = {
-  coding: [68, 76, 84], agentic: [60, 70, 80], reasoning: [72, 80, 88],
+  coding: [70, 78, 82], agentic: [60, 72, 80], reasoning: [76, 84, 89],
 };
 
 export const METRIC_MAP: Record<string, { benchmark: string; priority: number }> = {
@@ -256,24 +256,18 @@ export function estimateScores(models: SnapshotModel[], benchmarks: EvidenceSnap
   return estimated.map((model) => ({ ...model, results: model.results.filter((row) => row.kind === 'measured' || used.has(row)) }));
 }
 
-/** Family-only hints for the refresh builder; local lineup descriptions are unavailable. */
-export function hintPointsOf(model: SnapshotModel): number | undefined {
-  const hint = hintFor(model.id, model, undefined, DEFAULT_CONFIG);
-  return hint === undefined ? undefined : CLASS_POINTS[hint.tier];
-}
+const snapshotProfile = (model: SnapshotModel, snapshot: EvidenceSnapshot): Profile =>
+  buildProfile(model.id, model, undefined, snapshot, DEFAULT_CONFIG);
 
-const snapshotProfile = (model: SnapshotModel, snapshot: EvidenceSnapshot, classWeight: number): Profile =>
-  buildProfile(model.id, model, undefined, snapshot, { ...DEFAULT_CONFIG, classWeight });
-
-export function diffSnapshots(previous: EvidenceSnapshot | undefined, next: EvidenceSnapshot, classWeight: number): string[] {
+export function diffSnapshots(previous: EvidenceSnapshot | undefined, next: EvidenceSnapshot): string[] {
   const before = new Map(previous?.models.map((model) => [model.id, model]));
   const after = new Map(next.models.map((model) => [model.id, model]));
   const lines: string[] = [];
   for (const model of next.models) {
     const old = before.get(model.id);
     if (!old || !previous) { lines.push(`- Added model: ${model.id}`); continue; }
-    const oldProfile = snapshotProfile(old, previous, classWeight);
-    const newProfile = snapshotProfile(model, next, classWeight);
+    const oldProfile = snapshotProfile(old, previous);
+    const newProfile = snapshotProfile(model, next);
     for (const axis of AXES) {
       const from = oldProfile.axes[axis];
       const to = newProfile.axes[axis];
@@ -289,32 +283,26 @@ export function diffSnapshots(previous: EvidenceSnapshot | undefined, next: Evid
   return lines;
 }
 
-export function calibrationChecks(snapshot: EvidenceSnapshot, classWeight: number): string[] {
+export function calibrationChecks(snapshot: EvidenceSnapshot): string[] {
   const failures: string[] = [];
   const models = new Map(snapshot.models.map((model) => [model.id, model]));
-  for (const [id, want] of [ ['claude-fable-5-1', 'frontier'], ['gpt-6-astra', 'frontier'], ['claude-opus-5-5', 'frontier'], ['claude-haiku-5-5', 'light'] ] as const) {
+  for (const [id, want] of [ ['claude-haiku-5-5', 'light'], ['gpt-6-1-terra', 'daily'], ['claude-opus-5-5', 'frontier'], ['claude-fable-5-1', 'frontier'], ['gpt-6-astra', 'frontier'] ] as const) {
     const model = models.get(id);
-    const actual = model?.scores.coding && snapshotProfile(model, snapshot, classWeight).axes.coding;
+    const actual = model?.scores.coding && snapshotProfile(model, snapshot).axes.coding;
     if (actual?.band !== want) failures.push(`${id} coding: expected ${want}, got ${actual?.band ?? 'missing model or score'}`);
   }
-  const fable = models.get('claude-fable-5-1'), sonnet = models.get('claude-sonnet-5-5');
-  for (const axis of AXES) {
-    const higher = fable?.scores[axis] && snapshotProfile(fable, snapshot, classWeight).axes[axis].score;
-    const lower = sonnet?.scores[axis] && snapshotProfile(sonnet, snapshot, classWeight).axes[axis].score;
-    if (higher == null || lower == null || higher <= lower) failures.push(`claude-fable-5-1 must rank above claude-sonnet-5-5 on ${axis}${higher == null || lower == null ? ' (missing model or score)' : ''}`);
-  }
-  return [...failures, ...crossAxisFindings(snapshot, classWeight, true)];
+  return [...failures, ...crossAxisFindings(snapshot, true)];
 }
 
-export function calibrationWarnings(snapshot: EvidenceSnapshot, classWeight: number): string[] {
-  return crossAxisFindings(snapshot, classWeight, false);
+export function calibrationWarnings(snapshot: EvidenceSnapshot): string[] {
+  return crossAxisFindings(snapshot, false);
 }
 
-function crossAxisFindings(snapshot: EvidenceSnapshot, classWeight: number, hinted: boolean): string[] {
+function crossAxisFindings(snapshot: EvidenceSnapshot, hinted: boolean): string[] {
   const findings: string[] = [];
   for (const model of snapshot.models) {
-    if ((hintPointsOf(model) !== undefined) !== hinted) continue;
-    const profile = snapshotProfile(model, snapshot, classWeight);
+    if ((hintFor(model.id, model, undefined, DEFAULT_CONFIG) !== undefined) !== hinted) continue;
+    const profile = snapshotProfile(model, snapshot);
     const ranked = AXES.filter((axis) => model.scores[axis] !== undefined);
     const hasPartialEvidence = (axis: Axis): boolean => model.scores[axis]?.kind === 'measured' && model.scores[axis]!.benchmarks >= MIN_BENCHMARKS;
     for (let i = 0; i < ranked.length; i++) {

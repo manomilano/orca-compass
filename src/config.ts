@@ -11,7 +11,7 @@ export const DEFAULT_CONFIG: Config = {
   thresholds: { longPercent: 95, sessionPercent: 90 },
   defaultEffort: { light: 'low', daily: 'medium', advanced: 'medium', frontier: 'high' },
   effortPolicy: 'balanced',
-  classWeight: 0.1,
+  costBands: [1, 5, 12],
   handoutMinutes: 10,
   handoutPercent: 5,
   evidenceTtlHours: 24,
@@ -50,7 +50,8 @@ export function loadConfig(path = configPath(), warn?: (message: string) => void
   }
   try {
     if (isObj(raw)) {
-      if (Object.hasOwn(raw, 'scoreWeight')) warn?.('scoreWeight is no longer used (OrcaCompass 0.3 ranks models by benchmark evidence; see classWeight)');
+      if (Object.hasOwn(raw, 'scoreWeight')) warn?.('scoreWeight is no longer used (OrcaCompass 0.3 ranks models by benchmark evidence; see costBands)');
+      if (Object.hasOwn(raw, 'classWeight')) warn?.('classWeight is no longer used (OrcaCompass 0.3 scores models by evidence alone; cost tiers come from price, see costBands)');
       if (Object.hasOwn(raw, 'modelsDevTtlHours')) warn?.('modelsDevTtlHours is no longer used (the evidence snapshot is the catalog; see evidenceTtlHours)');
     }
     return merge(raw);
@@ -81,9 +82,12 @@ function num(v: unknown, key: string): number {
   return v;
 }
 
-function fraction(v: unknown, key: string): number {
-  if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 1) throw new Invalid(`${key} must be a number from 0 to 1`);
-  return v;
+function bands(v: unknown, key: string): [number, number, number] {
+  if (!Array.isArray(v) || v.length !== 3 || !v.every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0) ||
+      v[0] >= v[1] || v[1] >= v[2]) {
+    throw new Invalid(`${key} must be three ascending non-negative numbers`);
+  }
+  return [v[0], v[1], v[2]];
 }
 
 function tier(v: unknown, key: string): Tier {
@@ -134,7 +138,7 @@ function merge(raw: unknown): Config {
     if (!EFFORT_POLICIES.includes(r.effortPolicy as EffortPolicy)) throw new Invalid(`effortPolicy must be one of ${EFFORT_POLICIES.join(', ')}`);
     c.effortPolicy = r.effortPolicy as EffortPolicy;
   }
-  if (r.classWeight !== undefined) c.classWeight = fraction(r.classWeight, 'classWeight');
+  if (r.costBands !== undefined) c.costBands = bands(r.costBands, 'costBands');
   if (r.handoutMinutes !== undefined) c.handoutMinutes = num(r.handoutMinutes, 'handoutMinutes');
   if (r.handoutPercent !== undefined) c.handoutPercent = num(r.handoutPercent, 'handoutPercent');
   if (r.evidenceTtlHours !== undefined) c.evidenceTtlHours = num(r.evidenceTtlHours, 'evidenceTtlHours');

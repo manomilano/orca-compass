@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG } from '../../src/config.js';
 import { calibrationChecks } from '../../src/evidence/refresh.js';
 import { AXES, parseSnapshot } from '../../src/evidence/snapshot.js';
-import { bandOf, buildProfile, findSnapshotModel, profileModels, vendorOfFamily } from '../../src/placements/profiles.js';
+import { bandOf, blendedPrice, buildProfile, findSnapshotModel, profileModels, vendorOfFamily } from '../../src/placements/profiles.js';
 import type { AgentDiscovery, LaunchModel } from '../../src/types.js';
 import { fixture } from '../helpers/fakes.js';
 
@@ -16,34 +16,46 @@ const launch = (agent: string, modelId: string, lineup?: string): LaunchModel =>
 describe('profiles', () => {
   it('keeps the bundled snapshot calibrated with the same profile calculation', () => {
     const bundled = parseSnapshot(readFileSync(new URL('../../data/evidence-snapshot.json', import.meta.url), 'utf8'))!;
-    expect(calibrationChecks(bundled, DEFAULT_CONFIG.classWeight)).toEqual([]);
+    expect(calibrationChecks(bundled)).toEqual([]);
   });
 
   it('keeps the bundled model classes aligned with the calibrated reasoning bands', () => {
     const bundled = parseSnapshot(readFileSync(new URL('../../data/evidence-snapshot.json', import.meta.url), 'utf8'))!;
     const expected = {
       'claude-haiku-5-5': 'light', 'gpt-6-luna': 'light', 'gpt-6-1-terra': 'daily',
-      'claude-sonnet-5-5': 'advanced', 'gpt-6-1-sol': 'advanced', 'claude-opus-5-5': 'frontier',
+      'claude-sonnet-5-5': 'frontier', 'gpt-6-1-sol': 'advanced', 'claude-opus-5-5': 'frontier',
       'gpt-6-astra': 'frontier', 'claude-fable-5-1': 'frontier', 'claude-fable-5-2': 'frontier',
     };
     const classes = Object.fromEntries(Object.keys(expected).map((id) => [id, buildProfile(id, undefined, undefined, bundled, DEFAULT_CONFIG).class]));
     expect(classes).toEqual(expected);
   });
 
-  it('scores Sonnet as Advanced on every axis and below Fable everywhere', () => {
-    const sonnet = p('claude-sonnet-5-5');
-    expect(sonnet.axes.coding).toMatchObject({ score: 80.9, evidence: 84.3, band: 'advanced', label: 'measured', benchmarks: 5 });
-    expect(sonnet.class).toBe('advanced');
-    for (const axis of AXES) {
-      expect(sonnet.axes[axis].band).toBe('advanced');
-      expect(p('claude-fable-5-1').axes[axis].score!).toBeGreaterThan(sonnet.axes[axis].score!);
-    }
+  it('scores are the raw evidence; hints no longer move them', () => {
+    expect(p('claude-sonnet-5-5').axes.coding).toMatchObject({ score: 84.3, evidence: 84.3, band: 'frontier', label: 'measured', benchmarks: 5 });
+    expect(p('claude-haiku-5-5').axes.coding).toMatchObject({ score: 68.5, band: 'daily' });
+    expect(p('claude-opus-5-5').axes.coding.score).toBe(87.4);
+    expect(p('claude-fable-5-1').axes.coding.score).toBe(82.8);
   });
 
-  it('ranks Opus above Fable on coding, both Frontier', () => {
-    expect(p('claude-opus-5-5').axes.coding.score).toBe(86.2);
-    expect(p('claude-fable-5-1').axes.coding.score).toBe(84.5);
-    expect(p('claude-opus-5-5').class).toBe('frontier');
+  it('cost tier comes from the blended maker price', () => {
+    expect(p('claude-sonnet-5-5').cost).toEqual({ tier: 'daily', blended: 4, source: 'price' });
+    expect(p('claude-opus-5-5').cost).toEqual({ tier: 'advanced', blended: 8, source: 'price' });
+    expect(p('claude-fable-5-2').cost).toEqual({ tier: 'frontier', blended: 16, source: 'price' });
+    expect(p('claude-haiku-5-5').cost).toEqual({ tier: 'light', blended: 0.2, source: 'price' });
+  });
+
+  it('falls back to the hint, then the evidence class, when there is no price', () => {
+    expect(p('claude-fable-5-5').cost).toEqual({ tier: 'frontier', blended: null, source: 'family' });
+    expect(p('claude-fable-5-5').axes.coding.label).toBe('assumed');
+    expect(p('composer-2.5').cost).toEqual({ tier: 'advanced', blended: null, source: 'evidence' });
+    expect(p('new-model', 'For your toughest challenges').cost).toEqual({ tier: 'frontier', blended: null, source: 'lineup' });
+    expect(p('mystery').cost).toBeNull();
+  });
+
+  it('costBands move only the cost cuts and include the boundary in the higher tier', () => {
+    const config = { ...DEFAULT_CONFIG, costBands: [1, 4, 12] as [number, number, number] };
+    expect(p('claude-sonnet-5-5', undefined, config).cost?.tier).toBe('advanced');
+    expect(p('claude-sonnet-5-5', undefined, config).axes).toEqual(p('claude-sonnet-5-5').axes);
   });
 
   it('labels estimates and leaves missing axes unranked without a hint', () => {
@@ -63,17 +75,26 @@ describe('profiles', () => {
     expect(p('claude-sonnet-5-5', 'For complex work and everyday tasks').hint).toEqual({ tier: 'daily', source: 'family' });
   });
 
-  it('forces override bands on every axis while keeping the evidence and weighted score', () => {
-    const profile = p('claude-haiku-5-5', undefined, { ...DEFAULT_CONFIG, tierOverrides: { 'claude-haiku-5-5': 'frontier' } });
-    expect(AXES.map((axis) => profile.axes[axis].band)).toEqual(['frontier', 'frontier', 'frontier']);
-    expect(profile.axes.coding).toMatchObject({ score: 71.7, evidence: 68.5, label: 'measured' });
-    expect(profile.hint?.source).toBe('override');
+  it('an override sets the cost tier and leaves the evidence bands alone', () => {
+    const profile = p('claude-sonnet-5-5', undefined, { ...DEFAULT_CONFIG, tierOverrides: { 'claude-sonnet-5-5': 'light' } });
+    expect(profile.cost).toEqual({ tier: 'light', blended: 4, source: 'override' });
+    expect(profile.axes).toEqual(p('claude-sonnet-5-5').axes);
+    expect(profile.axes.coding.band).toBe('frontier');
+    expect(profile.class).toBe('frontier');
   });
 
-  it('allows an override without evidence while leaving its score explicitly unknown', () => {
+  it('prefers an id override to its family override and a family override to price', () => {
+    const config = { ...DEFAULT_CONFIG, tierOverrides: { 'claude-sonnet': 'frontier' as const, 'claude-sonnet-5-5': 'light' as const } };
+    expect(p('claude-sonnet-5-5', undefined, config).cost?.tier).toBe('light');
+    delete (config.tierOverrides as Record<string, unknown>)['claude-sonnet-5-5'];
+    expect(p('claude-sonnet-5-5', undefined, config).cost).toEqual({ tier: 'frontier', blended: 4, source: 'override' });
+  });
+
+  it('allows a cost override without inventing evidence', () => {
     const profile = p('mystery-9', undefined, { ...DEFAULT_CONFIG, tierOverrides: { 'mystery-9': 'daily' } });
-    expect(profile.class).toBe('daily');
-    for (const axis of AXES) expect(profile.axes[axis]).toEqual({ score: null, evidence: null, benchmarks: 0, label: 'unranked', band: 'daily' });
+    expect(profile.cost).toEqual({ tier: 'daily', blended: null, source: 'override' });
+    expect(profile.class).toBeNull();
+    for (const axis of AXES) expect(profile.axes[axis]).toEqual({ score: null, evidence: null, benchmarks: 0, label: 'unranked', band: null });
   });
 
   it('uses the highest axis band as class', () => {
@@ -81,11 +102,6 @@ describe('profiles', () => {
     const composer = snapshot.models.find((model) => model.id === 'composer-2-5')!;
     composer.scores.reasoning = { score: 90, benchmarks: 3, kind: 'measured' };
     expect(buildProfile(composer.id, undefined, undefined, snapshot, DEFAULT_CONFIG).class).toBe('frontier');
-  });
-
-  it('supports zero and full class weight', () => {
-    expect(p('claude-sonnet-5-5', undefined, { ...DEFAULT_CONFIG, classWeight: 0 }).axes.coding.score).toBe(84.3);
-    expect(p('claude-sonnet-5-5', undefined, { ...DEFAULT_CONFIG, classWeight: 1 }).axes.coding.score).toBe(50);
   });
 
   it('leaves a model without a hint or evidence unranked', () => {
@@ -97,7 +113,7 @@ describe('profiles', () => {
 describe('snapshot identity', () => {
   it.each(['gpt-6.1-terra', 'openai/gpt-6.1-terra', 'gpt-6-1-terra-20261026', 'GPT-6.1-Terra', 'gpt61terra'])('matches %s', (id) => {
     expect(findSnapshotModel(id, snap)?.id).toBe('gpt-6-1-terra');
-    expect(p(id).axes.coding.score).toBe(74.8);
+    expect(p(id).axes.coding.score).toBe(77.5);
   });
 
   it('matches aliases, Cursor spelling, version-zero differences and dated aliases', () => {
@@ -121,7 +137,7 @@ describe('snapshot identity', () => {
 describe('assumed inheritance', () => {
   it('takes the vendor best score at or below the hinted class on each axis', () => {
     const profile = p('claude-fable-5-3');
-    expect(profile.axes.coding).toMatchObject({ label: 'assumed', inheritedFrom: 'claude-opus-5-5', evidence: 87.4, score: 88.7, benchmarks: 5 });
+    expect(profile.axes.coding).toMatchObject({ label: 'assumed', inheritedFrom: 'claude-opus-5-5', evidence: 87.4, score: 87.4, benchmarks: 5 });
     expect(profile.axes.agentic).toMatchObject({ inheritedFrom: 'claude-fable-5-2', evidence: 85.4 });
     expect(profile.class).toBe('frontier');
   });
@@ -177,4 +193,10 @@ it.each([[0, 'light'], [67.9, 'light'], [68, 'daily'], [75.9, 'daily'], [76, 'ad
 
 it.each([['claude-sonnet', 'anthropic'], ['gpt-terra', 'openai'], ['gemini-flash-lite', 'google'], ['grok', 'xai'], ['other', undefined], [undefined, undefined]])('identifies vendor for %s', (family, vendor) => {
   expect(vendorOfFamily(family)).toBe(vendor);
+});
+
+it.each([
+  [0, 0, 0], [2, 10, 4], [0.123, 0.456, 0.21],
+])('blends maker prices %s/%s to %s at two decimals', (inputPerM, outputPerM, expected) => {
+  expect(blendedPrice({ inputPerM, outputPerM })).toBe(expected);
 });

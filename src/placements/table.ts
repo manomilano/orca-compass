@@ -7,10 +7,10 @@ import { AGENT_IDS, CLASSIFICATION_SOURCES, TIERS, type AgentId, type BuiltWith,
 // The placement table: every model's profile, computed from the snapshot and reused until stale.
 
 export const PLACEMENTS_FILE = 'placements.json';
-export const PLACEMENTS_SCHEMA = 3;
+export const PLACEMENTS_SCHEMA = 4;
 
 export const builtWith = (config: Config): BuiltWith =>
-  structuredClone({ tierOverrides: config.tierOverrides, classWeight: config.classWeight });
+  structuredClone({ tierOverrides: config.tierOverrides, costBands: config.costBands });
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isInt = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) >= 0;
@@ -29,8 +29,15 @@ const nullableTier = (v: unknown): boolean => v === null || TIERS.includes(v as 
 const validHint = (v: unknown): boolean => v === null || (isObj(v) && TIERS.includes(v.tier as never) &&
   CLASSIFICATION_SOURCES.includes(v.source as never) && (v.detail === undefined || typeof v.detail === 'string'));
 
+const validCost = (v: unknown): boolean => v === null || (isObj(v) && TIERS.includes(v.tier as never) &&
+  (v.blended === null || (typeof v.blended === 'number' && Number.isFinite(v.blended) && v.blended >= 0)) &&
+  ['override', 'price', 'family', 'lineup', 'evidence'].includes(v.source as string));
+
+const validCostBands = (v: unknown): boolean => Array.isArray(v) && v.length === 3 &&
+  v.every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0) && v[0] < v[1] && v[1] < v[2];
+
 function validProfile(v: unknown): boolean {
-  if (!isObj(v) || !nullableTier(v.class) || !validHint(v.hint) || !isObj(v.axes)) return false;
+  if (!isObj(v) || !nullableTier(v.class) || !validCost(v.cost) || !validHint(v.hint) || !isObj(v.axes)) return false;
   const axes = v.axes;
   return AXES.every((axis) => {
     const p = axes[axis];
@@ -69,7 +76,7 @@ export function parseTable(text: string | undefined): PlacementTable | undefined
   }
   if (!isObj(raw) || raw.schemaVersion !== PLACEMENTS_SCHEMA || typeof raw.version !== 'string' || !isInt(raw.builtAt)) return undefined;
   const b = raw.builtWith;
-  if (!isObj(b) || !isObj(b.tierOverrides) || typeof b.classWeight !== 'number' || !Number.isFinite(b.classWeight) || b.classWeight < 0 || b.classWeight > 1) return undefined;
+  if (!isObj(b) || !isObj(b.tierOverrides) || !validCostBands(b.costBands)) return undefined;
   const s = raw.sources;
   if (!isObj(s) || !validSource(s.evidence) || !isObj(s.evidence) || typeof s.evidence.generatedAt !== 'string' || !Number.isFinite(Date.parse(s.evidence.generatedAt)) || !validBands(raw.bands)) return undefined;
   if (!Array.isArray(raw.agents) || !raw.agents.every(validAgent)) return undefined;
@@ -90,7 +97,7 @@ export function readTable(readFile: (p: string) => string | undefined, dir: stri
 export type Staleness = 'missing' | 'invalid' | 'version' | 'expired' | 'config' | 'agent-appeared' | 'evidence';
 
 const canonical = (b: BuiltWith): string =>
-  JSON.stringify({ classWeight: b.classWeight, tierOverrides: Object.fromEntries(Object.entries(b.tierOverrides).sort()) });
+  JSON.stringify({ costBands: b.costBands, tierOverrides: Object.fromEntries(Object.entries(b.tierOverrides).sort()) });
 
 /** Why the table must be rebuilt, or undefined when it can be used as is. */
 export function staleness(read: ReadTable, opts: {
