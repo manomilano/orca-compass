@@ -36,8 +36,9 @@ opencode`, a preference for the tier (`orcacompass prefer daily opencode
 data it still ranks after agents that have it. OpenRouter's `~vendor/x-latest`
 aliases are skipped, a model listed twice is kept from its cheapest source, and
 a `-free` copy is rated as the model it copies. Local models usually have no
-capability score: give them a tier with `tierOverrides` (for example
-`"gemma4:12b": "light"`). Orca accepts `--model` for OpenCode only in an
+benchmark evidence, so they are unranked and skipped; to use one, name it in a
+preference (`orcacompass prefer light opencode gemma4:12b`). `tierOverrides`
+sets only a model's cost tier and cannot make it qualify. Orca accepts `--model` for OpenCode only in an
 existing worktree (`--worktree current` or a selector), not a new one.
 
 Model lists are read when the placement table is built: every
@@ -57,11 +58,15 @@ Antigravity or Cursor; the Gemini CLI is not an agent here.
 
 ## How a model gets its profile
 
-Benchmark evidence and class hints form coding, agentic and reasoning scores.
-The highest axis band is the class; the lowest class that covers the job forms
-the fit group. `orcacompass ranking` displays the profiles and evidence.
-Cursor `auto` is only a fallback and has no profile. See
-[Tiers and routing](tiers-and-routing.md#ranking) for the routing order.
+Each model has two separate things. Its capability is the coding, agentic and
+reasoning scores from the benchmark evidence; a new release with no data yet
+inherits the evidence of the release before it. Its cost tier comes from its
+API price, or from a family hint when there is no price. The job's needs pick
+the models that qualify, the cheapest cost tier among them is the fit group,
+and usage headroom picks inside it. `orcacompass ranking` shows the evidence,
+`orcacompass tiers` the cost tiers. Cursor `auto` is only a fallback and has
+no profile. See [How it works](how-it-works.md) for a worked example and
+[Tiers and routing](tiers-and-routing.md#needs-and-ranking) for the full order.
 
 Effort follows the job's effort demand (`--demand`); without it the requested
 tier's default applies.

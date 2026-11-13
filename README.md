@@ -42,8 +42,9 @@ orcacompass ranking --axis coding  # evidence view
 orcacompass tiers                  # cost-tier view
 ```
 
-`--tier` remains a shorthand for equal needs on all axes. See
-[Tiers and routing](docs/tiers-and-routing.md) for details.
+`--tier` remains a shorthand for equal needs on all axes.
+[How it works](docs/how-it-works.md) follows one job through every step, and
+[Tiers and routing](docs/tiers-and-routing.md) has the details.
 
 ## Install
 

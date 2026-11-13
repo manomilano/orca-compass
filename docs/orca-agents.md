@@ -89,10 +89,11 @@ Source: `src/routing/environment.ts` and `src/placements/agents/*.ts`, `src/rout
    listing is saved to the OrcaCompass cache; if the command later fails, the
    saved copy is used with its age ("using the list from 3h ago"). A sign-in
    prompt in the output marks the agent `signedOut` and never falls back.
-3. **Give each model its tiers**: your overrides, the provider's lineup words,
-   the built-in family ladder, then The Model
-   Index capability score (`src/placements/tiers.ts`,
-   `score.ts`), stored in `placements.json` (`src/placements/build.ts`).
+3. **Give each model its profile**: coding, agentic and reasoning scores from
+   the evidence snapshot, and a cost tier from your `tierOverrides`, the
+   snapshot price, the family or lineup hint, then the evidence class
+   (`src/placements/profiles.ts`), stored in `placements.json`
+   (`src/placements/build.ts`).
 4. **Check usage** with `orca account list --json` (`src/routing/orca-usage.ts`):
    each model draws on named usage pools; a missing number is skipped, not read as 0 %.
 5. **Skip the agent** when it is turned off in Orca's Settings → Agents

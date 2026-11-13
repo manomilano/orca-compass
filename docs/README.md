@@ -14,7 +14,7 @@ Skill (`skills/orcacompass/SKILL.md`) backed by a small TypeScript CLI
 | --- | --- |
 | [Getting started](getting-started.md) | Install, first-time setup (terminal or chat), what runs on every call |
 | [Skill workflow](skill-workflow.md) | How the orchestrator uses the Skill: rate, route, launch, verify, handle the result |
-| [How it works, end to end](how-it-works.md) | The placement, routing, launch, and verification flow |
+| [How it works, end to end](how-it-works.md) | One job followed through every step: needs, evidence, cost tier, usage, launch |
 | [Tiers and routing](tiers-and-routing.md) | The four tiers, how a model gets its tier, the capability score, headroom ranking, preferences, bans, fallbacks |
 | [Effort](effort.md) | Effort demand, effort policies, snapping, how effort reaches each agent |
 | [Commands](commands.md) | Every CLI command, flag, exit code and JSON field |
