@@ -152,6 +152,22 @@ When changing metadata parsing or snapshots, preserve source attribution and
 offline fallback behavior. Do not commit real account output, credentials,
 personal paths, or task content in fixtures, issues, or screenshots.
 
+### Files served from `main`
+
+Installed copies of OrcaCompass download some files straight from this
+repository's `main` branch, so merging a change to them reaches every user at
+once, including users who have not updated:
+
+| File | Read by |
+| --- | --- |
+| `data/evidence-manifest.json`, `data/evidence-snapshot.json` | 0.3.0 and later |
+| `data/modelindex-snapshot.json` (frozen) | 0.2.x |
+
+Do not delete, rename or change the format of these files. A new format gets a
+new file name and a new release that reads it; keep the old file until old
+releases have mostly gone. `tests/served-files.test.ts` fails when one is
+missing or unreadable.
+
 ## Commits and pull requests
 
 Use Conventional Commits with a short imperative subject, for example:
@@ -177,3 +193,4 @@ include a concrete before/after example for routing changes.
 - [ ] README, configuration example, and Skill match any public behavior changes.
 - [ ] Fixtures and diagnostics contain no credentials or personal/account data.
 - [ ] Metadata attribution and the existing license are preserved.
+- [ ] Files served from `main` (see above) stay present and readable by older releases.
