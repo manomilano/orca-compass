@@ -16,8 +16,12 @@ const npxCli = join(dirname(npmCli), 'npx-cli.js');
 const root = mkdtempSync(join(tmpdir(), 'orcacompass install-'));
 const source = JSON.parse(readFileSync(join(sourceRoot, 'package.json'), 'utf8'));
 const skill = readFileSync(join(sourceRoot, 'skills/orcacompass/SKILL.md'), 'utf8');
+// The newest release on npm, exactly as published: its users must be able to update to this source.
+const published = await fetch('https://registry.npmjs.org/orcacompass/latest', { signal: AbortSignal.timeout(30_000) }).then(response => response.json());
+const [major, minor, patch] = published.version.split('.').map(Number);
 const oldVersion = '0.0.1';
-const newVersion = '0.0.2';
+// This source, numbered as the release after the published one so that it is the registry's latest.
+const newVersion = `${major}.${minor}.${patch + 1}`;
 const tarballs = new Map();
 let registry;
 
@@ -72,6 +76,7 @@ for (const version of [oldVersion, newVersion]) {
   const [{ filename }] = JSON.parse(packed.stdout);
   tarballs.set(version, readFileSync(join(root, filename)));
 }
+tarballs.set(published.version, Buffer.from(await (await fetch(published.dist.tarball, { signal: AbortSignal.timeout(30_000) })).arrayBuffer()));
 
 const server = createServer(async (req, res) => {
   try {
@@ -152,7 +157,7 @@ try {
   const cache = join(upgrade.env.ORCACOMPASS_HOME, 'cache.json');
   writeFileSync(cache, 'preserve this cache');
   const updated = await run(upgrade, 'update', globalCommand('update', '--global', '--yes', '--agent', 'codex', '--agent', 'claude-code'));
-  assert.match(updated.stdout, /updated from 0\.0\.1 to 0\.0\.2/);
+  assert.ok(updated.stdout.includes(`updated from ${oldVersion} to ${newVersion}`), updated.stdout);
   verify(upgrade, newVersion);
   assert.equal(readFileSync(config, 'utf8'), preferences, 'Updating must preserve user preferences');
   const help = await run(upgrade, 'help', [join(installedRoot(upgrade), 'dist/cli.js'), '--help']);
@@ -187,6 +192,31 @@ try {
     assert.equal(upgrade.env.CI, undefined);
     console.log('PASS: Windows Skill removal exits cleanly without outer telemetry or CI overrides');
   }
+
+  // The published release, not a copy of this source: its own update command, config and caches.
+  const release = environment('published');
+  mkdirSync(join(release.profile, '.codex'));
+  await run(release, 'published-install', command(published.version));
+  assert.equal(JSON.parse(readFileSync(join(installedRoot(release), 'package.json'), 'utf8')).version, published.version);
+  const releaseConfig = join(release.env.ORCACOMPASS_HOME, 'config.json');
+  mkdirSync(dirname(releaseConfig), { recursive: true });
+  // Includes keys that earlier releases accepted and later ones removed.
+  const releasePreferences = JSON.stringify({
+    denyAgents: ['grok'], tierOverrides: { 'claude-sonnet-5-5': 'daily' }, banModels: ['example-model'],
+    scoreWeight: 0.4, modelsDevTtlHours: 24, classWeight: 0.1, placementsTtlHours: 5, preferRiskLimit: 100,
+  });
+  writeFileSync(releaseConfig, releasePreferences);
+  // The published CLI writes its caches; it may warn about keys it does not know.
+  for (const args of [['status', '--json'], ['route', '--tier', 'daily', '--json']]) await run(release, `published-${args[0]}`, globalCommand(...args));
+  const released = await run(release, 'published-update', globalCommand('update', '--global', '--yes', '--agent', 'codex', '--agent', 'claude-code'));
+  assert.ok(released.stdout.includes(`updated from ${published.version} to ${newVersion}`), released.stdout);
+  verify(release, newVersion);
+  assert.equal(readFileSync(releaseConfig, 'utf8'), releasePreferences, 'Updating must preserve user preferences');
+  for (const args of [['status', '--json'], ['route', '--tier', 'daily', '--json'], ['setup', '--json'], ['tiers'], ['agents'], ['prefer'], ['ban']]) {
+    const result = await run(release, `updated-${args[0]}`, globalCommand(...args));
+    if (args.includes('--json')) JSON.parse(result.stdout);
+  }
+  console.log(`PASS: published ${published.version} updates itself to this source, which runs on the config and caches it left`);
 
   const failed = environment('failed-update');
   await run(failed, 'old-install', command(oldVersion));

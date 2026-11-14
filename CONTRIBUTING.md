@@ -49,6 +49,7 @@ npm test
 npx tsc --noEmit
 npm run build
 npm run test:package
+npm run test:install
 npm run docs:build
 ```
 
@@ -67,7 +68,10 @@ own temporary database; they never open your Orca profile.
 
 After installer changes, build and run `npm run test:install`. It exercises
 real npm/npx and `skills@1` in temporary profiles: fresh install, upgrade,
-repeat install, downgrade refusal and a failed CLI update. A local registry
+repeat install, downgrade refusal and a failed CLI update. It also installs
+the newest release from npm as published, updates it to your source with that
+release's own `update` command, and runs the result on the config and caches
+the release left behind. A local registry
 serves temporary test versions; nothing is published and your installed
 CLI, Skills and settings are untouched. It downloads `skills@1` from npm
 and prints the temporary folder containing the logs.
@@ -75,9 +79,38 @@ On Windows the outer test environment leaves telemetry and CI overrides unset
 so the test exercises OrcaCompass's own workaround for the Skill installer's
 shutdown crash. Only its Windows `skills` subprocesses disable telemetry.
 
+`tests/skill.test.ts` keeps the Skill and the CLI in step: it runs every
+`orcacompass` command written in `skills/orcacompass/SKILL.md`, checks every
+flag the Skill names against `orcacompass --help`, and checks that the JSON
+fields the Skill tells an agent to read are in the output. When you change a
+command, a flag or an output field, change the Skill in the same pull request.
+
 CI runs the suite, type check, build and package smoke check on Windows, macOS
-and Linux with Node.js 24. A separate job checks the compiled package on Node.js
-20, the minimum supported runtime. The user guide builds on Linux in CI.
+and Linux with Node.js 24, and the installer check on the same three systems. A
+separate job checks the compiled package on Node.js 20, the minimum supported
+runtime. The user guide builds on Linux in CI. CI runs on every pull request,
+including pull requests from forks, with read-only access and no secrets.
+
+## Releases
+
+Anyone can contribute; only the maintainer releases. A release is never a side
+effect of merging or of pushing a tag.
+
+1. A pull request raises `version` in `package.json` and `package-lock.json`,
+   updates `tests/version.test.ts`, and adds a `## <version>` section to
+   `CHANGELOG.md`. Releases raise the patch number (0.2.1, then 0.2.2); a
+   minor or major step is the maintainer's decision.
+2. After the merge, the maintainer runs the **Release** workflow on `main`
+   (`gh workflow run release.yml --ref main`). It refuses a version that is
+   already on npm or has no changelog section, then repeats every CI check,
+   including the installer check, on all three systems.
+3. The publish job waits for the maintainer's approval in the `npm`
+   environment. It publishes to npm through trusted publishing (the
+   repository stores no npm token), then creates the `v<version>` tag and the
+   GitHub release from the changelog section.
+
+Run it with `-f dry_run=true` to do everything except publish. Do not create
+version tags by hand; the workflow creates them after a successful publish.
 
 ## User guide
 
@@ -189,6 +222,7 @@ include a concrete before/after example for routing changes.
 - [ ] `npx tsc --noEmit` passes.
 - [ ] `npm run build` passes.
 - [ ] `npm run test:package` passes after the build.
+- [ ] `npm run test:install` passes after the build for installer changes.
 - [ ] `npm run docs:build` passes for guide changes.
 - [ ] README, configuration example, and Skill match any public behavior changes.
 - [ ] Fixtures and diagnostics contain no credentials or personal/account data.

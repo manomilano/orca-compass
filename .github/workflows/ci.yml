@@ -55,3 +55,21 @@ jobs:
           path: dist/
       # Test the compiled package without installing development tools on Node 20.
       - run: npm run test:package
+
+  install:
+    name: Installer (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      # Real npm, npx and skills@1 against a local registry: install, update, downgrade refusal, uninstall.
+      - run: npm run test:install
