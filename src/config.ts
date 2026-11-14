@@ -50,8 +50,8 @@ export function loadConfig(path = configPath(), warn?: (message: string) => void
   }
   try {
     if (isObj(raw)) {
-      if (Object.hasOwn(raw, 'scoreWeight')) warn?.('scoreWeight is no longer used (OrcaCompass 0.3 ranks models by benchmark evidence; see costBands)');
-      if (Object.hasOwn(raw, 'classWeight')) warn?.('classWeight is no longer used (OrcaCompass 0.3 scores models by evidence alone; cost tiers come from price, see costBands)');
+      if (Object.hasOwn(raw, 'scoreWeight')) warn?.('scoreWeight is no longer used (OrcaCompass 0.2.2 ranks models by benchmark evidence; see costBands)');
+      if (Object.hasOwn(raw, 'classWeight')) warn?.('classWeight is no longer used (OrcaCompass 0.2.2 scores models by evidence alone; cost tiers come from price, see costBands)');
       if (Object.hasOwn(raw, 'modelsDevTtlHours')) warn?.('modelsDevTtlHours is no longer used (the evidence snapshot is the catalog; see evidenceTtlHours)');
     }
     return merge(raw);

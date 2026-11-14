@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0
+## 0.2.2
 
 - Replaced Model Index and Models.dev sources with a daily
   owner-refreshed evidence snapshot from [LLMBenchmark.ai](https://llmbenchmark.ai)

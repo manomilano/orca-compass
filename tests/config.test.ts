@@ -115,7 +115,7 @@ describe('loadConfig', () => {
     const warnings: string[] = [];
     expect(loadConfig(configPath(), (message) => warnings.push(message))).toEqual(DEFAULT_CONFIG);
     expect(warnings).toEqual([
-      'scoreWeight is no longer used (OrcaCompass 0.3 ranks models by benchmark evidence; see costBands)',
+      'scoreWeight is no longer used (OrcaCompass 0.2.2 ranks models by benchmark evidence; see costBands)',
       'modelsDevTtlHours is no longer used (the evidence snapshot is the catalog; see evidenceTtlHours)',
     ]);
   });
@@ -130,7 +130,7 @@ describe('loadConfig', () => {
       write(JSON.stringify({ classWeight: value }));
       const warnings: string[] = [];
       expect(loadConfig(configPath(), (w) => warnings.push(w))).toEqual(DEFAULT_CONFIG);
-      expect(warnings).toEqual(['classWeight is no longer used (OrcaCompass 0.3 scores models by evidence alone; cost tiers come from price, see costBands)']);
+      expect(warnings).toEqual(['classWeight is no longer used (OrcaCompass 0.2.2 scores models by evidence alone; cost tiers come from price, see costBands)']);
     }
   });
 
