@@ -68,7 +68,10 @@ own temporary database; they never open your Orca profile.
 
 After installer changes, build and run `npm run test:install`. It exercises
 real npm/npx and `skills@1` in temporary profiles: fresh install, upgrade,
-repeat install, downgrade refusal and a failed CLI update. A local registry
+repeat install, downgrade refusal and a failed CLI update. It also installs
+the newest release from npm as published, updates it to your source with that
+release's own `update` command, and runs the result on the config and caches
+the release left behind. A local registry
 serves temporary test versions; nothing is published and your installed
 CLI, Skills and settings are untouched. It downloads `skills@1` from npm
 and prints the temporary folder containing the logs.
