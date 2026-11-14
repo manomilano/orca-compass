@@ -79,7 +79,9 @@ Use the commands above to write the config; never edit the file yourself.
   than the limit before the window resets, so another route was chosen.
 - An agent the user has not enabled in Orca is never routed (`not enabled in
   Orca`). Do not work around it; tell the user to enable it in Orca's settings
-  if they want it. If `agents` reports the Orca setting as `unknown`, say so.
+  if they want it. If `agents` reports the Orca setting as `unknown`, say so:
+  Orca's settings could not be read, so every installed agent counts as
+  enabled and may be routed.
 
 ## Rate the three needs
 
@@ -240,7 +242,8 @@ route without `--effort`.
   mentioning when asked why a model was chosen. `tier` is the pick's cost tier;
   a cheaper covering pick is not a downgrade. Setup and status label it with
   `(daily cost tier)`, for example. Cursor auto has no quality or cost tier;
-  it never appears in ranking or competes in Light or Daily.
+  `ranking` and `tiers` list it as `unranked` with no price, and it never
+  competes with ranked models in any cost tier.
 
 Use `orcacompass status --json` to inspect discovery, pools, and skipped agents
 (each skipped agent carries its reason, such as `excluded by config` or
