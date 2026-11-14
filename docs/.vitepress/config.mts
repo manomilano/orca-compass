@@ -4,7 +4,7 @@ export default defineConfig({
   title: 'OrcaCompass',
   description: 'Choose the agent, model and reasoning effort for each Orca worker.',
   base: '/orca-compass/',
-  srcExclude: ['README.md'],
+  srcExclude: ['README.md', 'superpowers/**'],
   lastUpdated: true,
   themeConfig: {
     siteTitle: 'OrcaCompass · User guide',

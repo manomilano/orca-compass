@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { normalizeModelId } from '../ids.js';
 import { EFFORT_LADDER, parseEffort } from '../../routing/effort.js';
 import type { AgentDiscovery, Effort, LaunchModel } from '../../types.js';
 import type { AgentDeps, Locator } from './deps.js';
@@ -72,8 +73,8 @@ function toLaunchModels(variants: Variant[], deps: AgentDeps): LaunchModel[] {
     }
     const efforts = EFFORT_LADDER.filter((e) => g.byEffort.has(e));
     const chosen = [...g.byEffort.values(), ...(g.fallback ? [g.fallback] : [])];
-    const meta = deps.index[base];
-    const own = g.cursorTrained || base.startsWith('composer') || base === 'auto';
+    const meta = deps.index[base] ?? deps.index[normalizeModelId(base)];
+    const own = g.cursorTrained || base.startsWith('composer') || base.startsWith('grok') || base === 'auto';
     const bucket = own ? 'bucket:Cursor Models' : 'bucket:Other Models';
     return {
       agent: 'cursor',

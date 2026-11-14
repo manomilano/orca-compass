@@ -1,13 +1,16 @@
+import { AXES } from '../evidence/snapshot.js';
+import { coverage, cutFor, EVIDENCE_ORDER, jobEvidence, needWeightedScore } from './adequacy.js';
+import { needsFromTier, tierOfNeeds, type Needs } from './needs.js';
 import { DEMAND_EFFORT, snapEffort } from './effort.js';
 import { poolState, projectPool, rankHeadroom } from './pace.js';
 import type { Rejection } from './rejection.js';
-import { FAMILY_TIERS, isLadderVendor, knownModelVersion, modelFamily } from '../placements/tiers.js';
+import { FAMILY_TIERS, knownModelVersion, modelFamily } from '../placements/tiers.js';
 import {
   AGENT_IDS,
   TIERS,
   type AgentId,
   type Alternative,
-  type Classification,
+  type Quality,
   type Config,
   type Confidence,
   type Decision,
@@ -28,10 +31,10 @@ import {
 
 interface Candidate {
   model: PlacedModel;
-  tier: Tier;
-  source: Classification['source'];
-  /** Why a score-placed model got its tier. */
-  scoreDetail?: string;
+  tier: Tier | null;
+  quality: Quality | null;
+  below: ReturnType<typeof coverage>['below'];
+  weightedScore: number;
   /**
    * Headroom of the ranked pool: the long pool, or session pool on pace to hit its block threshold before
    * it resets, with the lowest `rank`; the session pool when there is no long one.
@@ -47,6 +50,8 @@ interface Candidate {
   blockedPools: UsagePool[];
   expiredPools: string[];
   confidence: Confidence;
+  handoutMinutes: number;
+  handoutPercent: number;
   /** Set when usage could not be evaluated (unknown, very stale, no matching pool). */
   usageNote?: string;
   /** Set when usage is moderately stale: headroom is kept, confidence capped at medium. */
@@ -69,7 +74,7 @@ interface Resolved {
 type EffortPlan = Pick<EffortResolution, 'source' | 'demand' | 'policy' | 'target'>;
 
 /** The effort to ask for: an explicit --effort, else the demand through the policy, else the requested tier's default. */
-function effortPlan(req: RouteRequest, config: Config): EffortPlan {
+function effortPlan(req: RoutingRequest, config: Config): EffortPlan {
   if (req.effort) return { source: 'explicit', target: req.effort };
   if (req.demand) {
     return { source: 'demand', demand: req.demand, policy: config.effortPolicy, target: DEMAND_EFFORT[config.effortPolicy][req.demand] };
@@ -86,32 +91,40 @@ type Skipped = Decision['skipped'];
 
 const CONFIDENCE_ORDER: Confidence[] = ['high', 'medium', 'low'];
 
+type RoutingRequest = Omit<RouteRequest, 'tier' | 'needs'> & { tier: Tier; needs: Needs; needsSource: 'need' | 'tier' };
+
 /**
  * The route for a job. Last-resort agents (`lastResortAgents`, OpenCode by default) are left out first; they
  * are tried only when that finds no route in any allowed tier, and then with a warning. Naming one with
  * `--agent`, or preferring it for the requested tier, makes it an ordinary agent for that route.
  */
 export function route(req: RouteRequest, env: Environment, config: Config): Decision {
-  const decision = selectRoute(req, env, config);
+  if ((req.tier === undefined) === (req.needs === undefined)) throw new Error('use exactly one of needs or tier');
+  const needs = req.needs ?? needsFromTier(req.tier!);
+  const request: RoutingRequest = { ...req, tier: req.tier ?? tierOfNeeds(needs), needs, needsSource: req.needs ? 'need' : 'tier' };
+  const decision = selectRoute(request, env, config);
+  if (Object.hasOwn(config.tierOverrides, 'auto')) decision.warnings.push('tierOverrides.auto is ignored: Cursor auto has no model profile');
   if (req.tierReason) {
     decision.tierReason = req.tierReason;
-    decision.reasons.push(`task tier ${req.tier}: ${req.tierReason}`);
+    decision.reasons.push(`task tier ${request.tier}: ${req.tierReason}`);
   }
   return decision;
 }
 
-function selectRoute(req: RouteRequest, env: Environment, config: Config): Decision {
+function selectRoute(req: RoutingRequest, env: Environment, config: Config): Decision {
   const pinned = config.pins[req.tier]?.agent;
   const deferred = config.lastResortAgents.filter((a) => !req.agents?.includes(a) && a !== pinned);
   const usable = (a: AgentId) => env.discoveries.some((d) => d.agent === a && !agentSkipReason(d, env, config, req));
-  if (!deferred.some(usable)) return routeOnce(req, env, config, []);
-  const first = routeOnce(req, env, config, deferred);
+  if (!deferred.some(usable)) return routeOnce(req, env, config, [], true);
+  const first = routeOnce(req, env, config, deferred, false);
   if (first.status === 'ok') return first;
-  const second = routeOnce(req, env, config, []);
-  if (second.status !== 'ok' || !second.route || !deferred.includes(second.route.agent)) return first;
-  const instead = first.status === 'wait' && first.waitUntil !== undefined ? `instead of waiting ${duration(first.waitUntil - env.now)}` : 'as nothing else can take it';
-  second.warnings.push(`${second.route.agent} is a last-resort agent (lastResortAgents), used ${instead}: ${billingOf(second, env)}`);
-  return second;
+  const second = routeOnce(req, env, config, [], false);
+  if (second.status === 'ok' && second.route && deferred.includes(second.route.agent)) {
+    const instead = first.status === 'wait' && first.waitUntil !== undefined ? `instead of waiting ${duration(first.waitUntil - env.now)}` : 'as nothing else can take it';
+    second.warnings.push(`${second.route.agent} is a last-resort agent (lastResortAgents), used ${instead}: ${billingOf(second, env)}`);
+    return second;
+  }
+  return routeOnce(req, env, config, deferred, true);
 }
 
 function billingOf(d: Decision, env: Environment): string {
@@ -119,152 +132,129 @@ function billingOf(d: Decision, env: Environment): string {
   return m?.billing ?? 'no usage window';
 }
 
-function routeOnce(req: RouteRequest, env: Environment, config: Config, deferred: readonly AgentId[]): Decision {
+function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferred: readonly AgentId[], allowFallback: boolean): Decision {
   const skipped: Skipped = [];
   const agents = eligibleAgents(req, env, config, skipped, deferred);
-  const all = collectCandidates(agents, env, config, req.tier, skipped);
-  // An explicit effort is a constraint, like --agent: a route that cannot apply it exactly is not used.
+  const { candidates: all, fallback } = collectCandidates(agents, env, config, req, skipped);
   const honors = (c: Candidate): boolean => !req.effort || canApplyEffort(c.model, req.effort);
-  const byTier = (tier: Tier): Candidate[] => autoFirst(all.filter((c) => c.tier === tier && honors(c)).sort(compareRanked));
-
+  const named = all.filter((c) => c.tier !== null);
+  const fitOf = (candidates: Candidate[]): Candidate[] => {
+    const covering = candidates.filter((c) => c.quality?.covers && c.tier !== null);
+    const lowest = TIERS.find((tier) => covering.some((c) => c.tier === tier));
+    return covering.filter((c) => c.tier === lowest).sort(compareRanked);
+  };
+  const fit = fitOf(named.filter(honors));
   const requested = req.tier;
   const plan = effortPlan(req, config);
   const target = plan.target;
   const warnings: string[] = [];
   const overRisk = new Set<Candidate>();
-  const choose = (tier: Tier): { cand: Candidate; pinned: boolean } | undefined => {
-    const ranked = byTier(tier);
-    const pin = config.pins[tier];
-    if (pin) {
-      // Bans and agent filters already removed their candidates, so a preference only chooses among the rest.
-      const isPin = (c: Candidate) => c.model.agent === pin.agent && (!pin.model || launchIds(c.model).includes(pin.model));
-      const mine = ranked.filter(isPin);
-      const match = mine.find((c) => !c.blocked) ?? mine[0];
-      const label = `preferred ${pin.agent}${pin.model ? ` ${pin.model}` : ''} skipped`;
-      if (!match && req.effort && all.some((c) => c.tier === tier && isPin(c))) {
-        warnings.push(`${label}: does not support effort ${req.effort}`);
-      } else if (!match) {
-        const gone = skipped.find((s) => s.agent === pin.agent && (!s.model || !pin.model || s.model === pin.model));
-        warnings.push(`${label}: not available${gone ? ` (${gone.reason})` : ''}`);
-      } else if (match.blocked) {
-        warnings.push(`${label}: blocked (${blockers(match, env.now)})`);
-      } else if (match.risk && match.risk.projectedPercent > config.preferRiskLimit) {
-        const safer = ranked.find((c) => !c.blocked && c.rank !== null && c.risk && c.risk.projectedPercent <= config.preferRiskLimit);
-        if (!safer) {
-          warnings.push(`preferred ${pin.agent}${pin.model ? ` ${pin.model}` : ''} retained: no unblocked alternative with known usage within the ${config.preferRiskLimit}% risk limit`);
-          return { cand: match, pinned: true };
-        }
-        for (const candidate of mine) {
-          if (candidate.risk && candidate.risk.projectedPercent > config.preferRiskLimit) overRisk.add(candidate);
-        }
-        const r = match.risk;
-        warnings.push(`${label}: ${poolLabel(r.pool)} on pace for ${percent(Math.round(r.projectedPercent))} (limit ${config.preferRiskLimit}%), resets in ${duration(r.resetsAt - env.now)}`);
-        return { cand: safer, pinned: isPin(safer) };
-      } else {
-        return { cand: match, pinned: true };
-      }
-    }
-    const first = ranked.find((c) => !c.blocked && !overRisk.has(c));
-    return first ? { cand: first, pinned: false } : undefined;
-  };
-
+  const needLine = `needs ${AXES.map((axis) => `${axis}=${req.needs[axis]}`).join(' ')}${req.needsSource === 'tier' ? ` from tier ${requested}` : ''}; fit group: ${fit[0]?.tier ?? 'none'} cost tier (${fit.length} models)`;
+  for (const c of named) {
+    for (const { axis, score, cut } of c.below) skipped.push({ agent: c.model.agent, model: c.model.modelId, reason: `below need on ${axis} (${score ?? 'unranked'} < ${cut})` });
+  }
   const base = (): Decision => ({
-    status: 'none', requestedTier: requested, downgraded: false, upgraded: false,
+    status: 'none', requestedTier: requested, needs: req.needs, needsSource: req.needsSource, downgraded: false, upgraded: false,
     reasons: [], warnings, alternatives: [], skipped,
   });
-  const skippedLine = (): string[] =>
-    skipped.length ? [`skipped: ${skipped.map((s) => `${s.agent}${s.model ? ` ${s.model}` : ''} (${s.reason})`).join(', ')}`] : [];
+  const skippedLine = (): string[] => skipped.length ? [`skipped: ${skipped.map((s) => `${s.agent}${s.model ? ` ${s.model}` : ''} (${s.reason})`).join(', ')}`] : [];
+  const why = fit.length ? `all ${requested} candidates blocked: ${fit.map((c) => `${c.model.agent} ${c.model.modelId} (${summary(c, env.now)})`).join(', ')}` : 'no model covers the job';
 
-  const finish = (pick: { cand: Candidate; pinned: boolean }, tier: Tier, move: 'same' | 'down' | 'up', why?: string): Decision => {
-    const { cand } = pick;
-    // Effort follows the work, not the model: a fallback to another tier keeps the target.
+  const finish = (cand: Candidate, group: Candidate[], pinned = false): Decision => {
     const chosen = resolve(cand, target);
     const effort = effortResolution(cand, plan, chosen);
-    const others = byTier(tier).filter((c) => c !== cand && !overRisk.has(c));
-    const reasons = [`${cand.model.agent} ${chosen.model}: ${describe(cand, env.now)}`];
-    if (cand.scoreDetail) reasons.push(`${cand.model.modelId}: tier ${cand.tier} from ${cand.scoreDetail}`);
-    if (cand.source === 'auto') reasons.push('cursor auto: Cursor Auto picks the model (Cost mode), billed to Cursor Models');
+    const quality = cand.quality;
+    const down = quality !== null && !quality.covers;
+    const up = quality?.covers === true && cand.tier !== null && TIERS.indexOf(cand.tier) > TIERS.indexOf(requested);
+    const others = group.filter((c) => c !== cand && !overRisk.has(c));
+    const reasons = [`${cand.model.agent} ${chosen.model}: ${describe(cand, env.now)}`, needLine];
+    if (quality?.cost) {
+      const { tier, blended, source } = quality.cost;
+      const sourceText = { override: 'your override', price: 'maker price', family: 'family hint', lineup: "provider's lineup", evidence: 'evidence class' }[source];
+      const price = blended === null ? `${sourceText}, no price` : `$${blended.toFixed(2)}/M blended, ${sourceText}`;
+      reasons.push(`cost: ${tier} (${price})`);
+    }
+    if (quality) reasons.push(AXES.map((axis) => `${axis} ${quality.axes[axis].score ?? 'unranked'} ${quality.axes[axis].evidence}`).join(', '));
+    else reasons.push('cursor auto: fallback, no named model could be routed (Cursor picks the model)');
     if (cand.model.agent === 'opencode') reasons.push('opencode: Orca takes --model for OpenCode only in an existing worktree (--worktree current or a selector)');
-    if (pick.pinned) reasons.push(`preferred route, ${cand.risk ? paceText(cand.risk) : 'usage unknown'}`);
+    if (pinned) {
+      reasons.push(`preferred route, ${cand.risk ? paceText(cand.risk) : 'usage unknown'}`);
+      if (down) reasons.push(`preferred route does not cover the job: ${cand.below.map(({ axis, score, cut }) => `${axis} ${score ?? 'unranked'} < ${cut}`).join(', ')}`);
+    }
     for (const name of cand.expiredPools) reasons.push(`${cand.model.agent} ${poolLabel(name)}: reset time already passed (expired), pool ignored`);
     reasons.push(effortText(effort, cand));
-    if (move === 'down') {
-      reasons.push(`downgraded from ${requested}: ${why}`);
-      warnings.push(`a ${tier} model is doing ${requested} work; effort is not raised to make up for it: split the job or add stronger checks`);
+    if (down) {
+      reasons.push(`downgraded from ${requested}: ${pinned ? 'preferred route does not cover the job' : why}`);
+      warnings.push(`${cand.model.modelId} falls short of the job's needs by ${quality!.shortfall} band step${quality!.shortfall === 1 ? '' : 's'} (${cand.below.map(({ axis }) => axis).join(', ')}); effort is not raised to make up for it: split the job or add stronger checks`);
     }
-    if (move === 'up') {
-      reasons.push(`upgraded from ${requested}: no ${requested}-tier or lower model installed`);
-      warnings.push(`no ${requested}-tier model installed; using ${tier}`);
+    if (up) {
+      reasons.push(`upgraded from ${requested}: no model in the ${requested} cost tier covers the job`);
+      warnings.push(`no model in the ${requested} cost tier covers the job; using ${cand.tier}`);
     }
     const next = others.find((c) => !c.blocked);
     if (next) reasons.push(`next best: ${next.model.agent} ${resolve(next, target).model} (${summary(next, env.now)})`);
     reasons.push(...skippedLine());
     return {
-      status: 'ok',
-      requestedTier: requested,
-      tier,
-      downgraded: move === 'down',
-      upgraded: move === 'up',
+      ...base(), status: 'ok', tier: cand.tier ?? undefined, quality,
+      source: quality === null ? 'auto' : cand.model.profile.hint?.source ?? 'evidence',
+      downgraded: down, upgraded: up,
       route: { agent: cand.model.agent, model: chosen.model, effort: chosen.effort },
-      effort,
-      launchArgs: chosen.args,
-      confidence: cand.confidence,
-      risk: cand.risk ?? null,
-      reasons,
-      warnings,
+      effort, launchArgs: chosen.args,
+      confidence: quality === null && cand.confidence === 'high' ? 'medium' : cand.confidence,
+      risk: cand.risk ?? null, reasons,
       alternatives: others.slice(0, 5).map((c) => alternative(c, target, env.now)),
-      skipped,
     };
   };
 
+  const pin = config.pins[requested];
+  if (pin) {
+    // Agent-only pins choose a ranked model; explicit model pins can name unranked models.
+    const isPin = (c: Candidate) => c.model.agent === pin.agent && (pin.model ? launchIds(c.model).includes(pin.model) : c.tier !== null);
+    const mine = all.filter((c) => isPin(c) && honors(c)).sort(compareRanked);
+    const match = mine.find((c) => !c.blocked) ?? mine[0];
+    const label = `preferred ${pin.agent}${pin.model ? ` ${pin.model}` : ''}`;
+    if (!match && req.effort && all.some(isPin)) warnings.push(`${label} skipped: does not support effort ${req.effort}`);
+    else if (!match) {
+      const gone = skipped.find((s) => s.agent === pin.agent && (!s.model || !pin.model || s.model === pin.model));
+      warnings.push(`${label} skipped: not available${gone ? ` (${gone.reason})` : ''}`);
+    } else if (match.blocked) warnings.push(`${label} skipped: blocked (${blockers(match, env.now)})`);
+    else if (match.risk && match.risk.projectedPercent > config.preferRiskLimit) {
+      const safer = fit.find((c) => !c.blocked && c.rank !== null && c.risk && c.risk.projectedPercent <= config.preferRiskLimit);
+      if (!safer) {
+        warnings.push(`${label} retained: no unblocked alternative with known usage within the ${config.preferRiskLimit}% risk limit`);
+        return finish(match, fit, true);
+      }
+      for (const c of mine) if (c.risk && c.risk.projectedPercent > config.preferRiskLimit) overRisk.add(c);
+      const risk = match.risk;
+      warnings.push(`${label} skipped: ${poolLabel(risk.pool)} on pace for ${percent(Math.round(risk.projectedPercent))} (limit ${config.preferRiskLimit}%), resets in ${duration(risk.resetsAt - env.now)}`);
+      return finish(safer, fit, isPin(safer));
+    } else return finish(match, fit, true);
+  }
+
   if (req.effort) {
-    const inTier = all.filter((c) => c.tier === requested).sort(compareRanked);
-    if (inTier.length > 0 && !inTier.some(honors)) {
-      const offered = inTier.slice(0, 6).map((c) => `${c.model.agent} ${c.model.modelId} (${supportedEfforts(c.model)})`).join(', ');
-      return {
-        ...base(),
-        alternatives: inTier.slice(0, 5).map((c) => alternative(c, target, env.now)),
-        reasons: [`no ${requested} route supports effort ${req.effort}: ${offered}`, 'choose one of these efforts, or route without --effort', ...skippedLine()],
-      };
+    const unconstrainedFit = fitOf(named);
+    if (unconstrainedFit.length && !unconstrainedFit.some(honors)) {
+      const offered = unconstrainedFit.slice(0, 6).map((c) => `${c.model.agent} ${c.model.modelId} (${supportedEfforts(c.model)})`).join(', ');
+      return { ...base(), alternatives: unconstrainedFit.slice(0, 5).map((c) => alternative(c, target, env.now)), reasons: [`no ${requested} route supports effort ${req.effort}: ${offered}`, 'choose one of these efforts, or route without --effort', needLine, ...skippedLine()] };
     }
   }
-
-  const same = choose(requested);
-  if (same) return finish(same, requested, 'same');
-
-  const idx = TIERS.indexOf(requested);
-  const lower = TIERS.slice(0, idx).reverse();
-  const higher = TIERS.slice(idx + 1);
-  const requestedCands = byTier(requested);
-  const structural = requestedCands.length === 0 && lower.every((t) => byTier(t).length === 0);
-  const blockedSummary = requestedCands.map((c) => `${c.model.agent} ${c.model.modelId} (${summary(c, env.now)})`).join(', ');
-  const why = requestedCands.length > 0 ? `all ${requested} candidates blocked: ${blockedSummary}` : `no ${requested}-tier model installed`;
-  const waitUntil = earliestUnblock(requestedCands);
-
+  const best = fit.find((c) => !c.blocked && !overRisk.has(c));
+  if (best) return finish(best, fit);
+  const downgrades = named.filter((c) => !c.quality!.covers && honors(c));
   if (!req.noDowngrade) {
-    for (const t of lower) {
-      const pick = choose(t);
-      if (pick) return finish(pick, t, 'down', why);
+    const shortfalls = [...new Set(downgrades.map((c) => c.quality!.shortfall))].sort((a, b) => a - b);
+    for (const shortfall of shortfalls) {
+      const group = downgrades.filter((c) => c.quality!.shortfall === shortfall).sort(compareRanked);
+      const pick = group.find((c) => !c.blocked && !overRisk.has(c));
+      if (pick) return finish(pick, group);
     }
+    if (allowFallback && fallback && !fallback.blocked) return finish(fallback, []);
   }
-  if (structural) {
-    for (const t of higher) {
-      const pick = choose(t);
-      if (pick) return finish(pick, t, 'up');
-    }
-  }
-
-  const alternatives = requestedCands.filter((c) => !overRisk.has(c)).slice(0, 5).map((c) => alternative(c, target, env.now));
-  if (req.noDowngrade && requestedCands.length > 0 && waitUntil !== undefined) {
-    return {
-      ...base(), status: 'wait', waitUntil, alternatives,
-      reasons: [why, `waiting until ${new Date(waitUntil).toISOString()} (${duration(waitUntil - env.now)})`, ...skippedLine()],
-    };
-  }
-  const reasons = [agents.length === 0 ? 'no usable agent' : why];
-  if (!req.noDowngrade && !structural && agents.length > 0) reasons.push('no eligible unblocked model in any lower tier');
+  const waitUntil = earliestUnblock([...fit, ...(!req.noDowngrade ? downgrades : [])]);
+  const reasons = [agents.length === 0 ? 'no usable agent' : why, needLine];
+  if (waitUntil !== undefined) reasons.push(`waiting until ${new Date(waitUntil).toISOString()} (${duration(waitUntil - env.now)})`);
   reasons.push(...skippedLine());
-  return { ...base(), alternatives, reasons, ...(waitUntil !== undefined ? { waitUntil } : {}) };
+  return { ...base(), status: waitUntil === undefined ? 'none' : 'wait', waitUntil, reasons, alternatives: fit.slice(0, 5).map((c) => alternative(c, target, env.now)) };
 }
 
 /** The coordinator's launch command for a decision, or undefined when there is no route. */
@@ -275,7 +265,7 @@ export function formatLaunch(d: Decision): string | undefined {
 
 // --- candidate collection -------------------------------------------------------------------
 
-function eligibleAgents(req: RouteRequest, env: Environment, config: Config, skipped: Skipped, deferred: readonly AgentId[]): PlacedAgent[] {
+function eligibleAgents(req: RoutingRequest, env: Environment, config: Config, skipped: Skipped, deferred: readonly AgentId[]): PlacedAgent[] {
   const known = new Set(env.discoveries.map((d) => d.agent));
   for (const agent of req.agents ?? []) {
     if (!known.has(agent)) skipped.push({ agent, reason: 'unknown agent' });
@@ -343,45 +333,48 @@ export function rejectionOf(model: LaunchModel, rejections: readonly Rejection[]
 /** e.g. 'refused by codex 2h ago: "The 'x' model is not supported when using Codex with a ChatGPT account."' */
 export const rejectedText = (r: Rejection, now: number): string => `refused by ${r.agent} ${duration(now - r.at)} ago: "${r.message}"`;
 
-/** Candidates of every tier; banned or refused models placed in `tier` are reported as skipped. */
-function collectCandidates(agents: PlacedAgent[], env: Environment, config: Config, tier: Tier, skipped: Skipped): Candidate[] {
-  const classified: { model: PlacedModel; cls: Classification }[] = [];
+/** Collect ranked named models, explicit unranked pins, and the separate Cursor fallback. */
+function collectCandidates(agents: PlacedAgent[], env: Environment, config: Config, req: RoutingRequest, skipped: Skipped): { candidates: Candidate[]; fallback?: Candidate } {
+  const models: PlacedModel[] = [];
+  let fallback: Candidate | undefined;
   for (const d of agents) {
     for (const model of d.models) {
       if (model.noZdr && config.excludeNoZdr) continue;
-      // The table already holds the placement (built from every source); the route only reads it.
-      const placed = model.placements;
       const rejected = rejectionOf(model, env.rejections);
       const leftOut = banEntry(model, config.banModels) ? 'banned by you' : rejected ? rejectedText(rejected, env.now) : undefined;
       if (leftOut) {
-        const inTier = placed.some((c) => c.tier === tier);
-        if (inTier && !skipped.some((s) => s.agent === model.agent && s.model === model.modelId)) {
-          skipped.push({ agent: model.agent, model: model.modelId, reason: leftOut });
-        }
+        skipped.push({ agent: model.agent, model: model.modelId, reason: leftOut });
         continue;
       }
-      for (const cls of placed) classified.push({ model, cls });
+      if (model.agent === 'cursor' && model.modelId === 'auto') {
+        if (config.cursorAuto && (!req.effort || canApplyEffort(model, req.effort))) fallback = evaluate(model, env, config, req.needs, true);
+        continue;
+      }
+      if (model.profile.class === null) {
+        skipped.push({ agent: model.agent, model: model.modelId, reason: 'unranked: no evidence or estimate' });
+        const pin = config.pins[req.tier];
+        if (pin?.agent !== model.agent || !pin.model || !launchIds(model).includes(pin.model)) continue;
+      }
+      models.push(model);
     }
   }
-  return newestPerFamily(classified).map(({ model, cls }) => evaluate(model, cls, env, config));
+  return { candidates: newestPerFamilyTier(models).map((model) => evaluate(model, env, config, req.needs)), fallback };
 }
 
 /**
- * Keep only the newest release per (agent, family, tier), using known family versions before catalog dates.
- * Table families share one tier; score placement can split a family (grok-4.6 Daily, grok-4.5 Light).
+ * Keep the newest release of each family per agent and cost tier. A day-0 release replaces
+ * its older sibling in the same cost tier; an older release in a different cost tier stays
+ * routable there (Advanced-cost Sonnet 4.6 alongside Daily-cost Sonnet 5.5).
  */
-function newestPerFamily<T extends { model: PlacedModel; cls: Classification }>(items: T[]): T[] {
+function newestPerFamilyTier(models: PlacedModel[]): PlacedModel[] {
   const newest = new Map<string, PlacedModel>();
-  const key = ({ model, cls }: T) => {
-    const family = modelFamily(model.modelId, model.meta);
-    return `${model.agent}\u0000${family === undefined ? `model:${model.modelId}` : `family:${family}`}\u0000${cls.tier}`;
-  };
-  for (const item of items) {
-    const k = key(item);
-    const previous = newest.get(k);
-    if (!previous || compareRelease(item.model, previous) > 0) newest.set(k, item.model);
+  const key = (model: PlacedModel) =>
+    `${model.agent}\u0000${modelFamily(model.modelId, model.meta) ?? `model:${model.modelId}`}\u0000${model.profile.cost?.tier ?? 'unclassified'}`;
+  for (const model of models) {
+    const previous = newest.get(key(model));
+    if (!previous || compareRelease(model, previous) > 0) newest.set(key(model), model);
   }
-  return items.filter((item) => compareRelease(item.model, newest.get(key(item))!) === 0);
+  return models.filter((model) => compareRelease(model, newest.get(key(model))!) === 0);
 }
 
 /** Within a family, explicit numeric releases precede unversioned aliases, then versions and actual dates decide. */
@@ -405,10 +398,20 @@ function compareRelease(a: LaunchModel, b: LaunchModel): number {
   return ad < bd ? -1 : ad > bd ? 1 : 0;
 }
 
-function evaluate(model: PlacedModel, cls: Classification, env: Environment, config: Config): Candidate {
+
+function evaluate(model: PlacedModel, env: Environment, config: Config, needs: Needs, auto = false): Candidate {
+  const adequacy = coverage(model.profile, needs, env.bands);
+  const quality: Quality = {
+    class: model.profile.class, cost: model.profile.cost, covers: adequacy.covers, shortfall: adequacy.shortfall, overshoot: adequacy.overshoot,
+    evidence: jobEvidence(model.profile, needs),
+    axes: Object.fromEntries(AXES.map((axis) => {
+      const p = model.profile.axes[axis];
+      return [axis, { score: p.score, band: p.band, evidence: p.label, benchmarks: p.benchmarks, need: needs[axis], cut: cutFor(needs[axis], env.bands[axis]) }];
+    })) as Quality['axes'],
+  };
   const base: Candidate = {
-    model, tier: cls.tier, source: cls.source, headroom: null, rank: null, blocked: false, blockedPools: [], expiredPools: [], confidence: 'low', projections: {},
-    ...(cls.detail ? { scoreDetail: cls.detail } : {}),
+    model, tier: model.profile.cost?.tier ?? null, quality: auto ? null : quality, below: adequacy.below, weightedScore: needWeightedScore(model.profile, needs),
+    headroom: null, rank: null, blocked: false, blockedPools: [], expiredPools: [], confidence: 'low', projections: {}, handoutMinutes: config.handoutMinutes, handoutPercent: config.handoutPercent,
   };
   if (model.poolNames.length === 0) return { ...base, usageNote: `no usage window: ${model.billing ?? 'limits not tracked'}` };
   const usage = env.usage[model.agent];
@@ -454,8 +457,8 @@ function evaluate(model: PlacedModel, cls: Classification, env: Environment, con
   base.headroom = ranked.headroom;
   base.rank = ranked.rank;
   base.tightest = { pool: ranked.pool, elapsed: ranked.elapsed };
-  // The provider's own lineup and the family table are firm; a score placement is an estimate.
-  base.confidence = lowered ? 'low' : cls.source === 'family' || cls.source === 'lineup' ? 'high' : 'medium';
+  // Confidence describes usage only; quality carries the certainty of the profile.
+  base.confidence = lowered ? 'low' : ranked.pool.handouts ? 'medium' : 'high';
 
   const age = usage.updatedAt === undefined ? 0 : env.now - usage.updatedAt;
   const staleMs = config.usageStaleMinutes * 60_000;
@@ -471,7 +474,7 @@ function evaluate(model: PlacedModel, cls: Classification, env: Environment, con
 
 // --- ranking --------------------------------------------------------------------------------
 
-/** Within a tier: unblocked first, then most headroom, then the plan's ordering (Claude/GPT before other vendors on a tie), ending in a total order for determinism. */
+/** Within a tier: unblocked first, then most headroom, ending in a total order for determinism. */
 function compareRanked(a: Candidate, b: Candidate): number {
   if (a.blocked !== b.blocked) return a.blocked ? 1 : -1;
   if ((a.rank === null) !== (b.rank === null)) return a.rank === null ? 1 : -1;
@@ -479,26 +482,15 @@ function compareRanked(a: Candidate, b: Candidate): number {
   if (!!a.hotSession !== !!b.hotSession) return a.hotSession ? 1 : -1;
   const conf = CONFIDENCE_ORDER.indexOf(a.confidence) - CONFIDENCE_ORDER.indexOf(b.confidence);
   if (conf !== 0) return conf;
+  const evidence = EVIDENCE_ORDER.indexOf(a.quality?.evidence ?? 'unranked') - EVIDENCE_ORDER.indexOf(b.quality?.evidence ?? 'unranked');
+  if (evidence !== 0) return evidence;
+  if (a.weightedScore !== b.weightedScore) return b.weightedScore - a.weightedScore;
   if (!!a.model.fast !== !!b.model.fast) return a.model.fast ? 1 : -1;
-  const va = isLadderVendor(modelFamily(a.model.modelId, a.model.meta));
-  if (va !== isLadderVendor(modelFamily(b.model.modelId, b.model.meta))) return va ? -1 : 1;
   const da = a.model.meta?.releaseDate ?? '';
   const db = b.model.meta?.releaseDate ?? '';
   if (da !== db) return da < db ? 1 : -1;
   if (a.model.agent !== b.model.agent) return a.model.agent < b.model.agent ? -1 : 1;
   return a.model.modelId < b.model.modelId ? -1 : a.model.modelId > b.model.modelId ? 1 : 0;
-}
-
-/**
- * Cursor's representative in a tier is Auto when it is unblocked: named Cursor models that out-ranked
- * it move to just behind it, so other agents are compared with Auto by the usual ranking.
- */
-function autoFirst(ranked: Candidate[]): Candidate[] {
-  const at = ranked.findIndex((c) => c.source === 'auto' && !c.blocked);
-  if (at <= 0) return ranked;
-  const behind = ranked.slice(0, at).filter((c) => c.model.agent === 'cursor');
-  const ahead = ranked.slice(0, at).filter((c) => c.model.agent !== 'cursor');
-  return [...ahead, ranked[at], ...behind, ...ranked.slice(at + 1)];
 }
 
 /** Earliest moment at which some blocked candidate has all of its blocking pools reset. */
@@ -549,7 +541,7 @@ function effortText(e: EffortResolution, c: Candidate): string {
   const why = e.source === 'explicit' ? 'request' : e.source === 'demand' ? `${e.demand} reasoning demand (${e.policy} policy)` : 'tier default';
   if (e.applied === 'provider-default') {
     const own = e.providerDefault ? ` (${e.providerDefault})` : '';
-    const who = c.source === 'auto' ? 'Cursor Auto decides' : `${c.model.agent} uses its own default${own}`;
+    const who = `${c.model.agent} uses its own default${own}`;
     return `effort: not set, ${who}; ${e.target} wanted from ${why}`;
   }
   const how = e.applied === 'flag' ? 'passed as --effort' : 'chosen through the model id';
@@ -561,7 +553,7 @@ function effortText(e: EffortResolution, c: Candidate): string {
 function alternative(c: Candidate, target: Effort, now: number): Alternative {
   const r = resolve(c, target);
   return {
-    agent: c.model.agent, model: r.model, effort: r.effort, tier: c.tier,
+    agent: c.model.agent, model: r.model, effort: r.effort, tier: c.tier!, quality: c.quality!,
     headroom: c.headroom, confidence: c.confidence, blocked: c.blocked, risk: c.risk ?? null, reason: describe(c, now),
   };
 }
@@ -582,6 +574,7 @@ function describe(c: Candidate, now: number): string {
   if (worst) parts.push(`${poolLabel(worst.pool)} ${percent(worst.usedPercent)} used${pace(worst, worst.resetsAt)}`);
   else if (c.hotSession && c.hotSession !== pool) parts.push(`session ${percent(c.hotSession.usedPercent)} used, resets in ${duration(c.hotSession.resetsAt - now)}`);
   if (c.staleNote) parts.push(c.staleNote);
+  if (pool.handouts) parts.push(handoutNote(c, pool));
   return parts.join('; ');
 }
 
@@ -590,11 +583,16 @@ function summary(c: Candidate, now: number): string {
   if (c.blocked) return blockers(c, now);
   if (c.model.poolNames.length === 0 && c.usageNote) return c.usageNote;
   if (c.usageNote || !c.tightest || c.headroom === null) return 'usage unknown';
-  return `${poolLabel(c.tightest.pool.name)} headroom ${headroomText(c.headroom)}${scaled(c)}, resets in ${duration(c.tightest.pool.resetsAt - now)}`;
+  return `${poolLabel(c.tightest.pool.name)} headroom ${headroomText(c.headroom)}${scaled(c)}, resets in ${duration(c.tightest.pool.resetsAt - now)}${c.tightest.pool.handouts ? `; ${handoutNote(c, c.tightest.pool)}` : ''}`;
+}
+
+function handoutNote(c: Candidate, pool: UsagePool): string {
+  const n = pool.handouts ?? 0;
+  return `${n} worker${n === 1 ? '' : 's'} routed in the last ${c.handoutMinutes}m, counted as +${n * c.handoutPercent}%`;
 }
 
 function blockers(c: Candidate, now: number): string {
-  return c.blockedPools.map((p) => `${poolLabel(p.name)} ${percent(p.usedPercent)} used, resets in ${duration(p.resetsAt - now)}`).join('; ');
+  return c.blockedPools.map((p) => `${poolLabel(p.name)} ${percent(p.usedPercent)} used, resets in ${duration(p.resetsAt - now)}${p.handouts ? `; ${handoutNote(c, p)}` : ''}`).join('; ');
 }
 
 const poolLabel = (name: string): string => name.replace(/^bucket:/, '');

@@ -14,9 +14,9 @@ Skill (`skills/orcacompass/SKILL.md`) backed by a small TypeScript CLI
 | --- | --- |
 | [Getting started](getting-started.md) | Install, first-time setup (terminal or chat), what runs on every call |
 | [Skill workflow](skill-workflow.md) | How the orchestrator uses the Skill: rate, route, launch, verify, handle the result |
-| [How it works, end to end](how-it-works.md) | The placement, routing, launch, and verification flow |
+| [How it works, end to end](how-it-works.md) | One job followed through every step: needs, evidence, cost tier, usage, launch |
 | [Tiers and routing](tiers-and-routing.md) | The four tiers, how a model gets its tier, the capability score, headroom ranking, preferences, bans, fallbacks |
-| [Effort](effort.md) | Reasoning demand, effort policies, snapping, how effort reaches each agent |
+| [Effort](effort.md) | Effort demand, effort policies, snapping, how effort reaches each agent |
 | [Commands](commands.md) | Every CLI command, flag, exit code and JSON field |
 | [Configuration](configuration.md) | Config and cache paths, every key with its default, data sources, privacy |
 | [Verify and rejections](verify-and-rejections.md) | Checking that a worker's agent accepted its model, and routing around refusals |
@@ -57,6 +57,6 @@ model.
 | **Headroom** | The share of a usage window expected to be left unused at reset; routes rank by it |
 | **Risk** | Where a route's usage is heading: `used% / elapsed fraction` of the window, the pool projected to end most used |
 | **Preference (pin)** | Your favorite route for a tier; used when eligible, unblocked and under `preferRiskLimit` |
-| **Ban** | A model id or Models.dev family that is never routed |
+| **Ban** | A model id or catalog family that is never routed |
 | **Rejection** | A model an agent refused at launch (found by `verify`); skipped for `rejectionTtlHours` |
 | **Last-resort agent** | An agent used only when nothing else can take the job (OpenCode by default) |

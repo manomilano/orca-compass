@@ -1,0 +1,39 @@
+name: Refresh evidence snapshot
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [data/llmbenchmark/dataset.json]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      # Reads the committed data/llmbenchmark/dataset.json; nothing is downloaded here.
+      - run: node scripts/refresh-evidence.mjs --diff /tmp/evidence-diff.md --check-methodology
+      - name: Open a refresh pull request when data changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$(git status --porcelain data/)" ]; then
+            exit 0
+          fi
+          git switch -c "evidence/refresh-$(date -u +%F)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/evidence-snapshot.json data/evidence-manifest.json
+          git commit -m "chore(data): refresh evidence snapshot"
+          git push --set-upstream origin HEAD
+          gh pr create --fill --body-file /tmp/evidence-diff.md

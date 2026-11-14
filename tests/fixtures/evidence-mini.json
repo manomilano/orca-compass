@@ -1,0 +1,488 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-11-10T04:00:00Z",
+  "sources": [
+    {
+      "id": "llmbenchmark",
+      "label": "LLMBenchmark.ai",
+      "url": "https://llmbenchmark.ai",
+      "license": "CC BY 4.0",
+      "fetchedAt": "2026-11-10",
+      "dataDate": "2026-11-10"
+    }
+  ],
+  "benchmarks": {
+    "tbench_4_0": {
+      "name": "Terminal-Bench 4",
+      "range": [
+        0,
+        75
+      ],
+      "unit": "percent",
+      "source": "vals.ai"
+    },
+    "vibe_code_bench": {
+      "name": "Vibe Code Bench",
+      "range": [
+        0,
+        100
+      ],
+      "unit": "percent",
+      "source": "vals.ai"
+    },
+    "livebench_coding": {
+      "name": "LiveBench coding",
+      "range": [
+        0,
+        100
+      ],
+      "unit": "percent",
+      "source": "livebench.ai"
+    },
+    "swe_bench_vals": {
+      "name": "SWE-bench Verified",
+      "range": [
+        0,
+        100
+      ],
+      "unit": "percent",
+      "source": "vals.ai"
+    },
+    "frontiercode": {
+      "name": "FrontierCode",
+      "range": [
+        0,
+        65
+      ],
+      "unit": "percent",
+      "source": "epoch.ai"
+    },
+    "webdev_arena": {
+      "name": "LMArena WebDev",
+      "range": [
+        1200,
+        1900
+      ],
+      "unit": "elo",
+      "source": "lmarena.ai"
+    },
+    "livebench_long_agentic": {
+      "name": "LiveBench Long Agentic",
+      "range": [
+        0,
+        100
+      ],
+      "unit": "percent",
+      "source": "livebench.ai"
+    },
+    "livebench_browser": {
+      "name": "LiveBench Browser",
+      "range": [
+        0,
+        100
+      ],
+      "unit": "percent",
+      "source": "livebench.ai"
+    },
+    "aa_agentic_index": {
+      "name": "AA Agentic Index",
+      "range": [
+        0,
+        65
+      ],
+      "unit": "points",
+      "source": "artificialanalysis.ai"
+    },
+    "gpqa_diamond": {
+      "name": "GPQA Diamond",
+      "range": [
+        0,
+        100
+      ],
+      "unit": "percent",
+      "source": "epoch.ai"
+    },
+    "hle": {
+      "name": "Humanity\u2019s Last Exam",
+      "range": [
+        0,
+        70
+      ],
+      "unit": "percent",
+      "source": "artificialanalysis.ai"
+    },
+    "livebench_reasoning": {
+      "name": "LiveBench Reasoning",
+      "range": [
+        0,
+        100
+      ],
+      "unit": "percent",
+      "source": "livebench.ai"
+    },
+    "arc_agi_2": {
+      "name": "ARC-AGI-2",
+      "range": [
+        0,
+        100
+      ],
+      "unit": "percent",
+      "source": "epoch.ai"
+    }
+  },
+  "axes": {
+    "coding": {
+      "weights": {
+        "tbench_4_0": 25,
+        "vibe_code_bench": 20,
+        "livebench_coding": 15,
+        "swe_bench_vals": 15,
+        "frontiercode": 15,
+        "webdev_arena": 10
+      }
+    },
+    "agentic": {
+      "weights": {
+        "tbench_4_0": 30,
+        "livebench_long_agentic": 30,
+        "livebench_browser": 20,
+        "aa_agentic_index": 20
+      }
+    },
+    "reasoning": {
+      "weights": {
+        "gpqa_diamond": 30,
+        "hle": 30,
+        "livebench_reasoning": 20,
+        "arc_agi_2": 20
+      }
+    }
+  },
+  "bands": {
+    "coding": [
+      68,
+      76,
+      84
+    ],
+    "agentic": [
+      60,
+      70,
+      80
+    ],
+    "reasoning": [
+      70,
+      78,
+      86
+    ]
+  },
+  "models": [
+    {
+      "id": "claude-haiku-5-5",
+      "aliases": [
+        "anthropic/claude-haiku-5.5"
+      ],
+      "provider": "anthropic",
+      "name": "Claude Haiku 5.5",
+      "family": "claude-haiku",
+      "pricing": { "inputPerM": 0.1, "outputPerM": 0.5, "basis": "maker" },
+      "releasedAt": "2026-10-07",
+      "results": [],
+      "scores": {
+        "coding": {
+          "score": 68.5,
+          "benchmarks": 3,
+          "kind": "measured"
+        },
+        "agentic": {
+          "score": 53.5,
+          "benchmarks": 3,
+          "kind": "measured"
+        },
+        "reasoning": {
+          "score": 74.7,
+          "benchmarks": 3,
+          "kind": "measured"
+        }
+      }
+    },
+    {
+      "id": "claude-sonnet-5-5",
+      "aliases": [
+        "anthropic/claude-sonnet-5.5"
+      ],
+      "provider": "anthropic",
+      "name": "Claude Sonnet 5.5",
+      "family": "claude-sonnet",
+      "pricing": { "inputPerM": 2, "outputPerM": 10, "basis": "maker" },
+      "releasedAt": "2026-09-28",
+      "results": [],
+      "scores": {
+        "coding": {
+          "score": 84.3,
+          "benchmarks": 5,
+          "kind": "measured"
+        },
+        "agentic": {
+          "score": 78.2,
+          "benchmarks": 4,
+          "kind": "measured"
+        },
+        "reasoning": {
+          "score": 87.3,
+          "benchmarks": 4,
+          "kind": "measured"
+        }
+      }
+    },
+    {
+      "id": "claude-opus-5-5",
+      "aliases": [
+        "anthropic/claude-opus-5.5"
+      ],
+      "provider": "anthropic",
+      "name": "Claude Opus 5.5",
+      "family": "claude-opus",
+      "pricing": { "inputPerM": 4, "outputPerM": 20, "basis": "maker" },
+      "releasedAt": "2026-09-22",
+      "results": [],
+      "scores": {
+        "coding": {
+          "score": 87.4,
+          "benchmarks": 5,
+          "kind": "measured"
+        },
+        "agentic": {
+          "score": 82,
+          "benchmarks": 4,
+          "kind": "measured"
+        },
+        "reasoning": {
+          "score": 90.6,
+          "benchmarks": 4,
+          "kind": "measured"
+        }
+      }
+    },
+    {
+      "id": "claude-opus-5",
+      "aliases": [
+        "anthropic/claude-opus-5"
+      ],
+      "provider": "anthropic",
+      "name": "Claude Opus 5",
+      "family": "claude-opus",
+      "pricing": { "inputPerM": 5, "outputPerM": 25, "basis": "maker" },
+      "releasedAt": "2026-07-24",
+      "results": [],
+      "scores": {
+        "coding": {
+          "score": 80,
+          "benchmarks": 3,
+          "kind": "measured"
+        },
+        "agentic": {
+          "score": 75,
+          "benchmarks": 3,
+          "kind": "measured"
+        },
+        "reasoning": {
+          "score": 85,
+          "benchmarks": 3,
+          "kind": "measured"
+        }
+      }
+    },
+    {
+      "id": "claude-fable-5-1",
+      "aliases": [
+        "anthropic/claude-fable-5.1"
+      ],
+      "provider": "anthropic",
+      "name": "Claude Fable 5.1",
+      "family": "claude-fable",
+      "pricing": { "inputPerM": 10, "outputPerM": 50, "basis": "maker" },
+      "releasedAt": "2026-09-01",
+      "results": [],
+      "scores": {
+        "coding": {
+          "score": 82.8,
+          "benchmarks": 6,
+          "kind": "measured"
+        },
+        "agentic": {
+          "score": 81.1,
+          "benchmarks": 4,
+          "kind": "measured"
+        },
+        "reasoning": {
+          "score": 88.1,
+          "benchmarks": 4,
+          "kind": "measured"
+        }
+      }
+    },
+    {
+      "id": "claude-fable-5-2",
+      "aliases": [
+        "anthropic/claude-fable-5.2"
+      ],
+      "provider": "anthropic",
+      "name": "Claude Fable 5.2",
+      "family": "claude-fable",
+      "pricing": { "inputPerM": 8, "outputPerM": 40, "basis": "maker" },
+      "releasedAt": "2026-11-07",
+      "results": [],
+      "scores": {
+        "coding": {
+          "score": 87.3,
+          "benchmarks": 3,
+          "kind": "measured"
+        },
+        "agentic": {
+          "score": 85.4,
+          "benchmarks": 3,
+          "kind": "measured"
+        },
+        "reasoning": {
+          "score": 92.4,
+          "benchmarks": 3,
+          "kind": "measured"
+        }
+      }
+    },
+    {
+      "id": "gpt-6-luna",
+      "aliases": [
+        "openai/gpt-6-luna"
+      ],
+      "provider": "openai",
+      "name": "GPT-6 Luna",
+      "family": "gpt-luna",
+      "pricing": { "inputPerM": 0.1, "outputPerM": 0.5, "basis": "maker" },
+      "releasedAt": "2026-09-22",
+      "results": [],
+      "scores": {
+        "coding": {
+          "score": 66,
+          "benchmarks": 3,
+          "kind": "measured"
+        },
+        "agentic": {
+          "score": 50,
+          "benchmarks": 3,
+          "kind": "measured"
+        },
+        "reasoning": {
+          "score": 70,
+          "benchmarks": 3,
+          "kind": "measured"
+        }
+      }
+    },
+    {
+      "id": "gpt-6-1-terra",
+      "aliases": [
+        "openai/gpt-6.1-terra"
+      ],
+      "provider": "openai",
+      "name": "GPT-6.1 Terra",
+      "family": "gpt-terra",
+      "pricing": { "inputPerM": 1, "outputPerM": 5, "basis": "maker" },
+      "releasedAt": "2026-10-26",
+      "results": [],
+      "scores": {
+        "coding": {
+          "score": 77.5,
+          "benchmarks": 4,
+          "kind": "measured"
+        },
+        "agentic": {
+          "score": 70,
+          "benchmarks": 3,
+          "kind": "measured"
+        },
+        "reasoning": {
+          "score": 78,
+          "benchmarks": 3,
+          "kind": "measured"
+        }
+      }
+    },
+    {
+      "id": "gpt-6-1-sol",
+      "aliases": [
+        "openai/gpt-6.1-sol"
+      ],
+      "provider": "openai",
+      "name": "GPT-6.1 Sol",
+      "family": "gpt-sol",
+      "pricing": { "inputPerM": 2, "outputPerM": 10, "basis": "maker" },
+      "releasedAt": "2026-09-29",
+      "results": [],
+      "scores": {
+        "coding": {
+          "score": 82.2,
+          "benchmarks": 4,
+          "kind": "measured"
+        },
+        "agentic": {
+          "score": 78,
+          "benchmarks": 3,
+          "kind": "measured"
+        },
+        "reasoning": {
+          "score": 83,
+          "benchmarks": 3,
+          "kind": "measured"
+        }
+      }
+    },
+    {
+      "id": "gpt-6-astra",
+      "aliases": [
+        "openai/gpt-6-astra"
+      ],
+      "provider": "openai",
+      "name": "GPT-6 Astra",
+      "family": "gpt-astra",
+      "pricing": { "inputPerM": 10, "outputPerM": 50, "basis": "maker" },
+      "releasedAt": "2026-09-04",
+      "results": [],
+      "scores": {
+        "coding": {
+          "score": 83.9,
+          "benchmarks": 5,
+          "kind": "measured"
+        },
+        "agentic": {
+          "score": 80.5,
+          "benchmarks": 4,
+          "kind": "measured"
+        },
+        "reasoning": {
+          "score": 89.7,
+          "benchmarks": 4,
+          "kind": "measured"
+        }
+      }
+    },
+    {
+      "id": "composer-2-5",
+      "aliases": [
+        "cursor/composer-2.5"
+      ],
+      "provider": "cursor",
+      "name": "Composer 2.5",
+      "family": "composer",
+      "releasedAt": "2026-10-20",
+      "results": [],
+      "scores": {
+        "coding": {
+          "score": 80,
+          "benchmarks": 2,
+          "kind": "estimated"
+        }
+      }
+    }
+  ]
+}

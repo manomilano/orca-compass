@@ -158,15 +158,10 @@ metadata too:
 orcacompass refresh
 ```
 
-If `status` says `catalog: snapshot`, OrcaCompass could not reach Models.dev
-and the table was built from the metadata bundled with this version; run
-`refresh` when online. On a network failure `refresh` prints `could not reach
-models.dev; still using the …` and exits 0 when fallback metadata is available.
-It does not read usage; routing requests read usage from Orca each time.
-
-A new model that no tier rule covers is listed under `unclassified (never
-routed)` in `status`. Run `refresh` first; if it stays unclassified, give it a
-tier with `tierOverrides` in the config.
+If `status` says `evidence: snapshot`, the bundled evidence is in use.
+Run `orcacompass refresh` when online to check the repository. Unranked models
+lack evidence or a usable inheritance hint; inspect `orcacompass ranking` and
+use `tierOverrides` if appropriate.
 
 ## Config errors (exit code 2)
 
@@ -195,7 +190,7 @@ Orca also opens its own terminal tab, which is expected.
 
 ## The first call is slow
 
-A call that builds the placement table waits for Models.dev and then runs
+A call that builds the placement table checks the evidence manifest and then runs
 every agent's model listing, so it can take longer than any single timeout:
 10 s for metadata, 30 s for each live listing, 20 s for Orca usage. That
 happens on the first call, during `orcacompass refresh`, and when the table

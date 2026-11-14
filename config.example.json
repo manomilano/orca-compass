@@ -12,8 +12,10 @@
     "advanced": "medium",
     "frontier": "high"
   },
-  "scoreWeight": 0.4,
-  "modelsDevTtlHours": 24,
+  "costBands": [1, 5, 12],
+  "handoutMinutes": 10,
+  "handoutPercent": 5,
+  "evidenceTtlHours": 24,
   "usageStaleMinutes": 30,
   "excludeNoZdr": false,
   "cursorAuto": true,

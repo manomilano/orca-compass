@@ -1,6 +1,6 @@
 # Roadmap and limitations
 
-OrcaCompass discovers available models, places them in tiers, and recommends a
+OrcaCompass discovers available models, builds evidence profiles, and recommends a
 route using current usage and configuration. The coordinator classifies the
 work and launches the worker. See [How it works](how-it-works.md),
 [Tiers and routing](tiers-and-routing.md), and [Orca agents](orca-agents.md)
@@ -8,7 +8,6 @@ for current behavior and supported agents.
 
 ## Areas for future work
 
-- Improve placement for Gemini Flash and Pro when their lineup positions are stable.
 - Support Muse when a reliable model list is available, and consider adapters
   for additional agents and orchestrators.
 - Replace the experimental read of Orca's internal agent-switch store with a
@@ -22,8 +21,7 @@ for current behavior and supported agents.
 - **Live coverage is incomplete.** Discovery and launches have mainly been
   checked on Windows; coverage across agents and macOS/Linux is incomplete.
   Orca may reject effort levels from a different model catalog.
-- **Routing is stateless.** Parallel requests can select the same route because
-  recently launched workers do not reserve capacity.
+- **Hand-outs are estimates.** Recent routes adjust usage but do not reserve capacity; simultaneous calls can still select the same route.
 - **Usage mapping is inferred.** Cursor model buckets and Antigravity quota
   groups are matched by model or group name; changes can make usage unknown or
   assign a model to the wrong pool. Cursor Auto's underlying model is opaque.

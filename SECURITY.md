@@ -39,8 +39,7 @@ Please give a reasonable time to fix the issue before disclosing it publicly.
 | --- | --- |
 | Configuration and local caches | Unsafe parsing, validation bypasses, unexpected file access, or malicious data handling |
 | Process execution and discovery | Argument injection, executable resolution issues, or unsafe handling of spawned CLI output, timeouts, and Windows command shims |
-| Models.dev fetch | Unsafe handling of `GET https://models.dev/api.json` responses, caching, and offline fallback |
-| Maintained model score fetch | Unsafe handling of `data/modelindex-snapshot.json` from public `main` on raw.githubusercontent.com, score validation, caching and offline fallback; maintainer snapshot imports use `https://themodelindex.org/data/models.json` |
+| Evidence fetch | Validation, integrity checking, caching and offline fallback for the repository manifest and snapshot |
 | Recommendation output | Unsafe launch arguments or unintended disclosure through diagnostics |
 
 OrcaCompass runs local discovery commands: `orca account list`, the model

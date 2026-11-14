@@ -2,6 +2,8 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { toModelIndex } from '../../../src/evidence/catalog.js';
+import { parseSnapshot } from '../../../src/evidence/snapshot.js';
 import { discoverClaude } from '../../../src/placements/agents/claude.js';
 import { discoverCodex } from '../../../src/placements/agents/codex.js';
 import { discoverAntigravity, parseAgyModels } from '../../../src/placements/agents/antigravity.js';
@@ -29,32 +31,27 @@ const grokMany = [
 
 const NOW = 1793232000000;
 const ALL: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
-const meta = (id: string, provider: string, family: string, releaseDate: string, efforts?: Effort[]): ModelMeta => ({
+const meta = (id: string, provider: string, family: string, releaseDate: string): ModelMeta => ({
   id,
   provider,
   name: id,
   family,
   releaseDate,
-  ...(efforts ? { efforts } : {}),
 });
-const index: ModelIndex = Object.fromEntries(
+// Keep older adapter identity fixtures beside the V2 snapshot catalog.
+const index: ModelIndex = {
+  ...Object.fromEntries(
   [
-    meta('claude-haiku-5-5', 'anthropic', 'claude-haiku', '2026-09-22', ALL),
-    meta('claude-sonnet-5-5', 'anthropic', 'claude-sonnet', '2026-09-22', ALL),
-    meta('claude-opus-5-5', 'anthropic', 'claude-opus', '2026-09-22', ALL),
-    meta('claude-opus-5', 'anthropic', 'claude-opus', '2026-05-01', ALL),
-    meta('claude-fable-5-1', 'anthropic', 'claude-fable', '2026-10-01', ALL),
     meta('claude-fable-5', 'anthropic', 'claude-fable', '2026-06-01'),
-    meta('gpt-6-luna', 'openai', 'gpt-luna', '2026-08-01', ['none', ...ALL]),
-    meta('gpt-6.1-sol', 'openai', 'gpt-sol', '2026-10-01', ALL),
-    meta('gpt-6-astra', 'openai', 'gpt-astra', '2026-08-01', ALL),
-    meta('gpt-5.6-sol', 'openai', 'gpt-sol', '2026-03-01', ALL),
-    meta('grok-4.7', 'xai', 'grok', '2026-09-21', ['low', 'medium', 'high', 'xhigh']),
-    meta('gemini-3.8-flash', 'google', 'gemini-flash', '2026-09-02', ['low', 'medium', 'high']),
-    meta('claude-sonnet-4-6', 'anthropic', 'claude-sonnet', '2026-02-17', ['low', 'medium', 'high', 'max']),
-    meta('claude-opus-4-6', 'anthropic', 'claude-opus', '2026-02-05', ['low', 'medium', 'high', 'max']),
+    meta('gpt-5.6-sol', 'openai', 'gpt-sol', '2026-03-01'),
+    meta('grok-4.7', 'xai', 'grok', '2026-09-21'),
+    meta('gemini-3.8-flash', 'google', 'gemini-flash', '2026-09-02'),
+    meta('claude-sonnet-4-6', 'anthropic', 'claude-sonnet', '2026-02-17'),
+    meta('claude-opus-4-6', 'anthropic', 'claude-opus', '2026-02-05'),
   ].map((m) => [m.id, m]),
-);
+  ),
+  ...toModelIndex(parseSnapshot(fixture('evidence-mini.json'))!),
+};
 
 const fakeRun =
   (stdout: string, calls: { cmd: string; args: string[]; timeoutMs?: number }[] = []): Runner =>
@@ -148,12 +145,24 @@ describe('discoverCursor', () => {
     await discoverCursor(d);
     const saved = JSON.parse(readFileSync(join(d.cacheDir, 'cursor-models.json'), 'utf8'));
     expect(saved.models).toEqual([{ id: 'gpt-6.1-sol-high', label: 'Example NO ZDR' }]);
-    const updated = { ...index['gpt-6.1-sol'], family: 'updated-family' };
+    const updated = { ...index['gpt-6-1-sol'], family: 'updated-family' };
     const result = await discoverCursor({ ...d, run: failRun, index: { 'gpt-6.1-sol': updated } });
     expect(result.models[0]).toMatchObject({
       modelId: 'gpt-6.1-sol', meta: { family: 'updated-family' }, efforts: ['high'], noZdr: true,
       launch: { kind: 'variant', ids: { high: 'gpt-6.1-sol-high' } },
     });
+  });
+
+  it('matches dotted variants to normalized snapshot metadata', async () => {
+    const snapshotIndex = toModelIndex(parseSnapshot(fixture('evidence-mini.json'))!);
+    const result = await discoverCursor(deps({ index: snapshotIndex, run: fakeRun('gpt-6.1-sol-high - GPT-6.1 Sol High\n') }));
+    expect(result.models[0].meta).toBe(snapshotIndex['gpt-6-1-sol']);
+  });
+
+  it('bills any Grok model to Cursor Models', async () => {
+    const result = await discoverCursor(deps({ run: fakeRun('grok-4.7-high - Grok 4.7 High\nclaude-opus-5-5-high - Claude Opus 5.5 High\n') }));
+    expect(result.models.find((m) => m.modelId === 'grok-4.7')!.poolNames).toEqual(['monthly', 'bucket:Cursor Models']);
+    expect(result.models.find((m) => m.modelId === 'claude-opus-5-5')!.poolNames).toEqual(['monthly', 'bucket:Other Models']);
   });
 
   it('groups effort variants and prefers non-fast, then thinking ids', async () => {
@@ -201,7 +210,7 @@ describe('discoverCursor', () => {
     expect(bucket('grok-4.5')).toBe('bucket:Cursor Models');
     expect(bucket('composer-2.5')).toBe('bucket:Cursor Models');
     expect(bucket('auto')).toBe('bucket:Cursor Models');
-    expect(bucket('grok-4.7')).toBe('bucket:Other Models');
+    expect(bucket('grok-4.7')).toBe('bucket:Cursor Models');
     expect(bucket('claude-opus-5-5')).toBe('bucket:Other Models');
   });
 
@@ -300,7 +309,7 @@ describe('discoverCodex', () => {
       poolNames: ['session', 'weekly'],
       meta: index['gpt-6-astra'],
     });
-    expect(cx.models.find((m) => m.modelId === 'gpt-6.1-terra')!.meta).toBeUndefined();
+    expect(cx.models.find((m) => m.modelId === 'gpt-6.1-terra')!.meta).toBe(index['gpt-6-1-terra']);
     expect(cx.note).toMatch(/models_cache\.json/);
     // The provider's own words about each model's place in the lineup travel with it.
     expect(astra.lineup).toBe('Frontier intelligence for the most demanding work.');
@@ -317,16 +326,22 @@ describe('discoverCodex', () => {
     expect(cx2.models.find((m) => m.modelId === 'gpt-6.1-sol')!.efforts).toEqual(ALL);
   });
 
-  it('falls back to the Codex ladder families in Models.dev, skipping moving aliases', async () => {
+  it('falls back to the Codex ladder families in the evidence catalog, skipping moving aliases', async () => {
     const alias = { id: 'gpt-daybreak-blue-latest', provider: 'openai', name: 'Daybreak', family: 'gpt-sol', releaseDate: '2026-10-20' };
     const image = { id: 'gpt-image-2', provider: 'openai', name: 'Image', family: 'gpt-image', releaseDate: '2026-10-20' };
     const cx = await discoverCodex(deps({ readFile: fixtureFiles({}), index: { ...index, [alias.id]: alias, [image.id]: image } }));
-    expect(cx.models.map((m) => m.modelId).sort()).toEqual(['gpt-5.6-sol', 'gpt-6-astra', 'gpt-6-luna', 'gpt-6.1-sol']);
-    const sol = cx.models.find((m) => m.modelId === 'gpt-6.1-sol')!;
-    expect(sol).toMatchObject({ meta: index['gpt-6.1-sol'], efforts: ALL, effortSource: 'catalog', launch: { kind: 'flag', model: 'gpt-6.1-sol' }, poolNames: ['session', 'weekly'] });
+    expect(cx.models.map((m) => m.modelId).sort()).toEqual(['gpt-5.6-sol', 'gpt-6-1-sol', 'gpt-6-1-terra', 'gpt-6-astra', 'gpt-6-luna']);
+    const sol = cx.models.find((m) => m.modelId === 'gpt-6-1-sol')!;
+    expect(sol).toMatchObject({ meta: index['gpt-6-1-sol'], efforts: ALL, effortSource: 'assumed', launch: { kind: 'flag', model: 'gpt-6-1-sol' }, poolNames: ['session', 'weekly'] });
     expect(sol).not.toHaveProperty('lineup');
-    expect(cx.note).toBe('models from Models.dev (Codex has not cached its model list yet)');
+    expect(cx.note).toBe('models from the evidence catalog (Codex has not cached its model list yet)');
     expect((await discoverCodex(deps({ find: () => undefined, readFile: fixtureFiles({ codexCache }) }))).installed).toBe(false);
+  });
+
+  it('matches a provider id to normalized snapshot metadata', async () => {
+    const snapshotIndex = toModelIndex(parseSnapshot(fixture('evidence-mini.json'))!);
+    const result = await discoverCodex(deps({ index: snapshotIndex, readFile: fixtureFiles({ codexCache }) }));
+    expect(result.models.find((m) => m.modelId === 'gpt-6.1-sol')!.meta).toBe(snapshotIndex['gpt-6-1-sol']);
   });
 
   it('reports when no model list exists anywhere', async () => {
@@ -340,16 +355,16 @@ describe('discoverClaude', () => {
     const cl = await discoverClaude(deps({}));
     expect(cl).toMatchObject({ agent: 'claude', installed: true });
     expect(cl.models.map((m) => m.modelId).sort()).toEqual(
-      ['claude-fable-5', 'claude-fable-5-1', 'claude-haiku-5-5', 'claude-opus-4-6', 'claude-opus-5', 'claude-opus-5-5', 'claude-sonnet-4-6', 'claude-sonnet-5-5'],
+      ['claude-fable-5', 'claude-fable-5-1', 'claude-fable-5-2', 'claude-haiku-5-5', 'claude-opus-4-6', 'claude-opus-5', 'claude-opus-5-5', 'claude-sonnet-4-6', 'claude-sonnet-5-5'],
     );
     expect(cl.models.find((m) => m.modelId === 'claude-fable-5-1')!.poolNames).toEqual(['session', 'weekly', 'fableWeekly']);
     expect(cl.models.find((m) => m.modelId === 'claude-opus-5-5')).toMatchObject({
       launch: { kind: 'flag', model: 'claude-opus-5-5' },
       poolNames: ['session', 'weekly'],
       efforts: ALL,
-      effortSource: 'catalog',
+      effortSource: 'assumed',
     });
-    // Without Models.dev efforts the list is a guess, and says so.
+    // Without a local effort list, the fallback is assumed.
     expect(cl.models.find((m) => m.modelId === 'claude-fable-5')).toMatchObject({ efforts: ALL, effortSource: 'assumed' });
     expect(cl.models.find((m) => m.modelId === 'claude-fable-5')!.efforts).toEqual(ALL);
   });
@@ -650,7 +665,7 @@ const opencodeList = [
 ].join('\n');
 
 describe('discoverOpencode', () => {
-  it('reads opencode models live, skips moving aliases and maps ids to Models.dev', async () => {
+  it('reads opencode models live, skips moving aliases and maps ids to the evidence catalog', async () => {
     const calls: { cmd: string; args: string[] }[] = [];
     const found: { name: string; extra: string[] }[] = [];
     const d = await discoverOpencode(deps({
@@ -669,7 +684,7 @@ describe('discoverOpencode', () => {
       ['deepseek-v4.1-flash', 'opencode/deepseek-v4.1-flash-free', 'free model through opencode'],
       ['claude-opus-5-5', 'openrouter/anthropic/claude-opus-5.5', 'pay per use through openrouter'],
       ['claude-sonnet-5-5', 'openrouter/anthropic/claude-sonnet-5.5', 'pay per use through openrouter'],
-      ['gpt-6.1-sol', 'openrouter/openai/gpt-6.1-sol', 'pay per use through openrouter'],
+      ['gpt-6-1-sol', 'openrouter/openai/gpt-6.1-sol', 'pay per use through openrouter'],
       ['cohere/north-mini-code', 'openrouter/cohere/north-mini-code:free', 'free model through openrouter'],
       ['deepseek/deepseek-v4-pro', 'openrouter/deepseek/deepseek-v4-pro', 'pay per use through openrouter'],
     ]);

@@ -84,8 +84,8 @@ const pace = (risk: Risk | null | undefined): number | null => (risk ? Math.roun
 
 function tierChoice(tier: Tier, env: Environment, config: Config): TierChoice {
   const d = route({ tier, noDowngrade: true }, env, config);
-  // A structural upgrade belongs to another tier; only the tier's own routes are choices here.
-  const own = d.tier === undefined || d.tier === tier;
+  // Cheaper covering picks belong here; structural upgrades still belong to another tier.
+  const own = !d.upgraded;
   const options: TierOption[] = [];
   if (own && d.route) {
     const prefix = `${d.route.agent} ${d.route.model}: `;
@@ -357,7 +357,9 @@ export async function setupWizard(term: Terminal, env: Environment, config: Conf
     for (const tier of TIERS) {
       const d = route({ tier }, env, next);
       const r = d.route;
-      const moved = d.tier && d.tier !== tier ? ` (${d.downgraded ? 'downgraded' : 'upgraded'} to ${d.tier})` : '';
+      const moved = d.tier && d.tier !== tier
+        ? d.downgraded ? ` (downgraded to ${d.tier})` : d.upgraded ? ` (upgraded to ${d.tier})` : ` (${d.tier} cost tier)`
+        : '';
       say(`  ${tier.padEnd(8)}  ${r ? `${r.agent} · ${r.model}${r.effort ? ` · ${r.effort}` : ''}${moved}` : 'no route'}`);
       for (const w of d.warnings) say(`  ${' '.repeat(8)}  warning: ${w}`);
     }

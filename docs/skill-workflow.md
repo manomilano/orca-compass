@@ -5,15 +5,15 @@ OrcaCompass when it delegates work to Orca workers. This page explains that
 workflow and the reasoning behind each step. Explicit user instructions about
 agent or model always take precedence over a recommendation.
 
-## The loop
+## Rate the work
 
-```text
-rate the job ──► route ──► launch ──► verify ──► supervise (Orca's skill)
-   tier + demand   orcacompass    orca orchestration   orcacompass verify
-                   route          worker-start
-```
+Rate coding, agentic and reasoning separately as `min`, `low`, `mid` or
+`high`, using the examples in the packaged Skill.
+Rate effort demand separately as low, moderate, high or exceptional.
+`--tier` remains a shorthand for equal needs on every axis. Favorites still
+apply per tier.
 
-### 1. Rate the job
+## 1. Rate the job
 
 Two independent ratings, both from the work itself:
 
@@ -43,7 +43,7 @@ and [Effort](effort.md#reasoning-demand).
 One call per worker:
 
 ```sh
-orcacompass route --tier daily --demand moderate --tier-reason "Local endpoint change with clear acceptance tests." --json
+orcacompass route --need coding=mid,agentic=low,reasoning=low --demand moderate --tier-reason "Multi-file change with tests and routine judgement." --json
 ```
 
 Options the orchestrator may add:
@@ -127,7 +127,7 @@ worker `verify` called `started`. Details: [Verify and rejections](verify-and-re
 | exit 1 | Usage or runtime error: fix the command or report it |
 | exit 2 | `config error: <path>: <message>`: report and resolve before retrying |
 | low confidence | Usage unknown or more than 4x `usageStaleMinutes` old. Do not invent percentages |
-| medium confidence | Usage moderately stale (the reason says "usage 45m old"), a score-placed model, or Cursor Auto |
+| medium confidence | Usage moderately stale (the reason says "usage 45m old"), or a recent hand-out |
 | catalog source `snapshot` | Metadata may be old; run `orcacompass refresh` when online |
 | warning `preferred … skipped: …` | The user's favorite would exceed its risk limit or is blocked; tell them the line |
 
@@ -154,3 +154,5 @@ reserves capacity for workers that were just launched. When launching several
 workers at once, consider the route and its unblocked `alternatives`.
 Alternatives have no `launchArgs`: route again with `--agent <agent>` for the
 one you pick, then use that decision's launch arguments.
+
+Inspect `quality` for coverage and evidence: estimated and assumed placements are provisional. Cursor `auto` is a fallback where Cursor chooses the model. Recent hand-outs are remembered, so manual spreading across alternatives is unnecessary.

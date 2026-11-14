@@ -1,6 +1,13 @@
 // Shared types for the routing core and its adapters. The core never does I/O;
 // adapters turn the machine into an Environment and the router turns that into a Decision.
 
+export type { Axis } from './evidence/snapshot.js';
+export type { AxisProfile, CostSource, CostTier, EvidenceLabel, Profile } from './placements/profiles.js';
+import type { Axis, EvidenceSnapshot } from './evidence/snapshot.js';
+import type { CostTier, EvidenceLabel, Profile } from './placements/profiles.js';
+import type { Need, Needs } from './routing/needs.js';
+export type { Need, Needs } from './routing/needs.js';
+
 import type { Rejection } from './routing/rejection.js';
 
 export type Tier = 'light' | 'daily' | 'advanced' | 'frontier';
@@ -24,22 +31,8 @@ export interface ModelMeta {
   name: string;
   family?: string;
   releaseDate?: string;
-  outputCost?: number;
-  efforts?: Effort[];
 }
 export type ModelIndex = Record<string, ModelMeta>;
-
-/** A Model Index entry: capability score and OpenRouter output price (USD per million tokens). */
-export interface RatedModel {
-  id: string;
-  name: string;
-  date: string;
-  score: number;
-  out: number;
-  orId?: string;
-  hf?: string;
-  open?: boolean;
-}
 
 export type DataSource = 'network' | 'cache' | 'snapshot';
 
@@ -47,6 +40,7 @@ export interface UsagePool {
   name: string;
   kind: 'session' | 'long';
   usedPercent: number;
+  handouts?: number;
   windowMinutes: number;
   resetsAt: number; // epoch ms
 }
@@ -67,13 +61,13 @@ export type Launch =
 
 /**
  * Where a model's supported efforts come from, most trusted first: the agent CLI's own model list or cache
- * (`provider`), Orca's catalog or effort menu (`orca`), Models.dev (`catalog`), or a built-in guess (`assumed`).
+ * (`provider`), Orca's catalog or effort menu (`orca`), or a built-in guess (`assumed`).
  */
-export type EffortSource = 'provider' | 'orca' | 'catalog' | 'assumed';
+export type EffortSource = 'provider' | 'orca' | 'assumed';
 
 export interface LaunchModel {
   agent: AgentId;
-  modelId: string; // Models.dev id when known, otherwise the raw id
+  modelId: string; // Canonical snapshot id when known, otherwise the raw id
   meta?: ModelMeta;
   efforts: Effort[];
   effortSource?: EffortSource;
@@ -92,11 +86,11 @@ export interface LaunchModel {
 /** One tier a model may serve and why; `detail` carries the numbers or words behind it. */
 export interface Classification {
   tier: Tier;
-  source: 'override' | 'lineup' | 'family' | 'score' | 'auto';
+  source: 'override' | 'lineup' | 'family';
   /** The numbers or provider description behind a placement. */
   detail?: string;
 }
-export const CLASSIFICATION_SOURCES: readonly Classification['source'][] = ['override', 'lineup', 'family', 'score', 'auto'];
+export const CLASSIFICATION_SOURCES: readonly Classification['source'][] = ['override', 'lineup', 'family'];
 
 export interface AgentDiscovery {
   agent: AgentId;
@@ -109,10 +103,7 @@ export interface AgentDiscovery {
 
 /** A discovered model with its placement result, as stored in the placement table. */
 export interface PlacedModel extends LaunchModel {
-  /** Exactly what classifyLaunch returned, lowest tier first; empty when unclassified. */
-  placements: Classification[];
-  /** The tiers of `placements`, for reading the file by eye. */
-  tiers: Tier[];
+  profile: Profile;
 }
 
 export interface PlacedAgent {
@@ -131,19 +122,18 @@ export interface SourceInfo {
 }
 
 /** The config keys that move a model between tiers; a change rebuilds the table. */
-export type BuiltWith = Pick<Config, 'tierOverrides' | 'cursorAuto' | 'scoreWeight'>;
+export type BuiltWith = Pick<Config, 'tierOverrides' | 'costBands'>;
 
-/** Every model's tiers, built from every source at once and cached for `placementsTtlHours`. */
+/** Every discovered model's profile, cached for `placementsTtlHours`. */
 export interface PlacementTable {
-  schemaVersion: 2;
+  schemaVersion: 4;
   version: string;
   builtAt: number;
   builtWith: BuiltWith;
   sources: {
-    catalog: SourceInfo;
-    scores: SourceInfo | null;
-    scoreScale: { cuts: number[] } | null;
+    evidence: SourceInfo & { generatedAt: string };
   };
+  bands: EvidenceSnapshot['bands'];
   agents: PlacedAgent[];
 }
 
@@ -154,6 +144,7 @@ export type OrcaAgents =
 
 export interface Environment {
   now: number;
+  bands: EvidenceSnapshot['bands'];
   /** Every agent with its models already placed (the placement table's rows). */
   discoveries: PlacedAgent[];
   usage: Record<AgentId, AgentUsage>;
@@ -161,15 +152,19 @@ export interface Environment {
   orcaAgents?: OrcaAgents;
   /** When the placement table the discoveries come from was built. */
   placementsBuiltAt: number;
+  evidenceSource: DataSource;
+  evidenceGeneratedAt: string;
+  /** Compatibility alias of evidenceSource for one release. */
   catalogSource: DataSource;
-  /** Where the capability scores came from; absent when the table was built without them. */
-  scoreSource?: DataSource;
+  /** Compatibility alias of evidenceSource for one release. */
+  scoreSource: DataSource;
   /** Models an agent refused at launch recently (see `orcacompass verify`); routing skips them. */
   rejections?: Rejection[];
 }
 
-export interface RouteRequest {
-  tier: Tier;
+export type RouteRequest = RouteOptions & ({ tier: Tier; needs?: never } | { needs: Needs; tier?: never });
+
+interface RouteOptions {
   /** The coordinator's short explanation of the task classification. */
   tierReason?: string;
   noDowngrade?: boolean;
@@ -219,6 +214,7 @@ export interface Alternative {
   model: string;
   effort: Effort | null;
   tier: Tier;
+  quality: Quality;
   /** Share of the ranked window expected to be left unused at reset; null when usage is unknown. */
   headroom: number | null;
   confidence: Confidence;
@@ -228,10 +224,25 @@ export interface Alternative {
   reason: string;
 }
 
+export interface Quality {
+  class: Tier | null;
+  cost: CostTier | null;
+  covers: boolean;
+  shortfall: number;
+  overshoot: number;
+  evidence: EvidenceLabel;
+  axes: Record<Axis, { score: number | null; band: Tier | null; evidence: EvidenceLabel; benchmarks: number; need: Need; cut: number | null }>;
+}
+
 export interface Decision {
   status: 'ok' | 'wait' | 'none';
   requestedTier: Tier;
+  needs: Needs;
+  needsSource: 'need' | 'tier';
+  quality?: Quality | null;
+  source?: Classification['source'] | 'evidence' | 'auto';
   tierReason?: string;
+  /** The cost tier of the selected model; absent when no cost tier is known, including Cursor auto. */
   tier?: Tier;
   downgraded: boolean;
   upgraded: boolean;
@@ -262,7 +273,7 @@ export interface Config {
   pins: Partial<Record<Tier, Preference>>;
   /** Above this projected usage, replace the favorite only with a known within-limit alternative. */
   preferRiskLimit: number;
-  /** Model ids or Models.dev families the user never wants routed. */
+  /** Model ids or families the user never wants routed. */
   banModels: string[];
   /**
    * Agents used only when no other agent can take the job in any allowed tier (OpenCode: API keys cost per
@@ -275,15 +286,17 @@ export interface Config {
   defaultEffort: Record<Tier, Effort>;
   /** How a reasoning demand (--demand) maps to effort. */
   effortPolicy: EffortPolicy;
-  /** Intelligence weight of the capability score, 0..1; price gets the rest. */
-  scoreWeight: number;
-  modelsDevTtlHours: number;
+  /** Ascending blended maker-price cuts in USD per million tokens (3:1 input/output). */
+  costBands: [number, number, number];
+  handoutMinutes: number;
+  handoutPercent: number;
+  evidenceTtlHours: number;
   /** How long the placement table (every model's tiers, built from every source) is reused; 0 rebuilds on every command. */
   placementsTtlHours: number;
   usageStaleMinutes: number;
   /** How long a model an agent refused at launch is skipped. */
   rejectionTtlHours: number;
   excludeNoZdr: boolean;
-  /** Route Cursor's `auto` in Light and Daily, ahead of named Cursor models. */
+  /** Offer Cursor's `auto` as a fallback when no named model can be routed. */
   cursorAuto: boolean;
 }

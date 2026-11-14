@@ -25,8 +25,8 @@ The cache holds observed state only and is safe to delete:
 
 | File | Content |
 | --- | --- |
-| `modelsdev.json` | Models.dev catalog, with `fetchedAt` |
-| `modelindex.json` | The Model Index ratings, with `fetchedAt` |
+| `evidence-snapshot.json`, `evidence-check.json` | Cached evidence and manifest check time |
+| `handouts.json` | Recent route hand-outs used to adjust pool usage |
 | `placements.json` | The placement table: every model's tiers with the numbers behind them, built from every source; reused for `placementsTtlHours` |
 | `cursor-models.json`, `grok-models.json`, `antigravity-models.json`, `opencode-models.json` | Last good model listing per agent, used only when the live command fails |
 | `rejected-models.json` | Models agents refused at launch, written by `verify` |
@@ -36,9 +36,8 @@ milliseconds), and `models`: an array of `{ "id": "..." }` objects with an optio
 provider `label` (Cursor keeps its labels, including `NO ZDR`). They store provider
 observations only. Computed tiers live in `placements.json`, which records the
 OrcaCompass version and the placement keys of the configuration
-(`tierOverrides`, `cursorAuto`, `scoreWeight`) it was built with, so a change
-to any of them rebuilds it. Usage percentages and routing decisions are never
-stored; they are derived on each run. User preferences remain in `config.json`.
+(`tierOverrides`, `costBands`) in `builtWith` (schema 4), so a change
+to any of them rebuilds it. Recent hand-outs are stored temporarily; usage is read on each run. User preferences remain in `config.json`.
 
 The listing commands run when the placement table is built, not on every
 route (Grok first checks its own native `models_cache.json`). A successful listing
@@ -58,7 +57,10 @@ cache; OrcaCompass writes it when it invokes that command during discovery.
   effect and no warning. Unknown tier keys inside `pins` or `defaultEffort`
   are errors.
 - Known keys must have the documented types; numbers must be finite and
-  non-negative; `scoreWeight` at most 1.
+  non-negative. `costBands` must contain exactly three strictly ascending,
+  non-negative numbers; invalid values are a config error naming the key.
+- `classWeight` is no longer used: it warns and is ignored, like `scoreWeight`
+  and `modelsDevTtlHours`.
 - Commands that write the file change only their own keys. Every other key
   keeps its value and position, and the file keeps its indentation and line
   endings. The write replaces the file in one step, so a crash never leaves
@@ -74,11 +76,11 @@ cache; OrcaCompass writes it when it invokes that command during discovery.
 | `denyAgents` | `[]` | These agents are never used, even if allowed | `agents disable`, `agents enable` |
 | `pins` | `{}` | Preferred route per tier with optional `model`, e.g. `{ "daily": { "agent": "codex" } }`. An eligible, unblocked favorite wins unless it exceeds `preferRiskLimit` and an unblocked alternative has known usage within the limit | `prefer` |
 | `preferRiskLimit` | `100` | Projected usage percentage above which a within-limit alternative replaces the favorite. Retain the favorite when no unblocked alternative has known usage within this limit | `prefer --risk-limit` |
-| `banModels` | `[]` | Model ids or Models.dev families never routed | `ban`, `unban` |
+| `banModels` | `[]` | Model ids or families never routed | `ban`, `unban` |
 | `lastResortAgents` | `["opencode"]` | Agents used only when no other agent can take the job in any allowed tier (or instead of waiting). `--agent <id>` or a preference for the tier lifts it; `[]` makes them ordinary | by hand |
-| `tierOverrides` | `{}` | Model id or family to a tier: `{ "gemma4:12b": "light", "grok": "daily" }`. Overrides other placement signals; also makes Cursor `auto` an ordinary candidate (`"auto": "daily"`) | by hand |
+| `tierOverrides` | `{}` | Model id or family to a tier: `{ "gemma4:12b": "light", "grok": "daily" }`. Sets the cost tier only, leaving evidence bands and coverage unchanged; `auto` overrides are ignored | by hand |
 | `excludeNoZdr` | `false` | Exclude models marked no-ZDR (zero data retention). Relies on Cursor's `NO ZDR` labels only | by hand |
-| `cursorAuto` | `true` | Route Cursor `auto` in Light and Daily ahead of named Cursor models | by hand |
+| `cursorAuto` | `true` | Offer Cursor `auto` as a fallback when no named model can be routed | by hand |
 
 ### Usage
 
@@ -102,18 +104,21 @@ config requires the spelling `xhigh`.
 
 | Key | Default | Purpose |
 | --- | --- | --- |
-| `scoreWeight` | `0.4` | Intelligence weight of the capability score, 0 to 1; log-price gets the rest |
-| `modelsDevTtlHours` | `24` | Cache lifetime for Models.dev metadata and repository Model Index scores |
-| `placementsTtlHours` | `5` | How long the placement table (every model's tiers) is reused before every source is read again; `0` rebuilds on every command. A change to `tierOverrides`, `cursorAuto` or `scoreWeight`, an OrcaCompass update, or an agent newly found (on PATH or in its installer's default folder) rebuilds it at once; `orcacompass refresh` always does |
+| `costBands` | `[1, 5, 12]` | USD per million blended tokens: Light below 1, Daily below 5, Advanced below 12, Frontier at or above 12; blend `(3 × input + output) / 4` |
+| `handoutMinutes` | `10` | Lifetime of recent hand-outs |
+| `handoutPercent` | `5` | Usage points added per hand-out per pool |
+| `evidenceTtlHours` | `24` | Manifest check interval |
+| `placementsTtlHours` | `5` | Placement cache lifetime; changed snapshot or placement settings rebuild it, and refresh forces a rebuild |
 | `rejectionTtlHours` | `168` | How long a model an agent refused at launch (found by `verify`) is skipped |
 
 ## Example
 
 [`config.example.json`](https://github.com/manomilano/orca-compass/blob/main/config.example.json) shows a typical setup rather than the defaults: it limits routing to Claude,
 Codex and Cursor (`allowAgents`), pins Claude Sonnet for Daily and adds one tier
-override (`grok-4.7` is already Advanced built in, so that line only shows the
-syntax). Remove those three to keep automatic selection; the other keys it
-lists are at their defaults, and keys it omits (`effortPolicy`,
+override (treating `grok-4.7` as Advanced cost without changing its evidence).
+Its legacy `classWeight` is no longer used and warns; use `costBands` instead.
+Remove the agent restriction, pin and override to keep automatic selection;
+the other keys it lists are at their defaults, and keys it omits (`effortPolicy`,
 `placementsTtlHours`, `rejectionTtlHours`, `lastResortAgents`) keep theirs.
 
 ```json
@@ -146,10 +151,8 @@ commands do not gather it.
 | Source | Used for | How |
 | --- | --- | --- |
 | `orca account list --json` | Usage and limits per agent | Run whenever the routing environment is gathered, 20 s timeout |
-| Claude Code's cached account model catalog, then Orca's model catalog, then Models.dev | Claude models, effort levels and lineup words | Read at table build; Models.dev is the fallback when neither local catalog supplies models |
-| [Models.dev](https://models.dev) (`/api.json`) | Model names, families, release dates, output prices, effort options for Anthropic, OpenAI, Google, xAI | Cache (24 h) → network (10 s) → stale cache → bundled snapshot `data/models-snapshot.json` |
-| [The Model Index](https://themodelindex.org) scores (CC BY 4.0), maintained in the OrcaCompass repository | Capability scores and OpenRouter output prices for placing models outside the ladder | Cache (24 h) → `data/modelindex-snapshot.json` on public `main` (10 s) → valid stale cache → bundled copy. Users do not fetch the upstream provider. Failure only disables score placement |
-| `~/.codex/models_cache.json`, then Orca's `agent-model-catalog.json`, then Models.dev | Codex models, effort levels and lineup words | Read as files; the Models.dev fallback keeps only the Codex ladder families (`gpt-luna`, `gpt-terra`, `gpt-sol`, `gpt-astra`) and no `-latest` alias |
+| Claude and Codex local catalogs, then the evidence snapshot | Models and effort options | Read at table build; fallback effort levels are assumed |
+| Evidence snapshot and manifest | Catalog and benchmark profiles | Cache, repository manifest and snapshot, then bundled fallback |
 | `cursor-agent models` | Cursor model variants and `NO ZDR` labels | At table build, 30 s, saved copy on failure |
 | `~/.grok/models_cache.json`, then `grok models` | Grok Build models, efforts, default | At table build: file, then live |
 | `agy models` | Antigravity models (`id<TAB>label`) | At table build |
@@ -157,17 +160,11 @@ commands do not gather it.
 | Orca's profile state (`profile-state.db` or `orca-data.json`), read-only | Which agents you enabled in Orca (`settings.disabledTuiAgents`) | Experimental; anything unexpected is `unknown` |
 | `orca orchestration worker-show` / `worker-read` | `verify` only | Read-only |
 
-Regenerate the bundled snapshots with `npm run snapshot` after `npm run build`
-(`scripts/make-snapshot.mjs`).
-
 ## Privacy
 
-OrcaCompass fetches public metadata from Models.dev and maintained Model Index
-scores from this repository on GitHub. These are unauthenticated GET requests;
-no API key is needed or sent. The optional
-`--tier-reason` argument carries a short classification explanation supplied
-by the coordinator and is returned in command output; it is not sent in these
-metadata requests. Discovery reads machine metadata. Usage and configuration
+OrcaCompass fetches the public evidence manifest and snapshot from this
+repository on GitHub without an API key. The optional `--tier-reason` is
+returned in command output and is not sent in these requests. Discovery reads machine metadata. Usage and configuration
 stay local. OrcaCompass collects no telemetry and calls no AI model. Background
 discovery commands run with stdin closed and bounded timeouts. Install, update
 and uninstall attach their interactive steps to your terminal. On Windows,

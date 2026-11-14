@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { homeDir } from '../../paths.js';
-import { normalizeModelId } from '../score.js';
+import { normalizeModelId } from '../ids.js';
 import type { AgentDiscovery, LaunchModel, ModelMeta } from '../../types.js';
 import type { AgentDeps, Locator } from './deps.js';
 import { listModels, savedNote } from './list-cache.js';
