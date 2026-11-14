@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readTextFile } from '../src/placements/agents/deps.js';
 import { fakeDeps, fixture, NOW, orcaDownRunner, runner } from './helpers/fakes.js';
-import { MODEL_INDEX_URL, toRatings } from '../src/placements/sources/modelindex.js';
+import { createHash } from 'node:crypto';
+import { EVIDENCE_MANIFEST_URL } from '../src/evidence/source.js';
 import type { Runner } from '../src/system/run.js';
 import { main, type MainDeps } from '../src/cli.js';
 import { DEFAULT_CONFIG } from '../src/config.js';
@@ -38,17 +39,76 @@ afterEach(() => {
 });
 
 describe('metadata output', () => {
-  it.each(['status', 'refresh', 'tiers', 'route'])('%s omits the removed benchmark source from text and JSON', async (command) => {
+  it.each(['status', 'refresh', 'tiers', 'ranking', 'route'])('%s omits the retired data providers from text and JSON', async (command) => {
     const args = command === 'route' ? [command, '--tier', 'daily'] : [command];
     expect(await main(args, io, deps)).toBe(0);
-    expect(out()).not.toMatch(/benchmark/i);
+    expect(out()).not.toMatch(/models\.dev|model index/i);
     stdout = [];
     expect(await main([...args, '--json'], io, deps)).toBe(0);
-    expect(out()).not.toMatch(/benchmark/i);
+    expect(out()).not.toMatch(/models\.dev|model index/i);
   });
 });
 
 describe('route', () => {
+  it('caps need skips by model in text while retaining every JSON skip and other diagnostics', async () => {
+    writeFileSync(configPath(), JSON.stringify({ banModels: ['gpt-6.1-terra'] }));
+    expect(await main(['route', '--tier', 'frontier', '--json'], io, deps)).toBe(0);
+    const decision = JSON.parse(out());
+    const needSkips = decision.skipped.filter((s: { reason: string }) => /^(below need on |unranked:)/.test(s.reason));
+    const models = new Set(needSkips.map((s: { agent: string; model: string }) => `${s.agent} ${s.model}`));
+    expect(models.size).toBeGreaterThan(6);
+    expect(needSkips.filter((s: { agent: string; model: string }) => s.agent === 'claude' && s.model === 'claude-haiku-5-5')).toHaveLength(3);
+    stdout = [];
+    expect(await main(['route', '--tier', 'frontier'], io, deps)).toBe(0);
+    const line = out().split('\n').find((s) => s.trimStart().startsWith('skipped:'))!;
+    expect(line).toBeDefined();
+    expect(line.match(/\((?:below need on |unranked:)/g)).toHaveLength(6);
+    expect(line).toContain(`… ${models.size - 6} more (route --json lists them)`);
+    // Raw evidence replaces the hint nudge; the refreshed snapshot uses the spec's raw-score cuts.
+    expect(line).toContain('claude claude-haiku-5-5 (below need on coding 68.4 < 82, agentic 53.5 < 80, reasoning 74.6 < 89)');
+    for (const skip of decision.skipped.filter((s: { reason: string }) => !/^(below need on |unranked:)/.test(s.reason))) {
+      expect(line).toContain(`${skip.agent}${skip.model ? ` ${skip.model}` : ''} (${skip.reason})`);
+    }
+    expect(line).toContain('banned by you');
+  });
+  it.each([
+    'coding=high,agentic=mid', 'coding=high,agentic=mid,reasoning=low,coding=min',
+    'coding=huge,agentic=mid,reasoning=low', 'coding = high, agentic=mid,reasoning=low',
+    'CODING=high,agentic=mid,reasoning=low', 'coding=High,agentic=mid,reasoning=LOW',
+  ])('rejects malformed --need %s with usage', async (need) => {
+    expect(await main(['route', '--need', need], io, deps)).toBe(1);
+    expect(err()).toMatch(/must name all three axes/);
+    expect(err()).toContain('usage: orcacompass');
+    expect(stdout).toEqual([]);
+  });
+
+  it('accepts reordered needs and preserves quality, sources and hand-outs', async () => {
+    expect(await main(['route', '--need', 'reasoning=low,coding=high,agentic=mid', '--json'], io, deps)).toBe(0);
+    const d = JSON.parse(out());
+    expect(d).toMatchObject({ needs: { coding: 'high', agentic: 'mid', reasoning: 'low' }, needsSource: 'need', evidenceSource: 'snapshot', scoreSource: 'snapshot', catalogSource: 'snapshot', placementsBuiltAt: NOW });
+    // The refreshed snapshot's Frontier coding cut is 82 on raw evidence.
+    for (const quality of [d.quality, ...d.alternatives.map((a: { quality: unknown }) => a.quality)]) {
+      expect(quality.axes.coding).toMatchObject({ score: expect.any(Number), band: expect.any(String), evidence: expect.any(String), benchmarks: expect.any(Number), need: 'high', cut: 82 });
+    }
+    const entries = JSON.parse(readFileSync(join(process.env.ORCACOMPASS_HOME!, 'cache', 'handouts.json'), 'utf8')).handouts;
+    expect(entries).toHaveLength(1);
+    expect(entries[0].needs).toEqual(d.needs);
+  });
+
+  it('requires exactly one of need and tier', async () => {
+    expect(await main(['route'], io, deps)).toBe(1);
+    expect(err()).toContain('--need is required (or --tier as a shorthand)');
+    stderr = [];
+    expect(await main(['route', '--tier', 'daily', '--need', 'coding=low,agentic=low,reasoning=low'], io, deps)).toBe(1);
+    expect(err()).toContain('use either --need or --tier, not both');
+  });
+
+  it('warns once for each removed config key during routing', async () => {
+    writeFileSync(configPath(), JSON.stringify({ scoreWeight: 0.5, modelsDevTtlHours: 12 }));
+    expect(await main(['route', '--tier', 'light', '--json'], io, deps)).toBe(0);
+    expect(stderr.filter((s) => s.startsWith('warning: scoreWeight is no longer used'))).toHaveLength(1);
+    expect(stderr.filter((s) => s.startsWith('warning: modelsDevTtlHours is no longer used'))).toHaveLength(1);
+  });
   it.each([
     { agent: 'cursor', exe: 'cursor-agent', listing: 'gpt-6.1-sol-high - Example\n', model: 'gpt-6.1-sol-high', base: 'gpt-6.1-sol', effort: undefined },
     { agent: 'antigravity', exe: 'agy', listing: 'gemini-3.8-flash-high\tExample\n', model: 'gemini-3.8-flash-high', base: 'gemini-3.8-flash', effort: undefined },
@@ -108,11 +168,11 @@ describe('route', () => {
     const d = JSON.parse(out());
     expect(d).toMatchObject({
       status: 'ok',
-      route: { agent: 'cursor', model: 'claude-fable-5-1-thinking-high' },
+      route: { agent: 'claude', model: 'claude-opus-5-5' },
       catalogSource: 'snapshot',
       scoreSource: 'snapshot',
     });
-    expect(d.launch).toBe('orca orchestration worker-start --spec "<task>" --agent cursor --model claude-fable-5-1-thinking-high');
+    expect(d.launch).toBe('orca orchestration worker-start --spec "<task>" --agent claude --model claude-opus-5-5 --effort high');
     expect(d.skipped.some((x: { agent: string }) => x.agent === 'gemini')).toBe(false);
     // Orca's "unavailable" outranks "not installed".
     expect(d.skipped).toContainEqual({ agent: 'grok', reason: 'not signed in or unavailable: Not signed in to Grok — run grok login' });
@@ -122,6 +182,7 @@ describe('route', () => {
   it('prints a compact text decision', async () => {
     expect(await main(['route', '--tier', 'daily'], io, deps)).toBe(0);
     const lines = out().split('\n');
+    // Sonnet now competes at Daily cost and wins on subscription headroom.
     expect(lines[0]).toBe('daily → claude · claude-sonnet-5-5 · medium (high confidence)');
     expect(lines.slice(1, -1).every((l) => l.startsWith('  '))).toBe(true);
     expect(lines.at(-1)).toBe('orca orchestration worker-start --spec "<task>" --agent claude --model claude-sonnet-5-5 --effort medium');
@@ -129,20 +190,20 @@ describe('route', () => {
 
   it('passes agent, exclude-agent, effort and no-downgrade through to the router', async () => {
     await main(['route', '--tier', 'frontier', '--agent', 'claude', '--effort', 'max', '--json'], io, deps);
-    expect(JSON.parse(out()).route).toEqual({ agent: 'claude', model: 'claude-fable-5-1', effort: 'max' });
+    expect(JSON.parse(out()).route).toEqual({ agent: 'claude', model: 'claude-opus-5-5', effort: 'max' });
     stdout = [];
     await main(['route', '--tier', 'frontier', '--exclude-agent', 'cursor', '--exclude-agent', 'codex', '--json'], io, deps);
     expect(JSON.parse(out()).route.agent).toBe('claude');
     stdout = [];
     await main(['route', '--tier', 'advanced', '--agent', 'codex', '--no-downgrade', '--json'], io, deps);
-    expect(JSON.parse(out())).toMatchObject({ status: 'ok', tier: 'advanced', downgraded: false, route: { agent: 'codex', model: 'gpt-6.1-sol' } });
+    // Sol covers Advanced needs at Daily cost; a cheaper covering pick is not a downgrade.
+    expect(JSON.parse(out())).toMatchObject({ status: 'ok', tier: 'daily', requestedTier: 'advanced', upgraded: false, downgraded: false, route: { agent: 'codex', model: 'gpt-6.1-sol' } });
   });
 
-  it('routes cursor-only Daily to Cursor Auto', async () => {
+  it('routes cursor-only Daily to a named model', async () => {
     await main(['route', '--tier', 'daily', '--agent', 'cursor', '--json'], io, deps);
     const d = JSON.parse(out());
-    expect(d).toMatchObject({ route: { agent: 'cursor', model: 'auto', effort: null }, launchArgs: ['--agent', 'cursor', '--model', 'auto'] });
-    expect(['medium', 'low']).toContain(d.confidence);
+    expect(d).toMatchObject({ route: { agent: 'cursor', model: 'claude-sonnet-5-5-medium', effort: null }, launchArgs: ['--agent', 'cursor', '--model', 'claude-sonnet-5-5-medium'], confidence: 'high' });
   });
 
   it('routes on with a warning and a suggestion for an unknown agent id', async () => {
@@ -193,7 +254,18 @@ describe('route', () => {
 });
 
 describe('status', () => {
-  it('reports agents, usage pools, tiers, unclassified models and the catalog', async () => {
+  it('reports evidence and hand-outs without legacy score metadata', async () => {
+    expect(await main(['status', '--json'], io, deps)).toBe(0);
+    const s = JSON.parse(out());
+    expect(s.evidence).toMatchObject({ source: 'snapshot', generatedAt: expect.any(String), models: expect.any(Number) });
+    expect(s.handouts).toEqual([]);
+    for (const key of ['catalog', 'scores', 'scored', 'scoreScale']) expect(s).not.toHaveProperty(key);
+    expect(s.placements).not.toHaveProperty('scoreScale');
+    stdout = [];
+    await main(['status'], io, deps);
+    expect(out()).toMatch(/^evidence: snapshot, \d+ models \(LLMBenchmark\.ai, CC BY 4\.0, data of \d{4}-\d{2}-\d{2}\), fetched /m);
+  });
+  it('reports agents, usage pools, tiers, unclassified models and evidence', async () => {
     expect(await main(['status', '--json'], io, deps)).toBe(0);
     const s = JSON.parse(out());
     expect(s.agents.find((a: { agent: string }) => a.agent === 'antigravity')).toMatchObject({ installed: false });
@@ -207,20 +279,17 @@ describe('status', () => {
       blocked: false,
       expired: false,
     });
-    expect(s.tiers.frontier.pick).toMatchObject({ agent: 'cursor', model: 'claude-fable-5-1-thinking-high' });
+    // Advanced needs are covered by Daily-cost Sonnet; Frontier needs by Advanced-cost Opus.
+    expect(s.tiers.advanced.pick).toMatchObject({ agent: 'claude', model: 'claude-sonnet-5-5', reason: expect.stringContaining('(daily cost tier)') });
+    expect(s.tiers.frontier.pick).toMatchObject({ agent: 'claude', model: 'claude-opus-5-5' });
     expect(s.tiers.light.pick.agent).toBeDefined();
     expect(s.unclassified.length).toBeGreaterThan(0);
-    expect(s.catalog).toMatchObject({ source: 'snapshot' });
-    expect(s.scores).toMatchObject({ source: 'snapshot' });
-    expect(s.scores.models).toBeGreaterThan(0);
-    const kimi = s.scored.find((x: { model: string }) => x.model === 'kimi-k3');
-    expect(kimi).toMatchObject({ agent: 'cursor', tier: expect.any(String), detail: expect.stringMatching(/^capability score \(Model Index /) });
-    expect(s.unclassified).not.toContainEqual({ agent: 'cursor', model: 'auto' });
-    for (const tier of ['light', 'daily']) {
-      const listed = [s.tiers[tier].pick, ...s.tiers[tier].alternatives];
-      expect(listed, tier).toContainEqual(expect.objectContaining({ agent: 'cursor', model: 'auto', effort: null }));
-    }
-    for (const tier of ['advanced', 'frontier']) {
+    expect(s.evidence).toMatchObject({ source: 'snapshot' });
+    expect(s.evidence.models).toBeGreaterThan(0);
+    expect(s).not.toHaveProperty('scored');
+    expect(s.unclassified).toContainEqual({ agent: 'cursor', model: 'auto' });
+    for (const tier of ['light', 'daily', 'advanced', 'frontier']) {
+      expect(s.tiers[tier].pick?.model).not.toBe('auto');
       expect(s.tiers[tier].alternatives.some((a: { model: string }) => a.model === 'auto'), tier).toBe(false);
     }
   });
@@ -240,38 +309,138 @@ describe('status', () => {
     expect(out()).toMatch(/antigravity\s+not installed \(agy not found\)/);
     expect(out()).toMatch(/muse\s+0 models, usage unknown: Orca reports no usage for muse — skipped: no models/);
     expect(out()).toMatch(/frontier/);
-    expect(out()).toMatch(/catalog: snapshot/);
-    expect(out()).toMatch(/scores: snapshot, \d+ models/);
-    expect(out()).toMatch(/cursor kimi-k3: tier \w+ from capability score \(Model Index /);
+    expect(out()).toMatch(/evidence: snapshot/);
+    expect(out()).toMatch(/evidence: snapshot, \d+ models/);
+    expect(out()).toContain('unclassified (never routed):');
   });
 });
 
 describe('refresh', () => {
-  it('reloads the catalog and the Model Index and reports source and model counts', async () => {
-    const mini = fixture('modelsdev-mini.json');
-    const index = JSON.stringify({ fetchedAt: NOW, ratings: toRatings(JSON.parse(fixture('modelindex-mini.json'))) });
-    const fetchImpl = async (url: string | URL | Request) => new Response(String(url) === MODEL_INDEX_URL ? index : mini);
+  it('reloads evidence and reports source and model counts', async () => {
+    const snapshot = fixture('evidence-mini.json');
+    const manifest = { schemaVersion: 1, generatedAt: JSON.parse(snapshot).generatedAt, bytes: Buffer.byteLength(snapshot), sha256: createHash('sha256').update(snapshot).digest('hex') };
+    const fetchImpl = async (url: string | URL | Request) => new Response(String(url) === EVIDENCE_MANIFEST_URL ? JSON.stringify(manifest) : snapshot);
     const code = await main(['refresh'], io, { ...deps, fetchImpl: fetchImpl as typeof fetch });
     expect(code).toBe(0);
-    expect(out()).toMatch(/^models\.dev: network, \d+ models/);
-    expect(out()).toMatch(/\nmodel index: network, \d+ rated models/);
+    expect(out()).toMatch(/^evidence: network, \d+ models \(snapshot of /);
     expect(err()).toBe('');
   });
 
   it('reports when the network is unavailable', async () => {
     expect(await main(['refresh'], io, deps)).toBe(0);
     expect(out()).toMatch(/snapshot/);
-    expect(err()).toMatch(/could not reach models\.dev/);
-    expect(err()).toMatch(/could not load model scores from the OrcaCompass repository/);
+    expect(err()).toMatch(/could not reach the OrcaCompass repository/);
+    expect(stderr).toHaveLength(1);
   });
 
-  it('reports both sources as JSON', async () => {
+  it('reports evidence and placements as JSON', async () => {
     expect(await main(['refresh', '--json'], io, deps)).toBe(0);
-    expect(JSON.parse(out())).toMatchObject({ source: 'snapshot', scores: { source: 'snapshot' } });
+    expect(JSON.parse(out())).toMatchObject({ evidence: { source: 'snapshot', generatedAt: expect.any(String) }, placements: expect.any(Object) });
   });
 });
 
 describe('placement table in the CLI', () => {
+  it('shows cost and evidence separately in ranking text and JSON', async () => {
+    expect(await main(['ranking'], io, deps)).toBe(0);
+    expect(out()).toMatch(/^claude-sonnet-5-5\s+daily \$4\.00\/M price\s+evidence frontier\s+coding 84\.3 F measured\(5\)/m);
+    expect(out().split('\n').find((l) => l.startsWith('claude-sonnet-5-5  '))).not.toContain('hint:');
+    stdout = [];
+    expect(await main(['ranking', '--json'], io, deps)).toBe(0);
+    const r = JSON.parse(out());
+    expect(r.models.find((m: { id: string }) => m.id === 'claude-sonnet-5-5')).toMatchObject({ cost: { tier: 'daily', blended: 4, source: 'price' } });
+    expect(r.models[0].cost.tier).toBe('frontier');
+    const tiers = ['light', 'daily', 'advanced', 'frontier'];
+    for (let i = 1; i < r.models.length; i++) {
+      const a = r.models[i - 1], b = r.models[i];
+      expect(tiers.indexOf(a.cost?.tier) >= tiers.indexOf(b.cost?.tier)).toBe(true);
+      if (a.cost?.tier === b.cost?.tier) {
+        expect(tiers.indexOf(a.class) >= tiers.indexOf(b.class)).toBe(true);
+        if (a.class === b.class) {
+          const score = (m: typeof a) => ['coding', 'agentic', 'reasoning'].reduce((sum, axis) => sum + (m.axes[axis].score ?? 0), 0);
+          expect(score(a)).toBeGreaterThanOrEqual(score(b));
+          if (score(a) === score(b)) expect(a.id.localeCompare(b.id)).toBeLessThanOrEqual(0);
+        }
+      }
+    }
+  });
+
+  it('groups tiers by cost and keeps evidence cuts in the axis view', async () => {
+    expect(await main(['tiers'], io, deps)).toBe(0);
+    expect(out()).toMatch(/^cost: light < \$1 ≤ daily < \$5 ≤ advanced < \$12 ≤ frontier \(per million tokens, 3:1 blended\)$/m);
+    expect(out()).toMatch(/^daily:\n(.*\n)*? {2}claude claude-sonnet-5-5 /m);
+    expect(out()).not.toMatch(/^coding:/m);
+    stdout = [];
+    expect(await main(['tiers', '--axis', 'coding'], io, deps)).toBe(0);
+    expect(out()).toMatch(/^coding: light < 70 ≤ daily < 78 ≤ advanced < 82 ≤ frontier$/m);
+    expect(out()).not.toMatch(/^cost:/m);
+  });
+
+  it('uses configured cost cuts in the tiers header', async () => {
+    writeFileSync(configPath(), JSON.stringify({ costBands: [0.5, 4, 10] }));
+    expect(await main(['tiers'], io, deps)).toBe(0);
+    expect(out()).toContain('cost: light < $0.5 ≤ daily < $4 ≤ advanced < $10 ≤ frontier');
+  });
+
+  it('carries quality.cost and the cost reason in route JSON', async () => {
+    expect(await main(['route', '--tier', 'daily', '--json'], io, deps)).toBe(0);
+    const d = JSON.parse(out());
+    expect(d.quality.cost).toEqual({ tier: 'daily', blended: 4, source: 'price' });
+    expect(d.reasons).toContain('cost: daily ($4.00/M blended, maker price)');
+    expect(d.reasons.some((s: string) => /fit group: daily cost tier \(\d+ models\)$/.test(s))).toBe(true);
+  });
+
+  it('ranks deduplicated profiles and exposes the snapshot sources', async () => {
+    expect(await main(['ranking'], io, deps)).toBe(0);
+    expect(out()).toMatch(/^claude-opus-5-5\s+advanced \$8\.00\/M price\s+evidence frontier\s+coding 87\.3 F measured\(5\)/m);
+    expect(out()).toMatch(/auto\s+unranked no price\s+evidence unranked.*coding unranked/);
+    stdout = [];
+    expect(await main(['ranking', '--json'], io, deps)).toBe(0);
+    const r = JSON.parse(out());
+    expect(r.models[0]).toMatchObject({ id: 'claude-fable-5-2', class: 'frontier' });
+    expect(r.sources).toContainEqual(expect.objectContaining({ label: 'LLMBenchmark.ai', license: 'CC BY 4.0' }));
+    expect(r.generatedAt).toEqual(expect.any(String));
+    // The one-time fixture refresh includes the raw-evidence bands and scores.
+    expect(r.bands.coding).toEqual([70, 78, 82]);
+    expect(new Set(r.models.map((m: { id: string }) => m.id)).size).toBe(r.models.length);
+    expect(r.models.find((m: { id: string }) => m.id === 'claude-opus-5-5')).toMatchObject({ class: 'frontier', axes: { coding: { score: 87.3, band: 'frontier', label: 'measured', benchmarks: 5 } }, agents: ['claude', 'cursor'] });
+    stdout = [];
+    expect(await main(['ranking', '--axis', 'coding'], io, deps)).toBe(0);
+    expect(out()).not.toMatch(/agentic|reasoning/);
+    expect(out().indexOf('claude-opus-5-5')).toBeLessThan(out().indexOf('claude-fable-5-1'));
+  });
+
+  it('uses cached snapshot provenance and data date after refresh', async () => {
+    const snapshot = JSON.parse(fixture('evidence-mini.json'));
+    snapshot.generatedAt = '2026-11-11T04:00:00Z';
+    snapshot.sources[0].dataDate = '2026-11-09';
+    const text = JSON.stringify(snapshot);
+    const manifest = { schemaVersion: 1, generatedAt: snapshot.generatedAt, bytes: Buffer.byteLength(text), sha256: createHash('sha256').update(text).digest('hex') };
+    const fetchImpl = async (url: string | URL | Request) => new Response(String(url) === EVIDENCE_MANIFEST_URL ? JSON.stringify(manifest) : text);
+    expect(await main(['refresh', '--json'], io, { ...deps, fetchImpl: fetchImpl as typeof fetch })).toBe(0);
+    stdout = [];
+    expect(await main(['ranking', '--json'], io, deps)).toBe(0);
+    const ranking = JSON.parse(out());
+    expect(ranking.generatedAt).toBe(snapshot.generatedAt);
+    expect(ranking.sources).toEqual(snapshot.sources);
+    stdout = [];
+    expect(await main(['status'], io, deps)).toBe(0);
+    expect(out()).toContain('data of 2026-11-09');
+    stdout = [];
+    expect(await main(['refresh', '--json'], io, deps)).toBe(0);
+    expect(JSON.parse(out()).evidence.source).toBe('cache');
+    expect(err()).toContain('still using the cache from');
+  });
+
+  it('selects tiers by axis and rejects unknown axes for both views', async () => {
+    expect(await main(['tiers', '--axis', 'agentic'], io, deps)).toBe(0);
+    // The refreshed raw-evidence snapshot moves the Advanced agentic cut from 70 to 72.
+    expect(out()).toMatch(/^agentic: light < 60 ≤ daily < 72 ≤ advanced < 80 ≤ frontier$/m);
+    expect(out()).not.toMatch(/^coding:|^reasoning:/m);
+    for (const command of ['tiers', 'ranking']) {
+      expect(await main([command, '--axis', 'Coding'], io, deps)).toBe(1);
+      expect(err()).toMatch(/unknown axis/);
+    }
+  });
   const HOUR = 3_600_000;
 
   it('route runs only orca account list when the table is fresh and says when it was built', async () => {
@@ -291,8 +460,8 @@ describe('placement table in the CLI', () => {
     expect(await main(['status', '--json'], io, { ...deps, now: NOW + 2 * HOUR })).toBe(0);
     const s = JSON.parse(out());
     expect(s.placements).toMatchObject({ builtAt: NOW, age: 2 * HOUR, version: VERSION, rebuilt: null, saveError: null });
-    expect(s.placements.scoreScale.cuts).toHaveLength(3);
-    expect(s.scored.length).toBeGreaterThan(0);
+    expect(s.placements).not.toHaveProperty('scoreScale');
+    expect(s).not.toHaveProperty('scored');
     stdout = [];
     expect(await main(['status'], io, { ...deps, now: NOW + 2 * HOUR })).toBe(0);
     expect(out()).toContain(`placements: built 2h ago (orcacompass ${VERSION})`);
@@ -302,15 +471,16 @@ describe('placement table in the CLI', () => {
     expect(await main(['tiers'], io, deps)).toBe(0);
     const text = out();
     expect(text).toContain(`placements: built now: no table yet (orcacompass ${VERSION})`);
-    expect(text).toMatch(/^catalog: snapshot, \d+ models; scores: snapshot, \d+ models$/m);
+    expect(text).toMatch(/^cost: light < \$1 ≤ daily < \$5 ≤ advanced < \$12 ≤ frontier/m);
     expect(text).toMatch(/^frontier:$/m);
-    expect(text).toMatch(/^  codex gpt-6-astra  the provider's lineup \("Frontier intelligence for the most demanding work\."\)/m);
+    // Astra's coding score is now the raw 83.8, without the Frontier hint nudge.
+    expect(text).toMatch(/^  codex gpt-6-astra  frontier \$20\.00\/M price  evidence frontier  coding 83\.8 F measured\(5\)/m);
     expect(text).toMatch(/^  claude claude-haiku-5-5  /m);
     expect(text).toMatch(/^unclassified: \d+$/m);
     stdout = [];
     expect(await main(['tiers', '--json'], io, { ...deps, now: NOW + HOUR })).toBe(0);
     const t = JSON.parse(out());
-    expect(t).toMatchObject({ schemaVersion: 2, version: VERSION, builtAt: NOW, age: HOUR });
+    expect(t).toMatchObject({ schemaVersion: 4, version: VERSION, builtAt: NOW, age: HOUR });
     expect(t.agents.map((a: { agent: string }) => a.agent)).toContain('codex');
   });
 
@@ -453,18 +623,18 @@ describe('prefer', () => {
   });
 
   it('routes to the preference and explains a skipped one', async () => {
-    await main(['prefer', 'frontier', 'claude', 'claude-fable-5-1'], io, deps);
+    await main(['prefer', 'frontier', 'claude', 'claude-fable-5-2'], io, deps);
     stdout = [];
     await main(['route', '--tier', 'frontier', '--json'], io, deps);
     const d = JSON.parse(out());
-    expect(d.route).toMatchObject({ agent: 'claude', model: 'claude-fable-5-1' });
+    expect(d.route).toMatchObject({ agent: 'claude', model: 'claude-fable-5-2' });
     expect(d.reasons).toContain('preferred route, on pace for 82%');
     expect(d.risk).toMatchObject({ pool: 'fableWeekly' });
     expect(d.alternatives[0].risk).toMatchObject({ projectedPercent: expect.any(Number) });
 
-    await main(['prefer', 'daily', 'codex', 'gpt-6.1-terra'], io, deps);
+    await main(['prefer', 'advanced', 'codex', 'gpt-6.1-terra'], io, deps);
     stdout = [];
-    await main(['route', '--tier', 'daily'], io, deps);
+    await main(['route', '--tier', 'advanced'], io, deps);
     expect(out()).toMatch(/warning: preferred codex gpt-6\.1-terra skipped: weekly on pace for 120% \(limit 100%\), resets in 5d/);
   });
 
@@ -631,4 +801,22 @@ describe('verify and rejected', () => {
     await main(['rejected'], io, deps);
     expect(out()).not.toContain('claude-sonnet-5-5');
   });
+});
+
+it('records a route and shows live hand-outs in status', async () => {
+  expect(await main(['route', '--tier', 'daily', '--agent', 'claude', '--json'], io, deps)).toBe(0);
+  const decision = JSON.parse(out());
+  const file = join(process.env.ORCACOMPASS_HOME!, 'cache', 'handouts.json');
+  const entries = JSON.parse(readFileSync(file, 'utf8')).handouts;
+  expect(entries).toHaveLength(1);
+  expect(entries[0]).toMatchObject({ agent: 'claude', model: decision.route.model, needs: { coding: 'low', agentic: 'low', reasoning: 'low' } });
+  expect(entries[0].pools).toContain('weekly');
+  stdout = [];
+  await main(['status', '--json'], io, deps);
+  const status = JSON.parse(out());
+  expect(status.handouts).toHaveLength(1);
+  expect(status.agents.find((a: { agent: string }) => a.agent === 'claude').usage.pools.find((p: { name: string }) => p.name === 'weekly').handouts).toBe(1);
+  stdout = [];
+  await main(['status'], io, deps);
+  expect(out()).toMatch(/hand-outs \(last 10m\): claude .*0m ago/);
 });

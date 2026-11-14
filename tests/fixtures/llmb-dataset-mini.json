@@ -1,0 +1,3204 @@
+{
+  "_note": "Trimmed from https://llmbenchmark.ai/data/dataset.json, downloaded 2026-11-10; LLMBenchmark.ai, CC BY 4.0. Extended with three FrontierSWE v2 comparison rows from the same download for vendor-bridge tests.",
+  "models": [
+    {
+      "id": "anthropic/claude-fable-5.2",
+      "slug": "claude-fable-5-2",
+      "name": "Anthropic: Claude Fable 5.2",
+      "provider": "anthropic",
+      "contextLength": 1000000,
+      "pricing": {
+        "inputPerM": 8,
+        "outputPerM": 40,
+        "basis": "maker",
+        "providerCount": 4,
+        "minOutputPerM": 40,
+        "minInputPerM": 8
+      },
+      "releasedAt": "2026-11-09",
+      "huggingFaceId": null,
+      "profile": {
+        "description": "Claude Fable 5.2 is Anthropic's most capable model for the most demanding technical work, with gains over Fable 5.1 in coding, reasoning, and vision. In prerelease testing it completed otherwise-infeasible...",
+        "inputModalities": [
+          "text",
+          "image",
+          "file"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "features": [
+          "reasoning",
+          "json-mode",
+          "structured-outputs",
+          "tools"
+        ],
+        "maxOutput": 128000,
+        "knowledgeCutoff": "2026-06",
+        "cacheReadPerM": 0.2,
+        "cacheWritePerM": 10,
+        "reasoningPerM": null,
+        "webSearchPerRequest": 0.01,
+        "tokenizer": "Claude",
+        "moderated": true,
+        "expiresAt": null,
+        "canonicalSlug": "anthropic/claude-fable-5.2-20261109",
+        "knowledgeCutoffSource": {
+          "label": "Anthropic model documentation",
+          "url": "https://platform.claude.com/docs/en/models/fable-5-2/overview.md"
+        }
+      }
+    },
+    {
+      "id": "openai/gpt-6.1-terra",
+      "slug": "gpt-6-1-terra",
+      "name": "OpenAI: GPT-6.1 Terra",
+      "provider": "openai",
+      "contextLength": 1050000,
+      "pricing": {
+        "inputPerM": 1,
+        "outputPerM": 5,
+        "basis": "maker",
+        "providerCount": 5,
+        "minOutputPerM": 5,
+        "minInputPerM": 1
+      },
+      "releasedAt": "2026-10-26",
+      "huggingFaceId": null,
+      "profile": {
+        "description": "GPT-6.1 Terra is the mid-tier model in OpenAI's GPT-6.1 series, priced below GPT-6.1 Sol. It is suited for everyday agentic, coding, and writing work, is particularly strong at understanding screenshots...",
+        "inputModalities": [
+          "file",
+          "image",
+          "text"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "features": [
+          "reasoning",
+          "json-mode",
+          "structured-outputs",
+          "tools"
+        ],
+        "maxOutput": 128000,
+        "knowledgeCutoff": "2026-06-01",
+        "cacheReadPerM": 0.05,
+        "cacheWritePerM": 1.25,
+        "reasoningPerM": null,
+        "webSearchPerRequest": 0.01,
+        "tokenizer": "GPT",
+        "moderated": true,
+        "expiresAt": null,
+        "canonicalSlug": "openai/gpt-6.1-terra-20261026",
+        "knowledgeCutoffSource": {
+          "label": "OpenAI model documentation",
+          "url": "https://developers.openai.com/api/docs/models/gpt-6.1-terra.md"
+        }
+      }
+    },
+    {
+      "id": "anthropic/claude-haiku-5.5",
+      "slug": "claude-haiku-5-5",
+      "name": "Anthropic: Claude Haiku 5.5",
+      "provider": "anthropic",
+      "contextLength": 1000000,
+      "pricing": {
+        "inputPerM": 0.1,
+        "outputPerM": 0.5,
+        "basis": "maker",
+        "providerCount": 10,
+        "minOutputPerM": 0.5,
+        "minInputPerM": 0.1
+      },
+      "releasedAt": "2026-10-07",
+      "huggingFaceId": null,
+      "profile": {
+        "description": "Claude Haiku 5.5 is Anthropic's small, fast model for high-volume, cost-sensitive work such as summarization, subagents, and browser use. It succeeds Claude Haiku 4.5 with stronger coding, computer use, and...",
+        "inputModalities": [
+          "text",
+          "image",
+          "file"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "features": [
+          "reasoning",
+          "json-mode",
+          "structured-outputs",
+          "tools"
+        ],
+        "maxOutput": 128000,
+        "knowledgeCutoff": "2026-06",
+        "cacheReadPerM": 0.01,
+        "cacheWritePerM": 0.125,
+        "reasoningPerM": null,
+        "webSearchPerRequest": 0.01,
+        "tokenizer": "Claude",
+        "moderated": true,
+        "expiresAt": null,
+        "canonicalSlug": "anthropic/claude-haiku-5.5-20261007",
+        "knowledgeCutoffSource": {
+          "label": "Anthropic model documentation",
+          "url": "https://platform.claude.com/docs/en/models/haiku-5-5/overview.md"
+        }
+      }
+    },
+    {
+      "id": "openai/gpt-6.1-sol",
+      "slug": "gpt-6-1-sol",
+      "name": "OpenAI: GPT-6.1 Sol",
+      "provider": "openai",
+      "contextLength": 1050000,
+      "pricing": {
+        "inputPerM": 2,
+        "outputPerM": 10,
+        "basis": "maker",
+        "providerCount": 7,
+        "minOutputPerM": 10,
+        "minInputPerM": 2
+      },
+      "releasedAt": "2026-09-29",
+      "huggingFaceId": null,
+      "profile": {
+        "description": "GPT-6.1 Sol is an upgrade to GPT-6 Sol from OpenAI, positioned below the flagship GPT-6 Astra in the GPT-6 series. It is suited for agentic coding, computer use, document-heavy professional...",
+        "inputModalities": [
+          "file",
+          "image",
+          "text"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "features": [
+          "reasoning",
+          "json-mode",
+          "structured-outputs",
+          "tools"
+        ],
+        "maxOutput": 128000,
+        "knowledgeCutoff": "2026-04-30",
+        "cacheReadPerM": 0.1,
+        "cacheWritePerM": 2.5,
+        "reasoningPerM": null,
+        "webSearchPerRequest": 0.01,
+        "tokenizer": "GPT",
+        "moderated": true,
+        "expiresAt": null,
+        "canonicalSlug": "openai/gpt-6.1-sol-20260929",
+        "knowledgeCutoffSource": {
+          "label": "OpenAI model documentation",
+          "url": "https://developers.openai.com/api/docs/models/gpt-6.1-sol.md"
+        }
+      }
+    },
+    {
+      "id": "anthropic/claude-sonnet-5.5",
+      "slug": "claude-sonnet-5-5",
+      "name": "Anthropic: Claude Sonnet 5.5",
+      "provider": "anthropic",
+      "contextLength": 1000000,
+      "pricing": {
+        "inputPerM": 2,
+        "outputPerM": 10,
+        "basis": "maker",
+        "providerCount": 10,
+        "minOutputPerM": 10,
+        "minInputPerM": 2
+      },
+      "releasedAt": "2026-09-28",
+      "huggingFaceId": null,
+      "profile": {
+        "description": "Claude Sonnet 5.5 is Anthropic's Sonnet-class model for well-scoped everyday work, succeeding Claude Sonnet 5 as a direct upgrade. It is especially strong at building features, fixing bugs, and producing...",
+        "inputModalities": [
+          "text",
+          "image",
+          "file"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "features": [
+          "reasoning",
+          "json-mode",
+          "structured-outputs",
+          "tools"
+        ],
+        "maxOutput": 128000,
+        "knowledgeCutoff": "2026-06",
+        "cacheReadPerM": 0.1,
+        "cacheWritePerM": 2.5,
+        "reasoningPerM": null,
+        "webSearchPerRequest": 0.01,
+        "tokenizer": "Claude",
+        "moderated": true,
+        "expiresAt": null,
+        "canonicalSlug": "anthropic/claude-sonnet-5.5-20260928",
+        "knowledgeCutoffSource": {
+          "label": "Anthropic model documentation",
+          "url": "https://platform.claude.com/docs/en/models/sonnet-5-5/overview.md"
+        }
+      }
+    },
+    {
+      "id": "openai/gpt-6-luna",
+      "slug": "gpt-6-luna",
+      "name": "OpenAI: GPT-6 Luna",
+      "provider": "openai",
+      "contextLength": 1050000,
+      "pricing": {
+        "inputPerM": 0.1,
+        "outputPerM": 0.5,
+        "basis": "maker",
+        "providerCount": 6,
+        "minOutputPerM": 0.5,
+        "minInputPerM": 0.1
+      },
+      "releasedAt": "2026-09-22",
+      "huggingFaceId": null,
+      "profile": {
+        "description": "GPT-6 Luna is the fast, cost-efficient model in OpenAI's GPT-6 series, positioned below GPT-6 Sol. It is suited for high-volume and latency-sensitive workloads such as chat, classification, and lightweight agentic...",
+        "inputModalities": [
+          "file",
+          "image",
+          "text"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "features": [
+          "reasoning",
+          "json-mode",
+          "structured-outputs",
+          "tools"
+        ],
+        "maxOutput": 128000,
+        "knowledgeCutoff": "2026-05-18",
+        "cacheReadPerM": 0.01,
+        "cacheWritePerM": 0.125,
+        "reasoningPerM": null,
+        "webSearchPerRequest": 0.01,
+        "tokenizer": "GPT",
+        "moderated": true,
+        "expiresAt": null,
+        "canonicalSlug": "openai/gpt-6-luna-20260922",
+        "knowledgeCutoffSource": {
+          "label": "OpenAI model documentation",
+          "url": "https://developers.openai.com/api/docs/models/gpt-6-luna.md"
+        }
+      }
+    },
+    {
+      "id": "anthropic/claude-opus-5.5",
+      "slug": "claude-opus-5-5",
+      "name": "Anthropic: Claude Opus 5.5",
+      "provider": "anthropic",
+      "contextLength": 1000000,
+      "pricing": {
+        "inputPerM": 4,
+        "outputPerM": 20,
+        "basis": "maker",
+        "providerCount": 10,
+        "minOutputPerM": 20,
+        "minInputPerM": 4
+      },
+      "releasedAt": "2026-09-22",
+      "huggingFaceId": null,
+      "profile": {
+        "description": "Claude Opus 5.5 is Anthropic's flagship model for demanding reasoning, coding, and long-horizon agentic work, succeeding Claude Opus 5. It is particularly strong at multi-step changes in large codebases, code...",
+        "inputModalities": [
+          "text",
+          "image",
+          "file"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "features": [
+          "reasoning",
+          "json-mode",
+          "structured-outputs",
+          "tools"
+        ],
+        "maxOutput": 128000,
+        "knowledgeCutoff": "2026-06",
+        "cacheReadPerM": 0.2,
+        "cacheWritePerM": 5,
+        "reasoningPerM": null,
+        "webSearchPerRequest": 0.01,
+        "tokenizer": "Claude",
+        "moderated": true,
+        "expiresAt": null,
+        "canonicalSlug": "anthropic/claude-opus-5.5-20260921",
+        "knowledgeCutoffSource": {
+          "label": "Anthropic model documentation",
+          "url": "https://platform.claude.com/docs/en/models/opus-5-5/overview.md"
+        }
+      }
+    },
+    {
+      "id": "openai/gpt-6-astra",
+      "slug": "gpt-6-astra",
+      "name": "OpenAI: GPT-6 Astra",
+      "provider": "openai",
+      "contextLength": 1050000,
+      "pricing": {
+        "inputPerM": 10,
+        "outputPerM": 50,
+        "basis": "maker",
+        "providerCount": 6,
+        "minOutputPerM": 50,
+        "minInputPerM": 10
+      },
+      "releasedAt": "2026-09-04",
+      "huggingFaceId": null,
+      "profile": {
+        "description": "GPT-6 Astra is OpenAI's flagship model for demanding end-to-end work. It is suited for advanced analysis, software engineering, deep research, scientific work, and document creation, with particular strengths in long-horizon...",
+        "inputModalities": [
+          "file",
+          "image",
+          "text"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "features": [
+          "reasoning",
+          "json-mode",
+          "structured-outputs",
+          "tools"
+        ],
+        "maxOutput": 128000,
+        "knowledgeCutoff": "2026-04-30",
+        "cacheReadPerM": 1,
+        "cacheWritePerM": 12.5,
+        "reasoningPerM": null,
+        "webSearchPerRequest": 0.01,
+        "tokenizer": "GPT",
+        "moderated": true,
+        "expiresAt": null,
+        "canonicalSlug": "openai/gpt-6-astra-20260903",
+        "knowledgeCutoffSource": {
+          "label": "OpenAI model documentation",
+          "url": "https://developers.openai.com/api/docs/models/gpt-6-astra.md"
+        }
+      }
+    },
+    {
+      "id": "anthropic/claude-fable-5.1",
+      "slug": "claude-fable-5-1",
+      "name": "Anthropic: Claude Fable 5.1",
+      "provider": "anthropic",
+      "contextLength": 1000000,
+      "pricing": {
+        "inputPerM": 10,
+        "outputPerM": 50,
+        "basis": "maker",
+        "providerCount": 4,
+        "minOutputPerM": 50,
+        "minInputPerM": 10
+      },
+      "releasedAt": "2026-09-01",
+      "huggingFaceId": null,
+      "profile": {
+        "description": "Claude Fable 5.1 improves on Claude Fable 5 across the board, with the biggest gains in agentic coding, long-running agentic workflows, and knowledge work: long code refactors, front-end and visual...",
+        "inputModalities": [
+          "text",
+          "image",
+          "file"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "features": [
+          "reasoning",
+          "json-mode",
+          "structured-outputs",
+          "tools"
+        ],
+        "maxOutput": 128000,
+        "knowledgeCutoff": "2026-06",
+        "cacheReadPerM": 0.25,
+        "cacheWritePerM": 12.5,
+        "reasoningPerM": null,
+        "webSearchPerRequest": 0.01,
+        "tokenizer": "Claude",
+        "moderated": true,
+        "expiresAt": null,
+        "canonicalSlug": "anthropic/claude-fable-5.1-20260831",
+        "knowledgeCutoffSource": {
+          "label": "Anthropic model documentation",
+          "url": "https://platform.claude.com/docs/en/models/fable-5-1/overview.md"
+        }
+      }
+    },
+    {
+      "id": "openai/gpt-5.5",
+      "slug": "gpt-5-5",
+      "name": "OpenAI: GPT-5.5",
+      "provider": "openai",
+      "contextLength": 1050000,
+      "pricing": {
+        "inputPerM": 5,
+        "outputPerM": 30,
+        "basis": "maker",
+        "providerCount": 5,
+        "minOutputPerM": 30,
+        "minInputPerM": 5
+      },
+      "releasedAt": "2026-04-24",
+      "huggingFaceId": null,
+      "profile": {
+        "description": "GPT-5.5 is OpenAI’s frontier model designed for complex professional workloads, building on GPT-5.4 with stronger reasoning, higher reliability, and improved token efficiency on hard tasks. It features a 1M+ token...",
+        "inputModalities": [
+          "file",
+          "image",
+          "text"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "features": [
+          "reasoning",
+          "json-mode",
+          "structured-outputs",
+          "tools"
+        ],
+        "maxOutput": 128000,
+        "knowledgeCutoff": "2025-12-01",
+        "cacheReadPerM": 0.5,
+        "cacheWritePerM": null,
+        "reasoningPerM": null,
+        "webSearchPerRequest": 0.01,
+        "tokenizer": "GPT",
+        "moderated": true,
+        "expiresAt": null,
+        "canonicalSlug": "openai/gpt-5.5-20260423"
+      }
+    },
+    {
+      "id": "anthropic/claude-opus-4.7",
+      "slug": "claude-opus-4-7",
+      "name": "Anthropic: Claude Opus 4.7",
+      "provider": "anthropic",
+      "contextLength": 1000000,
+      "pricing": {
+        "inputPerM": 5,
+        "outputPerM": 25,
+        "basis": "maker",
+        "providerCount": 8,
+        "minOutputPerM": 25,
+        "minInputPerM": 5
+      },
+      "releasedAt": "2026-04-16",
+      "huggingFaceId": null,
+      "profile": {
+        "description": "Opus 4.7 is the next generation of Anthropic's Opus family, built for long-running, asynchronous agents. Building on the coding and agentic strengths of Opus 4.6, it delivers stronger performance on...",
+        "inputModalities": [
+          "text",
+          "image",
+          "file"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "features": [
+          "reasoning",
+          "json-mode",
+          "structured-outputs",
+          "tools"
+        ],
+        "maxOutput": 128000,
+        "knowledgeCutoff": "2026-01",
+        "cacheReadPerM": 0.5,
+        "cacheWritePerM": 6.25,
+        "reasoningPerM": null,
+        "webSearchPerRequest": 0.01,
+        "tokenizer": "Claude",
+        "moderated": true,
+        "expiresAt": null,
+        "canonicalSlug": "anthropic/claude-4.7-opus-20260416",
+        "knowledgeCutoffSource": {
+          "label": "Anthropic model documentation",
+          "url": "https://platform.claude.com/docs/en/models/opus-4-7/overview.md"
+        }
+      }
+    }
+  ],
+  "scores": [
+    {
+      "modelId": "anthropic/claude-opus-5.5",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.614,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Max"
+    },
+    {
+      "modelId": "anthropic/claude-opus-5.5",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.575,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "xHigh",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-opus-5.5",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.556,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "High",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-opus-5.5",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.547,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Medium",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-opus-5.5",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.483,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Low",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "aa-api",
+      "metric": "aa_gpqa",
+      "value": 0.963,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "xHigh"
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "aa-api",
+      "metric": "aa_gpqa",
+      "value": 0.961,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Max",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "aa-api",
+      "metric": "aa_gpqa",
+      "value": 0.949,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "High",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "aa-api",
+      "metric": "aa_gpqa",
+      "value": 0.939,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Medium",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "aa-api",
+      "metric": "aa_gpqa",
+      "value": 0.931,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Low",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.547,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Max"
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.546,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "xHigh",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.531,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "High",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.527,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Medium",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.492,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Low",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6.1-sol",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.529,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Max"
+    },
+    {
+      "modelId": "openai/gpt-6.1-sol",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.526,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "xHigh",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6.1-sol",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.514,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "High",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6.1-sol",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.499,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Medium",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6.1-sol",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.474,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Low",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-sonnet-5.5",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.55,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Max"
+    },
+    {
+      "modelId": "anthropic/claude-sonnet-5.5",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.5,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "xHigh",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-sonnet-5.5",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.458,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "High",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-sonnet-5.5",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.398,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Medium",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-sonnet-5.5",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.362,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Low",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6.1-terra",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.462,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Max"
+    },
+    {
+      "modelId": "openai/gpt-6.1-terra",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.437,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "xHigh",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6.1-terra",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.433,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "High",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6.1-terra",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.402,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Medium",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6.1-terra",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.358,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Low",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6.1-terra",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.211,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Non-reasoning",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "source": "aa-api",
+      "metric": "aa_gpqa",
+      "value": 0.937,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Max"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "source": "aa-api",
+      "metric": "aa_gpqa",
+      "value": 0.934,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "xHigh",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "source": "aa-api",
+      "metric": "aa_gpqa",
+      "value": 0.906,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "High",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "source": "aa-api",
+      "metric": "aa_gpqa",
+      "value": 0.886,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Medium",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "source": "aa-api",
+      "metric": "aa_gpqa",
+      "value": 0.881,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Low",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.591,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Max"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.587,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "xHigh",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.559,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "High",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.538,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Medium",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.489,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Low",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-haiku-5.5",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.444,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Max"
+    },
+    {
+      "modelId": "anthropic/claude-haiku-5.5",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.427,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "xHigh",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-haiku-5.5",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.373,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "High",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-haiku-5.5",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.338,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Medium",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-haiku-5.5",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.27,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Low",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6-luna",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.385,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Max"
+    },
+    {
+      "modelId": "openai/gpt-6-luna",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.343,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "xHigh",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6-luna",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.329,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "High",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6-luna",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.283,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Medium",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6-luna",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.203,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Low",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6-luna",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.086,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Non-reasoning",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-opus-4.7",
+      "source": "aa-api",
+      "metric": "aa_gpqa",
+      "value": 0.914,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Max"
+    },
+    {
+      "modelId": "anthropic/claude-opus-4.7",
+      "source": "aa-api",
+      "metric": "aa_gpqa",
+      "value": 0.885,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Non-reasoning, High",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-opus-4.7",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.423,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Max"
+    },
+    {
+      "modelId": "anthropic/claude-opus-4.7",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.333,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Non-reasoning, High",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-5.5",
+      "source": "aa-api",
+      "metric": "aa_gpqa",
+      "value": 0.935,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "xHigh"
+    },
+    {
+      "modelId": "openai/gpt-5.5",
+      "source": "aa-api",
+      "metric": "aa_gpqa",
+      "value": 0.932,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "High",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-5.5",
+      "source": "aa-api",
+      "metric": "aa_gpqa",
+      "value": 0.926,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Medium",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-5.5",
+      "source": "aa-api",
+      "metric": "aa_gpqa",
+      "value": 0.91,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Low",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-5.5",
+      "source": "aa-api",
+      "metric": "aa_gpqa",
+      "value": 0.768,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Non-reasoning",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-5.5",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.458,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "xHigh"
+    },
+    {
+      "modelId": "openai/gpt-5.5",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.45,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "High",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-5.5",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.424,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Medium",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-5.5",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.327,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Low",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-5.5",
+      "source": "aa-api",
+      "metric": "aa_hle",
+      "value": 0.137,
+      "unit": "ratio",
+      "observedAt": "2026-11-04",
+      "sourceUrl": "https://artificialanalysis.ai/",
+      "setting": "Non-reasoning",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-opus-5.5",
+      "source": "lmarena",
+      "metric": "webdev_elo",
+      "value": 1817.7020683417634,
+      "unit": "elo",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://lmarena.ai/leaderboard/webdev",
+      "setting": "Max"
+    },
+    {
+      "modelId": "anthropic/claude-sonnet-5.5",
+      "source": "lmarena",
+      "metric": "webdev_elo",
+      "value": 1774.2566284257368,
+      "unit": "elo",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://lmarena.ai/leaderboard/webdev",
+      "setting": "xHigh"
+    },
+    {
+      "modelId": "anthropic/claude-sonnet-5.5",
+      "source": "lmarena",
+      "metric": "webdev_elo",
+      "value": 1713.237834026659,
+      "unit": "elo",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://lmarena.ai/leaderboard/webdev",
+      "setting": "High",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "lmarena",
+      "metric": "webdev_elo",
+      "value": 1766.8366304457595,
+      "unit": "elo",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://lmarena.ai/leaderboard/webdev",
+      "setting": "Max"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "source": "lmarena",
+      "metric": "webdev_elo",
+      "value": 1744.5597324622768,
+      "unit": "elo",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://lmarena.ai/leaderboard/webdev",
+      "setting": "Max"
+    },
+    {
+      "modelId": "openai/gpt-6.1-sol",
+      "source": "lmarena",
+      "metric": "webdev_elo",
+      "value": 1742.8409384107854,
+      "unit": "elo",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://lmarena.ai/leaderboard/webdev",
+      "setting": "Max"
+    },
+    {
+      "modelId": "openai/gpt-6.1-terra",
+      "source": "lmarena",
+      "metric": "webdev_elo",
+      "value": 1678.73376536417,
+      "unit": "elo",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://lmarena.ai/leaderboard/webdev",
+      "setting": "Max"
+    },
+    {
+      "modelId": "anthropic/claude-haiku-5.5",
+      "source": "lmarena",
+      "metric": "webdev_elo",
+      "value": 1595.1249332109746,
+      "unit": "elo",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://lmarena.ai/leaderboard/webdev",
+      "setting": "High"
+    },
+    {
+      "modelId": "openai/gpt-6-luna",
+      "source": "lmarena",
+      "metric": "webdev_elo",
+      "value": 1578.24847193679,
+      "unit": "elo",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://lmarena.ai/leaderboard/webdev",
+      "setting": "Max"
+    },
+    {
+      "modelId": "anthropic/claude-opus-4.7",
+      "source": "lmarena",
+      "metric": "webdev_elo",
+      "value": 1557.2319420867889,
+      "unit": "elo",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://lmarena.ai/leaderboard/webdev",
+      "setting": "High"
+    },
+    {
+      "modelId": "openai/gpt-5.5",
+      "source": "lmarena",
+      "metric": "webdev_elo",
+      "value": 1511.9489593427038,
+      "unit": "elo",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://lmarena.ai/leaderboard/webdev",
+      "setting": "xHigh"
+    },
+    {
+      "modelId": "openai/gpt-5.5",
+      "source": "lmarena",
+      "metric": "webdev_elo",
+      "value": 1487.1738771594848,
+      "unit": "elo",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://lmarena.ai/leaderboard/webdev",
+      "setting": "High",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "source": "vals-gpqa",
+      "metric": "gpqa_accuracy",
+      "value": 0.9343,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://www.vals.ai/benchmarks/gpqa"
+    },
+    {
+      "modelId": "openai/gpt-5.5",
+      "source": "vals-gpqa",
+      "metric": "gpqa_accuracy",
+      "value": 0.9318000000000001,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://www.vals.ai/benchmarks/gpqa"
+    },
+    {
+      "modelId": "anthropic/claude-opus-4.7",
+      "source": "vals-gpqa",
+      "metric": "gpqa_accuracy",
+      "value": 0.9015000000000001,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://www.vals.ai/benchmarks/gpqa"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "source": "livebench",
+      "metric": "livebench_long_agentic",
+      "value": 0.742,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "source": "livebench",
+      "metric": "livebench_reasoning",
+      "value": 0.917,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "source": "livebench",
+      "metric": "livebench_coding",
+      "value": 0.897,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "source": "livebench",
+      "metric": "livebench_browser",
+      "value": 0.898,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.2",
+      "source": "livebench",
+      "metric": "livebench_long_agentic",
+      "value": 0.8290000000000001,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.2",
+      "source": "livebench",
+      "metric": "livebench_reasoning",
+      "value": 0.888,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.2",
+      "source": "livebench",
+      "metric": "livebench_coding",
+      "value": 0.792,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.2",
+      "source": "livebench",
+      "metric": "livebench_browser",
+      "value": 0.8690000000000001,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "anthropic/claude-haiku-5.5",
+      "source": "livebench",
+      "metric": "livebench_long_agentic",
+      "value": 0.479,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "anthropic/claude-haiku-5.5",
+      "source": "livebench",
+      "metric": "livebench_reasoning",
+      "value": 0.8240000000000001,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "anthropic/claude-haiku-5.5",
+      "source": "livebench",
+      "metric": "livebench_coding",
+      "value": 0.7759999999999999,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "anthropic/claude-haiku-5.5",
+      "source": "livebench",
+      "metric": "livebench_browser",
+      "value": 0.695,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "anthropic/claude-opus-5.5",
+      "source": "livebench",
+      "metric": "livebench_long_agentic",
+      "value": 0.728,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "anthropic/claude-opus-5.5",
+      "source": "livebench",
+      "metric": "livebench_reasoning",
+      "value": 0.922,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "anthropic/claude-opus-5.5",
+      "source": "livebench",
+      "metric": "livebench_coding",
+      "value": 0.871,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "anthropic/claude-opus-5.5",
+      "source": "livebench",
+      "metric": "livebench_browser",
+      "value": 0.884,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "anthropic/claude-sonnet-5.5",
+      "source": "livebench",
+      "metric": "livebench_long_agentic",
+      "value": 0.634,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "anthropic/claude-sonnet-5.5",
+      "source": "livebench",
+      "metric": "livebench_reasoning",
+      "value": 0.9159999999999999,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "anthropic/claude-sonnet-5.5",
+      "source": "livebench",
+      "metric": "livebench_coding",
+      "value": 0.772,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "anthropic/claude-sonnet-5.5",
+      "source": "livebench",
+      "metric": "livebench_browser",
+      "value": 0.893,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "livebench",
+      "metric": "livebench_long_agentic",
+      "value": 0.7559999999999999,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "livebench",
+      "metric": "livebench_reasoning",
+      "value": 0.927,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "livebench",
+      "metric": "livebench_coding",
+      "value": 0.875,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "livebench",
+      "metric": "livebench_browser",
+      "value": 0.9129999999999999,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "openai/gpt-6-luna",
+      "source": "livebench",
+      "metric": "livebench_long_agentic",
+      "value": 0.247,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "openai/gpt-6-luna",
+      "source": "livebench",
+      "metric": "livebench_reasoning",
+      "value": 0.818,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "openai/gpt-6-luna",
+      "source": "livebench",
+      "metric": "livebench_coding",
+      "value": 0.708,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "openai/gpt-6-luna",
+      "source": "livebench",
+      "metric": "livebench_browser",
+      "value": 0.703,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "openai/gpt-6.1-sol",
+      "source": "livebench",
+      "metric": "livebench_long_agentic",
+      "value": 0.6559999999999999,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "openai/gpt-6.1-sol",
+      "source": "livebench",
+      "metric": "livebench_reasoning",
+      "value": 0.9259999999999999,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "openai/gpt-6.1-sol",
+      "source": "livebench",
+      "metric": "livebench_coding",
+      "value": 0.821,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "openai/gpt-6.1-sol",
+      "source": "livebench",
+      "metric": "livebench_browser",
+      "value": 0.9329999999999999,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "openai/gpt-6.1-terra",
+      "source": "livebench",
+      "metric": "livebench_long_agentic",
+      "value": 0.562,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "openai/gpt-6.1-terra",
+      "source": "livebench",
+      "metric": "livebench_reasoning",
+      "value": 0.887,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "openai/gpt-6.1-terra",
+      "source": "livebench",
+      "metric": "livebench_coding",
+      "value": 0.892,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "openai/gpt-6.1-terra",
+      "source": "livebench",
+      "metric": "livebench_browser",
+      "value": 0.9309999999999999,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://livebench.ai/data/20261106/table.csv"
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "artificialanalysis",
+      "metric": "aa_agentic_index",
+      "value": 51,
+      "unit": "points",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://artificialanalysis.ai/models"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "source": "artificialanalysis",
+      "metric": "aa_agentic_index",
+      "value": 57.2,
+      "unit": "points",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://artificialanalysis.ai/models"
+    },
+    {
+      "modelId": "openai/gpt-5.5",
+      "source": "artificialanalysis",
+      "metric": "aa_agentic_index",
+      "value": 36.4,
+      "unit": "points",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://artificialanalysis.ai/models"
+    },
+    {
+      "modelId": "anthropic/claude-opus-4.7",
+      "source": "artificialanalysis",
+      "metric": "aa_agentic_index",
+      "value": 38.6,
+      "unit": "points",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://artificialanalysis.ai/models"
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "scale-seal",
+      "metric": "scale_hle",
+      "value": 0.606,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://labs.scale.com/leaderboard/hle-diamond"
+    },
+    {
+      "modelId": "anthropic/claude-opus-5.5",
+      "source": "scale-seal",
+      "metric": "scale_hle",
+      "value": 0.55,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://labs.scale.com/leaderboard/hle-diamond"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "source": "scale-seal",
+      "metric": "scale_hle",
+      "value": 0.513,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://labs.scale.com/leaderboard/hle-diamond"
+    },
+    {
+      "modelId": "anthropic/claude-sonnet-5.5",
+      "source": "scale-seal",
+      "metric": "scale_hle",
+      "value": 0.375,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://labs.scale.com/leaderboard/hle-diamond"
+    },
+    {
+      "modelId": "openai/gpt-6.1-terra",
+      "source": "scale-seal",
+      "metric": "scale_hle",
+      "value": 0.357,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://labs.scale.com/leaderboard/hle-diamond"
+    },
+    {
+      "modelId": "anthropic/claude-opus-5.5",
+      "source": "epoch",
+      "metric": "epoch_frontiercode",
+      "value": 0.5464,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://cognition.com/frontiercode",
+      "setting": "Medium"
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "epoch",
+      "metric": "epoch_frontiercode",
+      "value": 0.5326,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://cognition.com/frontiercode",
+      "setting": "Max"
+    },
+    {
+      "modelId": "anthropic/claude-sonnet-5.5",
+      "source": "epoch",
+      "metric": "epoch_frontiercode",
+      "value": 0.5209,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://cognition.com/frontiercode",
+      "setting": "xHigh"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "source": "epoch",
+      "metric": "epoch_frontiercode",
+      "value": 0.5091,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://cognition.com/frontiercode",
+      "setting": "Medium"
+    },
+    {
+      "modelId": "openai/gpt-6.1-sol",
+      "source": "epoch",
+      "metric": "epoch_frontiercode",
+      "value": 0.5023,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://cognition.com/frontiercode",
+      "setting": "Medium"
+    },
+    {
+      "modelId": "anthropic/claude-haiku-5.5",
+      "source": "epoch",
+      "metric": "epoch_frontiercode",
+      "value": 0.4636,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://cognition.com/frontiercode",
+      "setting": "Max"
+    },
+    {
+      "modelId": "openai/gpt-5.5",
+      "source": "epoch",
+      "metric": "epoch_frontiercode",
+      "value": 0.42960000000000004,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://cognition.com/frontiercode"
+    },
+    {
+      "modelId": "openai/gpt-6-luna",
+      "source": "epoch",
+      "metric": "epoch_frontiercode",
+      "value": 0.4242,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://cognition.com/frontiercode",
+      "setting": "Max"
+    },
+    {
+      "modelId": "anthropic/claude-opus-4.7",
+      "source": "epoch",
+      "metric": "epoch_frontiercode",
+      "value": 0.3854,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://cognition.com/frontiercode"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.2",
+      "source": "epoch",
+      "metric": "epoch_gpqa_diamond",
+      "value": 0.9387626262626263,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Max"
+    },
+    {
+      "modelId": "openai/gpt-6.1-terra",
+      "source": "epoch",
+      "metric": "epoch_gpqa_diamond",
+      "value": 0.9431818181818182,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Max"
+    },
+    {
+      "modelId": "anthropic/claude-haiku-5.5",
+      "source": "epoch",
+      "metric": "epoch_gpqa_diamond",
+      "value": 0.8964646464646465,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Max"
+    },
+    {
+      "modelId": "openai/gpt-6.1-sol",
+      "source": "epoch",
+      "metric": "epoch_gpqa_diamond",
+      "value": 0.9539141414141414,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Max"
+    },
+    {
+      "modelId": "anthropic/claude-sonnet-5.5",
+      "source": "epoch",
+      "metric": "epoch_gpqa_diamond",
+      "value": 0.9558080808080808,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Max"
+    },
+    {
+      "modelId": "openai/gpt-6-luna",
+      "source": "epoch",
+      "metric": "epoch_gpqa_diamond",
+      "value": 0.9046717171717171,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Max"
+    },
+    {
+      "modelId": "anthropic/claude-opus-5.5",
+      "source": "epoch",
+      "metric": "epoch_gpqa_diamond",
+      "value": 0.9059343434343434,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Max"
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "epoch",
+      "metric": "epoch_gpqa_diamond",
+      "value": 0.9577020202020202,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Max"
+    },
+    {
+      "modelId": "openai/gpt-5.5",
+      "source": "epoch",
+      "metric": "epoch_gpqa_diamond",
+      "value": 0.9065656565656566,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Low"
+    },
+    {
+      "modelId": "openai/gpt-5.5",
+      "source": "epoch",
+      "metric": "epoch_gpqa_diamond",
+      "value": 0.7727272727272727,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "None",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-opus-4.7",
+      "source": "epoch",
+      "metric": "epoch_gpqa_diamond",
+      "value": 0.9015151515151515,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "xHigh"
+    },
+    {
+      "modelId": "anthropic/claude-opus-4.7",
+      "source": "epoch",
+      "metric": "epoch_gpqa_diamond",
+      "value": 0.8636363636363636,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Max",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.9500000000000001,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Max"
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.9333333333333333,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "xHigh",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.9208333333333333,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "High",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.9208333333333333,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Medium",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.8541666666666666,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Low",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.5958333333333333,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "None",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6.1-sol",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.9416666666666668,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Max"
+    },
+    {
+      "modelId": "openai/gpt-6.1-sol",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.9166666666666666,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "xHigh",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6.1-sol",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.9166666666666666,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "High",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6.1-sol",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.8666666666666667,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Medium",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6.1-sol",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.7666666666666667,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Low",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.2",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.9375,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "xHigh"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.2",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.925,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Max",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.2",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.9041666666666668,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "High",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.2",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.8958333333333335,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Medium",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.2",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.8666666666666667,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Low",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-opus-5.5",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.9333333333333333,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "High"
+    },
+    {
+      "modelId": "anthropic/claude-opus-5.5",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.925,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "xHigh",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-opus-5.5",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.9166666666666666,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Max",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-opus-5.5",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.875,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Medium",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-opus-5.5",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.7013888888888891,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Low",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.9,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Max"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.9,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "xHigh",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.8875000000000001,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "High",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.8625,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Medium",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.7833333333333333,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Low",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-5.5",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.85,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "xHigh"
+    },
+    {
+      "modelId": "openai/gpt-5.5",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.8333,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "High",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-5.5",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.7042,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Medium",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-5.5",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.3333,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Low",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-sonnet-5.5",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.8388888888888889,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "xHigh"
+    },
+    {
+      "modelId": "anthropic/claude-sonnet-5.5",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.6736111111111112,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "High",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-sonnet-5.5",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.3277777777777777,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Medium",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-sonnet-5.5",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.24027777777777776,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Low",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-opus-4.7",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.7583,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Max"
+    },
+    {
+      "modelId": "anthropic/claude-opus-4.7",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.6833,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "High",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-opus-4.7",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.675,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Medium",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-opus-4.7",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.6208,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Low",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-haiku-5.5",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.6125,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "xHigh"
+    },
+    {
+      "modelId": "anthropic/claude-haiku-5.5",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.3069444444444444,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "High",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-haiku-5.5",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.09444444444444443,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Medium",
+      "variant": true
+    },
+    {
+      "modelId": "anthropic/claude-haiku-5.5",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.027777777777777776,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Low",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6-luna",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.5930555555555556,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Max"
+    },
+    {
+      "modelId": "openai/gpt-6-luna",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.41944444444444445,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "xHigh",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6-luna",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.3138888888888889,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "High",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6-luna",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.18055555555555555,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Medium",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6-luna",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0.04583333333333333,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "Low",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-6-luna",
+      "source": "epoch",
+      "metric": "epoch_arc_agi_2",
+      "value": 0,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://epoch.ai/benchmarks",
+      "setting": "None",
+      "variant": true
+    },
+    {
+      "modelId": "openai/gpt-5.5",
+      "source": "vals-more",
+      "metric": "vals_swe_bench",
+      "value": 0.826,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://www.vals.ai/benchmarks/swebench",
+      "setting": "Mini-SWE-agent"
+    },
+    {
+      "modelId": "anthropic/claude-opus-4.7",
+      "source": "vals-more",
+      "metric": "vals_swe_bench",
+      "value": 0.82,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://www.vals.ai/benchmarks/swebench",
+      "setting": "Mini-SWE-agent"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.2",
+      "source": "vals-more",
+      "metric": "vals_terminal_bench_4",
+      "value": 0.6515000000000001,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://www.vals.ai/benchmarks/terminal-bench-4",
+      "setting": "Mini-SWE-agent"
+    },
+    {
+      "modelId": "anthropic/claude-opus-5.5",
+      "source": "vals-more",
+      "metric": "vals_terminal_bench_4",
+      "value": 0.6515000000000001,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://www.vals.ai/benchmarks/terminal-bench-4",
+      "setting": "Mini-SWE-agent"
+    },
+    {
+      "modelId": "anthropic/claude-sonnet-5.5",
+      "source": "vals-more",
+      "metric": "vals_terminal_bench_4",
+      "value": 0.6414,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://www.vals.ai/benchmarks/terminal-bench-4",
+      "setting": "Mini-SWE-agent"
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "vals-more",
+      "metric": "vals_terminal_bench_4",
+      "value": 0.596,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://www.vals.ai/benchmarks/terminal-bench-4",
+      "setting": "Mini-SWE-agent"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "source": "vals-more",
+      "metric": "vals_terminal_bench_4",
+      "value": 0.5808,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://www.vals.ai/benchmarks/terminal-bench-4",
+      "setting": "Mini-SWE-agent"
+    },
+    {
+      "modelId": "openai/gpt-6.1-sol",
+      "source": "vals-more",
+      "metric": "vals_terminal_bench_4",
+      "value": 0.5505,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://www.vals.ai/benchmarks/terminal-bench-4",
+      "setting": "Mini-SWE-agent"
+    },
+    {
+      "modelId": "openai/gpt-6.1-terra",
+      "source": "vals-more",
+      "metric": "vals_terminal_bench_4",
+      "value": 0.4949,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://www.vals.ai/benchmarks/terminal-bench-4",
+      "setting": "Mini-SWE-agent"
+    },
+    {
+      "modelId": "anthropic/claude-haiku-5.5",
+      "source": "vals-more",
+      "metric": "vals_terminal_bench_4",
+      "value": 0.3636,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://www.vals.ai/benchmarks/terminal-bench-4",
+      "setting": "Mini-SWE-agent"
+    },
+    {
+      "modelId": "openai/gpt-6-luna",
+      "source": "vals-more",
+      "metric": "vals_terminal_bench_4",
+      "value": 0.1364,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://www.vals.ai/benchmarks/terminal-bench-4",
+      "setting": "Mini-SWE-agent"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.2",
+      "source": "vals-more",
+      "metric": "vals_vibe_code",
+      "value": 0.9377,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://www.vals.ai/benchmarks/vibe-code",
+      "setting": "OpenHands"
+    },
+    {
+      "modelId": "anthropic/claude-sonnet-5.5",
+      "source": "vals-more",
+      "metric": "vals_vibe_code",
+      "value": 0.9239,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://www.vals.ai/benchmarks/vibe-code",
+      "setting": "OpenHands"
+    },
+    {
+      "modelId": "anthropic/claude-haiku-5.5",
+      "source": "vals-more",
+      "metric": "vals_vibe_code",
+      "value": 0.9044,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://www.vals.ai/benchmarks/vibe-code",
+      "setting": "OpenHands"
+    },
+    {
+      "modelId": "anthropic/claude-opus-5.5",
+      "source": "vals-more",
+      "metric": "vals_vibe_code",
+      "value": 0.9029,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://www.vals.ai/benchmarks/vibe-code",
+      "setting": "OpenHands"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "source": "vals-more",
+      "metric": "vals_vibe_code",
+      "value": 0.9026000000000001,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://www.vals.ai/benchmarks/vibe-code",
+      "setting": "OpenHands"
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "source": "vals-more",
+      "metric": "vals_vibe_code",
+      "value": 0.8959,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://www.vals.ai/benchmarks/vibe-code",
+      "setting": "OpenHands"
+    },
+    {
+      "modelId": "openai/gpt-6.1-sol",
+      "source": "vals-more",
+      "metric": "vals_vibe_code",
+      "value": 0.8893000000000001,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://www.vals.ai/benchmarks/vibe-code",
+      "setting": "OpenHands"
+    },
+    {
+      "modelId": "openai/gpt-6.1-terra",
+      "source": "vals-more",
+      "metric": "vals_vibe_code",
+      "value": 0.84,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://www.vals.ai/benchmarks/vibe-code",
+      "setting": "OpenHands"
+    },
+    {
+      "modelId": "openai/gpt-6-luna",
+      "source": "vals-more",
+      "metric": "vals_vibe_code",
+      "value": 0.8165,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://www.vals.ai/benchmarks/vibe-code",
+      "setting": "OpenHands"
+    },
+    {
+      "modelId": "anthropic/claude-opus-4.7",
+      "source": "vals-more",
+      "metric": "vals_vibe_code",
+      "value": 0.71,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://www.vals.ai/benchmarks/vibe-code",
+      "setting": "OpenHands"
+    },
+    {
+      "modelId": "openai/gpt-5.5",
+      "source": "vals-more",
+      "metric": "vals_vibe_code",
+      "value": 0.6984999999999999,
+      "unit": "ratio",
+      "observedAt": "2026-11-10",
+      "sourceUrl": "https://www.vals.ai/benchmarks/vibe-code",
+      "setting": "OpenHands"
+    }
+  ],
+  "vendorReports": [
+    {
+      "modelId": "anthropic/claude-fable-5.2",
+      "benchmark": "frontiercode-2-0",
+      "value": 0.491,
+      "unit": "ratio",
+      "setting": "Xhigh effort",
+      "reportedBy": "anthropic",
+      "announcementUrl": "https://www.anthropic.com/claude/fable",
+      "announcementTitle": "Claude Fable",
+      "publishedAt": "2026-11-09",
+      "publishedAtSource": "release",
+      "quote": "Category | Benchmark | Fable 5.2 | Fable 5.1 | Opus 5.5 | GPT-6 Astra | Gemini 4 Carbon Agentic coding | FrontierCode 2.0 | 49.1% Xhigh effort | 32.4% Xhigh effort | 45.5% | 42.8% | 41.1% Medium effort",
+      "evidence": "text",
+      "imageUrl": null,
+      "observedAt": "2026-11-09"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.2",
+      "benchmark": "frontierswe-v2",
+      "value": 0.699,
+      "unit": "ratio",
+      "setting": null,
+      "reportedBy": "anthropic",
+      "announcementUrl": "https://www.anthropic.com/claude/fable",
+      "announcementTitle": "Claude Fable",
+      "publishedAt": "2026-11-09",
+      "publishedAtSource": "release",
+      "quote": "Category | Benchmark | Fable 5.2 | Fable 5.1 | Opus 5.5 | GPT-6 Astra | Gemini 4 Carbon Agentic coding | FrontierCode 2.0 | 49.1% Xhigh effort | 32.4% Xhigh effort | 45.5% | 42.8% | 41.1% Medium effort Agentic coding | FrontierSWE v2 | 69.9% | 56.3% | 62.3% | 65.5% | 61.2%",
+      "evidence": "text",
+      "imageUrl": null,
+      "observedAt": "2026-11-09"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.2",
+      "benchmark": "automationbench",
+      "value": 51.4,
+      "unit": "points",
+      "setting": null,
+      "reportedBy": "anthropic",
+      "announcementUrl": "https://www.anthropic.com/claude/fable",
+      "announcementTitle": "Claude Fable",
+      "publishedAt": "2026-11-09",
+      "publishedAtSource": "release",
+      "quote": "Category | Benchmark | Fable 5.2 | Fable 5.1 | Opus 5.5 | GPT-6 Astra | Gemini 4 Carbon Agentic coding | FrontierCode 2.0 | 49.1% Xhigh effort | 32.4% Xhigh effort | 45.5% | 42.8% | 41.1% Medium effort Agentic coding | FrontierSWE v2 | 69.9% | 56.3% | 62.3% | 65.5% | 61.2% Business workflows | AutomationBench | 51.4% | 31.4% | 42.5% | 41.4% | 53.9%",
+      "evidence": "text",
+      "imageUrl": null,
+      "observedAt": "2026-11-09"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.2",
+      "benchmark": "wandr-relaxed-score",
+      "value": 0.821,
+      "unit": "ratio",
+      "setting": null,
+      "reportedBy": "anthropic",
+      "announcementUrl": "https://www.anthropic.com/claude/fable",
+      "announcementTitle": "Claude Fable",
+      "publishedAt": "2026-11-09",
+      "publishedAtSource": "release",
+      "quote": "Category | Benchmark | Fable 5.2 | Fable 5.1 | Opus 5.5 | GPT-6 Astra | Gemini 4 Carbon Agentic coding | FrontierCode 2.0 | 49.1% Xhigh effort | 32.4% Xhigh effort | 45.5% | 42.8% | 41.1% Medium effort Agentic coding | FrontierSWE v2 | 69.9% | 56.3% | 62.3% | 65.5% | 61.2% Business workflows | AutomationBench | 51.4% | 31.4% | 42.5% | 41.4% | 53.9% Agentic scientific research | Terminal-Bench-Science 0.1 | 74.6% 75.3% (Mythos 5.2) | 52.6% | 58.7% | 68.1% | 64.8% Cybersecurity | CyScenarioBench † | 76.3% Mythos 5.2 | 61.7% Mythos 5.1 | 67.6% without safeguards | 61% GPT-6 Cyber | — Cybersecurity | CVE Rediscovery | 89.6% Mythos 5.2 | 78.3% Mythos 5.1 | 81.3% without safeguards | — | — Protein design | De novo binder design (24 hr) | 85.1% Mythos 5.2 | 79.1% Mythos 5.1 | 82.6% without safeguards | — | — Agentic search | WANDR (relaxed score) | 82.1% | 68.7% | 72.3% | — | —",
+      "evidence": "text",
+      "imageUrl": null,
+      "observedAt": "2026-11-09"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.2",
+      "benchmark": "osworld-2-1-offline-set-partial",
+      "value": 0.893,
+      "unit": "ratio",
+      "setting": null,
+      "reportedBy": "anthropic",
+      "announcementUrl": "https://www.anthropic.com/claude/fable",
+      "announcementTitle": "Claude Fable",
+      "publishedAt": "2026-11-09",
+      "publishedAtSource": "release",
+      "quote": "Category | Benchmark | Fable 5.2 | Fable 5.1 | Opus 5.5 | GPT-6 Astra | Gemini 4 Carbon Agentic coding | FrontierCode 2.0 | 49.1% Xhigh effort | 32.4% Xhigh effort | 45.5% | 42.8% | 41.1% Medium effort Agentic coding | FrontierSWE v2 | 69.9% | 56.3% | 62.3% | 65.5% | 61.2% Business workflows | AutomationBench | 51.4% | 31.4% | 42.5% | 41.4% | 53.9% Agentic scientific research | Terminal-Bench-Science 0.1 | 74.6% 75.3% (Mythos 5.2) | 52.6% | 58.7% | 68.1% | 64.8% Cybersecurity | CyScenarioBench † | 76.3% Mythos 5.2 | 61.7% Mythos 5.1 | 67.6% without safeguards | 61% GPT-6 Cyber | — Cybersecurity | CVE Rediscovery | 89.6% Mythos 5.2 | 78.3% Mythos 5.1 | 81.3% without safeguards | — | — Protein design | De novo binder design (24 hr) | 85.1% Mythos 5.2 | 79.1% Mythos 5.1 | 82.6% without safeguards | — | — Agentic search | WANDR (relaxed score) | 82.1% | 68.7% | 72.3% | — | — Computer use | OSWorld 2.1 (offline set, partial) | 89.3% | 83.5% | 87.2% | 79.5% | 81.5%",
+      "evidence": "text",
+      "imageUrl": null,
+      "observedAt": "2026-11-09"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.2",
+      "benchmark": "robodojo-sim",
+      "value": 0.649,
+      "unit": "ratio",
+      "setting": null,
+      "reportedBy": "anthropic",
+      "announcementUrl": "https://www.anthropic.com/claude/fable",
+      "announcementTitle": "Claude Fable",
+      "publishedAt": "2026-11-09",
+      "publishedAtSource": "release",
+      "quote": "Category | Benchmark | Fable 5.2 | Fable 5.1 | Opus 5.5 | GPT-6 Astra | Gemini 4 Carbon Agentic coding | FrontierCode 2.0 | 49.1% Xhigh effort | 32.4% Xhigh effort | 45.5% | 42.8% | 41.1% Medium effort Agentic coding | FrontierSWE v2 | 69.9% | 56.3% | 62.3% | 65.5% | 61.2% Business workflows | AutomationBench | 51.4% | 31.4% | 42.5% | 41.4% | 53.9% Agentic scientific research | Terminal-Bench-Science 0.1 | 74.6% 75.3% (Mythos 5.2) | 52.6% | 58.7% | 68.1% | 64.8% Cybersecurity | CyScenarioBench † | 76.3% Mythos 5.2 | 61.7% Mythos 5.1 | 67.6% without safeguards | 61% GPT-6 Cyber | — Cybersecurity | CVE Rediscovery | 89.6% Mythos 5.2 | 78.3% Mythos 5.1 | 81.3% without safeguards | — | — Protein design | De novo binder design (24 hr) | 85.1% Mythos 5.2 | 79.1% Mythos 5.1 | 82.6% without safeguards | — | — Agentic search | WANDR (relaxed score) | 82.1% | 68.7% | 72.3% | — | — Computer use | OSWorld 2.1 (offline set, partial) | 89.3% | 83.5% | 87.2% | 79.5% | 81.5% Robotics | RoboDojo Sim ‡ | 64.9% | 27.6% | 39.4% | 29.8% | —",
+      "evidence": "text",
+      "imageUrl": null,
+      "observedAt": "2026-11-09"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.2",
+      "benchmark": "aa-briefcase-v1-1",
+      "value": 0.661,
+      "unit": "ratio",
+      "setting": "rubric",
+      "reportedBy": "anthropic",
+      "announcementUrl": "https://www.anthropic.com/claude/fable",
+      "announcementTitle": "Claude Fable",
+      "publishedAt": "2026-11-09",
+      "publishedAtSource": "release",
+      "quote": "Category | Benchmark | Fable 5.2 | Fable 5.1 | Opus 5.5 | GPT-6 Astra | Gemini 4 Carbon Agentic coding | FrontierCode 2.0 | 49.1% Xhigh effort | 32.4% Xhigh effort | 45.5% | 42.8% | 41.1% Medium effort Agentic coding | FrontierSWE v2 | 69.9% | 56.3% | 62.3% | 65.5% | 61.2% Business workflows | AutomationBench | 51.4% | 31.4% | 42.5% | 41.4% | 53.9% Agentic scientific research | Terminal-Bench-Science 0.1 | 74.6% 75.3% (Mythos 5.2) | 52.6% | 58.7% | 68.1% | 64.8% Cybersecurity | CyScenarioBench † | 76.3% Mythos 5.2 | 61.7% Mythos 5.1 | 67.6% without safeguards | 61% GPT-6 Cyber | — Cybersecurity | CVE Rediscovery | 89.6% Mythos 5.2 | 78.3% Mythos 5.1 | 81.3% without safeguards | — | — Protein design | De novo binder design (24 hr) | 85.1% Mythos 5.2 | 79.1% Mythos 5.1 | 82.6% without safeguards | — | — Agentic search | WANDR (relaxed score) | 82.1% | 68.7% | 72.3% | — | — Computer use | OSWorld 2.1 (offline set, partial) | 89.3% | 83.5% | 87.2% | 79.5% | 81.5% Robotics | RoboDojo Sim ‡ | 64.9% | 27.6% | 39.4% | 29.8% | — Knowledge work | AA-Briefcase v1.1 | 66.1% rubric | 61.5% rubric | 61.2% rubric | 52.0% rubric | 61.8% rubric",
+      "evidence": "text",
+      "imageUrl": null,
+      "observedAt": "2026-11-09"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.2",
+      "benchmark": "aa-briefcase-v1-1",
+      "value": 1785,
+      "unit": "elo",
+      "setting": null,
+      "reportedBy": "anthropic",
+      "announcementUrl": "https://www.anthropic.com/claude/fable",
+      "announcementTitle": "Claude Fable",
+      "publishedAt": "2026-11-09",
+      "publishedAtSource": "release",
+      "quote": "Category | Benchmark | Fable 5.2 | Fable 5.1 | Opus 5.5 | GPT-6 Astra | Gemini 4 Carbon Agentic coding | FrontierCode 2.0 | 49.1% Xhigh effort | 32.4% Xhigh effort | 45.5% | 42.8% | 41.1% Medium effort Agentic coding | FrontierSWE v2 | 69.9% | 56.3% | 62.3% | 65.5% | 61.2% Business workflows | AutomationBench | 51.4% | 31.4% | 42.5% | 41.4% | 53.9% Agentic scientific research | Terminal-Bench-Science 0.1 | 74.6% 75.3% (Mythos 5.2) | 52.6% | 58.7% | 68.1% | 64.8% Cybersecurity | CyScenarioBench † | 76.3% Mythos 5.2 | 61.7% Mythos 5.1 | 67.6% without safeguards | 61% GPT-6 Cyber | — Cybersecurity | CVE Rediscovery | 89.6% Mythos 5.2 | 78.3% Mythos 5.1 | 81.3% without safeguards | — | — Protein design | De novo binder design (24 hr) | 85.1% Mythos 5.2 | 79.1% Mythos 5.1 | 82.6% without safeguards | — | — Agentic search | WANDR (relaxed score) | 82.1% | 68.7% | 72.3% | — | — Computer use | OSWorld 2.1 (offline set, partial) | 89.3% | 83.5% | 87.2% | 79.5% | 81.5% Robotics | RoboDojo Sim ‡ | 64.9% | 27.6% | 39.4% | 29.8% | — Knowledge work | AA-Briefcase v1.1 | 66.1% rubric | 61.5% rubric | 61.2% rubric | 52.0% rubric | 61.8% rubric Knowledge work | AA-Briefcase v1.1 | 1785 Elo | 1669 Elo | 1800 Elo | 1569 Elo | 1611 Elo",
+      "evidence": "text",
+      "imageUrl": null,
+      "observedAt": "2026-11-09"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.2",
+      "benchmark": "remote-labor-index-rli",
+      "value": 0.413,
+      "unit": "ratio",
+      "setting": "High effort",
+      "reportedBy": "anthropic",
+      "announcementUrl": "https://www.anthropic.com/claude/fable",
+      "announcementTitle": "Claude Fable",
+      "publishedAt": "2026-11-09",
+      "publishedAtSource": "release",
+      "quote": "Category | Benchmark | Fable 5.2 | Fable 5.1 | Opus 5.5 | GPT-6 Astra | Gemini 4 Carbon Agentic coding | FrontierCode 2.0 | 49.1% Xhigh effort | 32.4% Xhigh effort | 45.5% | 42.8% | 41.1% Medium effort Agentic coding | FrontierSWE v2 | 69.9% | 56.3% | 62.3% | 65.5% | 61.2% Business workflows | AutomationBench | 51.4% | 31.4% | 42.5% | 41.4% | 53.9% Agentic scientific research | Terminal-Bench-Science 0.1 | 74.6% 75.3% (Mythos 5.2) | 52.6% | 58.7% | 68.1% | 64.8% Cybersecurity | CyScenarioBench † | 76.3% Mythos 5.2 | 61.7% Mythos 5.1 | 67.6% without safeguards | 61% GPT-6 Cyber | — Cybersecurity | CVE Rediscovery | 89.6% Mythos 5.2 | 78.3% Mythos 5.1 | 81.3% without safeguards | — | — Protein design | De novo binder design (24 hr) | 85.1% Mythos 5.2 | 79.1% Mythos 5.1 | 82.6% without safeguards | — | — Agentic search | WANDR (relaxed score) | 82.1% | 68.7% | 72.3% | — | — Computer use | OSWorld 2.1 (offline set, partial) | 89.3% | 83.5% | 87.2% | 79.5% | 81.5% Robotics | RoboDojo Sim ‡ | 64.9% | 27.6% | 39.4% | 29.8% | — Knowledge work | AA-Briefcase v1.1 | 66.1% rubric | 61.5% rubric | 61.2% rubric | 52.0% rubric | 61.8% rubric Knowledge work | AA-Briefcase v1.1 | 1785 Elo | 1669 Elo | 1800 Elo | 1569 Elo | 1611 Elo Knowledge work | Remote Labor Index (RLI) | 41.3% High effort | 17.9% | 21.3% | 20.8% | —",
+      "evidence": "text",
+      "imageUrl": null,
+      "observedAt": "2026-11-09"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.2",
+      "benchmark": "epoch-hle",
+      "value": 0.742,
+      "unit": "ratio",
+      "setting": "with tools",
+      "reportedBy": "anthropic",
+      "announcementUrl": "https://www.anthropic.com/claude/fable",
+      "announcementTitle": "Claude Fable",
+      "publishedAt": "2026-11-09",
+      "publishedAtSource": "release",
+      "quote": "Category | Benchmark | Fable 5.2 | Fable 5.1 | Opus 5.5 | GPT-6 Astra | Gemini 4 Carbon Agentic coding | FrontierCode 2.0 | 49.1% Xhigh effort | 32.4% Xhigh effort | 45.5% | 42.8% | 41.1% Medium effort Agentic coding | FrontierSWE v2 | 69.9% | 56.3% | 62.3% | 65.5% | 61.2% Business workflows | AutomationBench | 51.4% | 31.4% | 42.5% | 41.4% | 53.9% Agentic scientific research | Terminal-Bench-Science 0.1 | 74.6% 75.3% (Mythos 5.2) | 52.6% | 58.7% | 68.1% | 64.8% Cybersecurity | CyScenarioBench † | 76.3% Mythos 5.2 | 61.7% Mythos 5.1 | 67.6% without safeguards | 61% GPT-6 Cyber | — Cybersecurity | CVE Rediscovery | 89.6% Mythos 5.2 | 78.3% Mythos 5.1 | 81.3% without safeguards | — | — Protein design | De novo binder design (24 hr) | 85.1% Mythos 5.2 | 79.1% Mythos 5.1 | 82.6% without safeguards | — | — Agentic search | WANDR (relaxed score) | 82.1% | 68.7% | 72.3% | — | — Computer use | OSWorld 2.1 (offline set, partial) | 89.3% | 83.5% | 87.2% | 79.5% | 81.5% Robotics | RoboDojo Sim ‡ | 64.9% | 27.6% | 39.4% | 29.8% | — Knowledge work | AA-Briefcase v1.1 | 66.1% rubric | 61.5% rubric | 61.2% rubric | 52.0% rubric | 61.8% rubric Knowledge work | AA-Briefcase v1.1 | 1785 Elo | 1669 Elo | 1800 Elo | 1569 Elo | 1611 Elo Knowledge work | Remote Labor Index (RLI) | 41.3% High effort | 17.9% | 21.3% | 20.8% | — Multidisciplinary reasoning | Humanity’s Last Exam (with tools) | 74.2% | 65.6% | 67.7% | 57.2% | —",
+      "evidence": "text",
+      "imageUrl": null,
+      "observedAt": "2026-11-09"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.2",
+      "benchmark": "chartography",
+      "value": 73.4,
+      "unit": "points",
+      "setting": "no tools",
+      "reportedBy": "anthropic",
+      "announcementUrl": "https://www.anthropic.com/claude/fable",
+      "announcementTitle": "Claude Fable",
+      "publishedAt": "2026-11-09",
+      "publishedAtSource": "release",
+      "quote": "Category | Benchmark | Fable 5.2 | Fable 5.1 | Opus 5.5 | GPT-6 Astra | Gemini 4 Carbon Agentic coding | FrontierCode 2.0 | 49.1% Xhigh effort | 32.4% Xhigh effort | 45.5% | 42.8% | 41.1% Medium effort Agentic coding | FrontierSWE v2 | 69.9% | 56.3% | 62.3% | 65.5% | 61.2% Business workflows | AutomationBench | 51.4% | 31.4% | 42.5% | 41.4% | 53.9% Agentic scientific research | Terminal-Bench-Science 0.1 | 74.6% 75.3% (Mythos 5.2) | 52.6% | 58.7% | 68.1% | 64.8% Cybersecurity | CyScenarioBench † | 76.3% Mythos 5.2 | 61.7% Mythos 5.1 | 67.6% without safeguards | 61% GPT-6 Cyber | — Cybersecurity | CVE Rediscovery | 89.6% Mythos 5.2 | 78.3% Mythos 5.1 | 81.3% without safeguards | — | — Protein design | De novo binder design (24 hr) | 85.1% Mythos 5.2 | 79.1% Mythos 5.1 | 82.6% without safeguards | — | — Agentic search | WANDR (relaxed score) | 82.1% | 68.7% | 72.3% | — | — Computer use | OSWorld 2.1 (offline set, partial) | 89.3% | 83.5% | 87.2% | 79.5% | 81.5% Robotics | RoboDojo Sim ‡ | 64.9% | 27.6% | 39.4% | 29.8% | — Knowledge work | AA-Briefcase v1.1 | 66.1% rubric | 61.5% rubric | 61.2% rubric | 52.0% rubric | 61.8% rubric Knowledge work | AA-Briefcase v1.1 | 1785 Elo | 1669 Elo | 1800 Elo | 1569 Elo | 1611 Elo Knowledge work | Remote Labor Index (RLI) | 41.3% High effort | 17.9% | 21.3% | 20.8% | — Multidisciplinary reasoning | Humanity’s Last Exam (with tools) | 74.2% | 65.6% | 67.7% | 57.2% | — Visual chart recognition | Chartography (no tools) | 73.4% | 44.8% | 64.4% | 71.0% | 72.5%",
+      "evidence": "text",
+      "imageUrl": null,
+      "observedAt": "2026-11-09"
+    },
+    {
+      "modelId": "anthropic/claude-fable-5.1",
+      "benchmark": "frontierswe-v2",
+      "value": 0.563,
+      "unit": "ratio",
+      "setting": null,
+      "reportedBy": "anthropic",
+      "announcementUrl": "https://www.anthropic.com/claude/fable",
+      "announcementTitle": "Claude Fable",
+      "publishedAt": "2026-11-09",
+      "publishedAtSource": "release",
+      "quote": "Category | Benchmark | Fable 5.2 | Fable 5.1 | Opus 5.5 | GPT-6 Astra | Gemini 4 Carbon Agentic coding | FrontierCode 2.0 | 49.1% Xhigh effort | 32.4% Xhigh effort | 45.5% | 42.8% | 41.1% Medium effort Agentic coding | FrontierSWE v2 | 69.9% | 56.3% | 62.3% | 65.5% | 61.2%",
+      "evidence": "text",
+      "imageUrl": null,
+      "observedAt": "2026-11-09"
+    },
+    {
+      "modelId": "anthropic/claude-opus-5.5",
+      "benchmark": "frontierswe-v2",
+      "value": 0.623,
+      "unit": "ratio",
+      "setting": null,
+      "reportedBy": "anthropic",
+      "announcementUrl": "https://www.anthropic.com/claude/fable",
+      "announcementTitle": "Claude Fable",
+      "publishedAt": "2026-11-09",
+      "publishedAtSource": "release",
+      "quote": "Category | Benchmark | Fable 5.2 | Fable 5.1 | Opus 5.5 | GPT-6 Astra | Gemini 4 Carbon Agentic coding | FrontierCode 2.0 | 49.1% Xhigh effort | 32.4% Xhigh effort | 45.5% | 42.8% | 41.1% Medium effort Agentic coding | FrontierSWE v2 | 69.9% | 56.3% | 62.3% | 65.5% | 61.2%",
+      "evidence": "text",
+      "imageUrl": null,
+      "observedAt": "2026-11-09"
+    },
+    {
+      "modelId": "openai/gpt-6-astra",
+      "benchmark": "frontierswe-v2",
+      "value": 0.655,
+      "unit": "ratio",
+      "setting": null,
+      "reportedBy": "anthropic",
+      "announcementUrl": "https://www.anthropic.com/claude/fable",
+      "announcementTitle": "Claude Fable",
+      "publishedAt": "2026-11-09",
+      "publishedAtSource": "release",
+      "quote": "Category | Benchmark | Fable 5.2 | Fable 5.1 | Opus 5.5 | GPT-6 Astra | Gemini 4 Carbon Agentic coding | FrontierCode 2.0 | 49.1% Xhigh effort | 32.4% Xhigh effort | 45.5% | 42.8% | 41.1% Medium effort Agentic coding | FrontierSWE v2 | 69.9% | 56.3% | 62.3% | 65.5% | 61.2%",
+      "evidence": "text",
+      "imageUrl": null,
+      "observedAt": "2026-11-09"
+    }
+  ],
+  "sources": [
+    {
+      "id": "openrouter",
+      "label": "OpenRouter",
+      "homepage": "https://openrouter.ai/",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 349
+    },
+    {
+      "id": "aa-api",
+      "label": "Artificial Analysis",
+      "homepage": "https://artificialanalysis.ai/",
+      "fetchedAt": "2026-11-04",
+      "rowCount": 204
+    },
+    {
+      "id": "aider",
+      "label": "Aider polyglot leaderboard",
+      "homepage": "https://aider.chat/docs/leaderboards/",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 30
+    },
+    {
+      "id": "eqbench",
+      "label": "EQ-Bench 4",
+      "homepage": "https://eqbench.com/",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 32
+    },
+    {
+      "id": "toolathlon",
+      "label": "Toolathlon (toolathlon.xyz)",
+      "homepage": "https://toolathlon.xyz/docs/leaderboard",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 24
+    },
+    {
+      "id": "cursorbench",
+      "label": "CursorBench (Cursor)",
+      "homepage": "https://cursor.com/cursorbench",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 19
+    },
+    {
+      "id": "lmarena",
+      "label": "LMArena WebDev",
+      "homepage": "https://lmarena.ai/leaderboard/webdev",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 105
+    },
+    {
+      "id": "gobench",
+      "label": "GoBench (Roland Gao)",
+      "homepage": "https://rolandgao.com/blog/gobench/",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 18
+    },
+    {
+      "id": "gamebench",
+      "label": "DuelLab GameBench 2",
+      "homepage": "https://benchmarks.duellab.org/",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 88,
+      "updatedAt": "2026-11-07"
+    },
+    {
+      "id": "matharena",
+      "label": "MathArena",
+      "homepage": "https://matharena.ai/",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 73
+    },
+    {
+      "id": "ale-bench",
+      "label": "ALE-Bench (Sakana AI)",
+      "homepage": "https://sakanaai.github.io/ALE-Bench-Leaderboard/",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 113
+    },
+    {
+      "id": "kagi",
+      "label": "Kagi LLM Benchmarking Project",
+      "homepage": "https://help.kagi.com/kagi/ai/llm-benchmark.html",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 70
+    },
+    {
+      "id": "vals-gpqa",
+      "label": "GPQA (Vals AI)",
+      "homepage": "https://www.vals.ai/benchmarks/gpqa",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 98,
+      "updatedAt": "2026-09-01"
+    },
+    {
+      "id": "vals-mmlu-pro",
+      "label": "MMLU Pro (Vals AI)",
+      "homepage": "https://www.vals.ai/benchmarks/mmlu_pro",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 100,
+      "updatedAt": "2026-09-01"
+    },
+    {
+      "id": "openrouter-speed",
+      "label": "OpenRouter (provider speed)",
+      "homepage": "https://openrouter.ai/",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 185
+    },
+    {
+      "id": "livebench",
+      "label": "LiveBench",
+      "homepage": "https://livebench.ai/",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 29,
+      "updatedAt": "2026-11-06"
+    },
+    {
+      "id": "swebench",
+      "label": "SWE-bench (swebench.com)",
+      "homepage": "https://www.swebench.com/",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 43
+    },
+    {
+      "id": "artificialanalysis",
+      "label": "Artificial Analysis (via OpenRouter)",
+      "homepage": "https://artificialanalysis.ai/",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 138
+    },
+    {
+      "id": "tau-bench",
+      "label": "tau-bench (Sierra)",
+      "homepage": "https://taubench.com/",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 18
+    },
+    {
+      "id": "programbench",
+      "label": "ProgramBench",
+      "homepage": "https://programbench.com/",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 22
+    },
+    {
+      "id": "scale-seal",
+      "label": "Scale SEAL leaderboards",
+      "homepage": "https://labs.scale.com/leaderboard",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 69
+    },
+    {
+      "id": "bfcl",
+      "label": "Berkeley Function Calling Leaderboard",
+      "homepage": "https://gorilla.cs.berkeley.edu/leaderboard.html",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 30
+    },
+    {
+      "id": "vals-aime",
+      "label": "AIME (Vals AI)",
+      "homepage": "https://www.vals.ai/benchmarks/aime",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 62,
+      "updatedAt": "2026-04-16"
+    },
+    {
+      "id": "valsai",
+      "label": "Vals Index",
+      "homepage": "https://www.vals.ai/benchmarks/vals_index",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 32,
+      "updatedAt": "2026-11-09"
+    },
+    {
+      "id": "browsecomp-plus",
+      "label": "BrowseComp-Plus",
+      "homepage": "https://texttron.github.io/BrowseComp-Plus/",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 13
+    },
+    {
+      "id": "kaggle",
+      "label": "Kaggle Benchmarks",
+      "homepage": "https://www.kaggle.com/benchmarks",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 48
+    },
+    {
+      "id": "huggingface",
+      "label": "Hugging Face",
+      "homepage": "https://huggingface.co/models",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 192
+    },
+    {
+      "id": "epoch",
+      "label": "Epoch AI benchmarking hub",
+      "homepage": "https://epoch.ai/benchmarks",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 220
+    },
+    {
+      "id": "terminal-bench",
+      "label": "Terminal-Bench (tbench.ai)",
+      "homepage": "https://www.tbench.ai/leaderboard",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 62
+    },
+    {
+      "id": "vals-more",
+      "label": "Vals AI boards",
+      "homepage": "https://www.vals.ai/benchmarks",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 149
+    },
+    {
+      "id": "arena",
+      "label": "LMArena (Hugging Face dataset)",
+      "homepage": "https://lmarena.ai/leaderboard",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 191
+    },
+    {
+      "id": "designarena",
+      "label": "Design Arena",
+      "homepage": "https://www.designarena.ai/",
+      "fetchedAt": "2026-11-10",
+      "rowCount": 147
+    }
+  ],
+  "generatedAt": "2026-11-10T04:18:08.098Z"
+}

@@ -1,6 +1,6 @@
 {
   "name": "orcacompass",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Usage-aware agent/model/effort routing for Orca coordinator agents",
   "license": "Apache-2.0",
   "author": "manomilano",
@@ -28,7 +28,9 @@
   },
   "files": [
     "dist",
-    "data",
+    "data/evidence-snapshot.json",
+    "data/evidence-manifest.json",
+    "data/evidence-curated.json",
     "skills",
     "NOTICE"
   ],
@@ -40,7 +42,7 @@
     "prepare": "tsc",
     "prepublishOnly": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc && npm test && npm run test:package",
     "test": "vitest run",
-    "snapshot": "node scripts/make-snapshot.mjs",
+    "refresh-evidence": "node scripts/refresh-evidence.mjs",
     "test:package": "node scripts/test-package.mjs",
     "test:install": "node scripts/test-install.mjs",
     "docs:dev": "vitepress dev docs",

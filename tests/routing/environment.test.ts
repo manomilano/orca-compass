@@ -50,12 +50,15 @@ describe('loadPlacements', () => {
   });
 
   it('applies a changed tierOverride in the rebuilt table', async () => {
-    await loadPlacements(DEFAULT_CONFIG, fakeDeps);
+    const deps = { ...fakeDeps, bundled: new URL('../fixtures/evidence-mini.json', import.meta.url) };
+    await loadPlacements(DEFAULT_CONFIG, deps);
     const config: Config = { ...DEFAULT_CONFIG, tierOverrides: { 'claude-haiku-5-5': 'frontier' } };
-    const { table } = await loadPlacements(config, fakeDeps);
+    const { table } = await loadPlacements(config, deps);
     const haiku = table.agents.find((a) => a.agent === 'claude')!.models.find((m) => m.modelId === 'claude-haiku-5-5')!;
-    expect(haiku.tiers).toEqual(['frontier']);
-    expect(haiku.placements).toEqual([{ tier: 'frontier', source: 'override' }]);
+    // The mini fixture keeps its own bands; the override affects cost only, leaving evidence Daily.
+    expect(haiku.profile.class).toBe('daily');
+    expect(haiku.profile.cost).toEqual({ tier: 'frontier', blended: 0.2, source: 'override' });
+    expect(haiku.profile.hint).toEqual({ tier: 'frontier', source: 'override' });
   });
 
   it('rebuilds when an agent appears on PATH', async () => {
@@ -90,17 +93,36 @@ describe('loadPlacements', () => {
     expect((await loadPlacements(DEFAULT_CONFIG, fakeDeps)).rebuilt).toBe('invalid');
   });
 
-  it('rebuilds a fresh schema-1 placement cache before old classifications can route', async () => {
+  it('rebuilds a fresh schema-2 placement cache before old classifications can route', async () => {
     const first = await loadPlacements(DEFAULT_CONFIG, fakeDeps);
-    const legacy = { ...first.table, schemaVersion: 1 };
-    const opus = legacy.agents.find((a) => a.agent === 'claude')!.models.find((m) => m.modelId === 'claude-opus-5-5')!;
-    opus.placements = [{ tier: 'frontier', source: 'benchmark' as any }];
-    opus.tiers = ['frontier'];
+    const legacy = { ...first.table, schemaVersion: 2 };
     writeFileSync(join(home, 'cache', 'placements.json'), JSON.stringify(legacy));
     const rebuilt = await loadPlacements(DEFAULT_CONFIG, { ...fakeDeps, now: NOW + HOUR });
     expect(rebuilt.rebuilt).toBe('invalid');
-    expect(rebuilt.table.schemaVersion).toBe(2);
-    expect(rebuilt.table.agents.find((a) => a.agent === 'claude')!.models.find((m) => m.modelId === 'claude-opus-5-5')!.tiers).toEqual(['advanced']);
+    expect(rebuilt.table.schemaVersion).toBe(4);
+    expect(rebuilt.table.agents.find((a) => a.agent === 'claude')!.models.find((m) => m.modelId === 'claude-opus-5-5')!).toMatchObject({ profile: { class: 'frontier', hint: { tier: 'advanced', source: 'family' } } });
+  });
+
+  it.each([undefined, '{', JSON.stringify({ generatedAt: 'invalid' })])('ignores missing or corrupt evidence metadata without fetching: %s', async (metadata) => {
+    await loadPlacements(DEFAULT_CONFIG, fakeDeps);
+    let fetches = 0;
+    const result = await loadPlacements(DEFAULT_CONFIG, { ...fakeDeps,
+      readFile: (path) => path.endsWith('evidence-check.json') ? metadata : fakeDeps.readFile!(path),
+      fetchImpl: async () => { fetches++; throw new Error('offline'); },
+    });
+    expect(result.rebuilt).toBeUndefined();
+    expect(fetches).toBe(0);
+  });
+
+  it('invalidates a fresh table when cached evidence metadata changes', async () => {
+    await loadPlacements(DEFAULT_CONFIG, fakeDeps);
+    const paths: string[] = [];
+    const next = await loadPlacements(DEFAULT_CONFIG, { ...fakeDeps, readFile: (path) => {
+      paths.push(path);
+      return path.endsWith('evidence-check.json') ? JSON.stringify({ generatedAt: '2026-11-11T04:00:00Z', checkedAt: NOW }) : fakeDeps.readFile!(path);
+    } });
+    expect(next.rebuilt).toBe('evidence');
+    expect(paths).toContain(join(home, 'cache', 'evidence-check.json'));
   });
 
   it('keeps going when the table cannot be saved', async () => {
@@ -127,7 +149,9 @@ describe('gather', () => {
     const env = await gatherEnvironment(DEFAULT_CONFIG, fakeDeps);
     expect(env.now).toBe(NOW);
     expect(env.catalogSource).toBe('snapshot');
-    expect(env.scoreSource).toBe('snapshot');
+    expect(env.evidenceSource).toBe('snapshot');
+    expect(env.scoreSource).toBe(env.evidenceSource);
+    expect(env.evidenceGeneratedAt).toBeDefined();
     expect(env.discoveries.map((d) => d.agent)).toEqual([...AGENT_IDS]);
     expect(env.discoveries.find((d) => d.agent === 'muse')).toMatchObject({ installed: true, models: [] });
     expect(env.usage.grok.status).toBe('unavailable');
@@ -135,6 +159,6 @@ describe('gather', () => {
     expect(env.orcaAgents).toEqual({ known: true, disabled: [], source: '/fake/orca/profile-state.db' });
     const cursor = env.discoveries.find((d) => d.agent === 'cursor')!;
     expect(cursor.models.length).toBeGreaterThan(0);
-    expect(cursor.models.every((m) => Array.isArray(m.placements))).toBe(true);
+    expect(cursor.models.every((m) => m.profile !== undefined)).toBe(true);
   });
 });

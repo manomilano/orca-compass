@@ -28,22 +28,23 @@ as an Agent Skill backed by a small TypeScript CLI.
 
 ## How it works
 
-1. **The orchestrator rates the job** as one of four difficulty tiers.
-2. **OrcaCompass finds what you can actually use:** installed agent CLIs that
-   you have enabled in Orca and not switched off in OrcaCompass, their models,
-   and current usage from Orca.
-3. **It keeps only models that fit the tier,** then prefers the one with the
-   most headroom: the share of its usage window expected to be left unused at
-   reset. Nearly exhausted windows are skipped.
-4. **It returns a route** (agent, model, effort) with the reasons and ready-made
-   launch arguments.
+1. **Rate the job** on coding, agentic and reasoning needs.
+2. **OrcaCompass builds profiles** with raw LLMBenchmark capability evidence
+   and separate cost tiers from price (3:1 input/output blend, `costBands`
+   default `[1, 5, 12]`; hints are the fallback when price is missing).
+3. **It chooses a route** from the cheapest cost tier whose evidence covers
+   the job, then the most headroom, accounting for recent hand-outs.
+   Cursor `auto` is a fallback.
 
-| Tier | What it means | Typical job | Default effort |
-| --- | --- | --- | --- |
-| `light` | Mechanical; a mistake is cheap and easy to see | Renames, config values, summaries, lookups | `low` |
-| `daily` | Ordinary engineering without a written plan | Features in a few files, reproducible bugs, tests | `medium` |
-| `advanced` | Needs a plan; mistakes are costly or subtle | Cross-cutting refactors, races, schema changes, security | `medium` |
-| `frontier` | The edge of what models can do | Novel algorithms, failures Advanced could not solve | `high` |
+```sh
+orcacompass route --need coding=mid,agentic=low,reasoning=low --demand moderate --json
+orcacompass ranking --axis coding  # evidence view
+orcacompass tiers                  # cost-tier view
+```
+
+`--tier` remains a shorthand for equal needs on all axes.
+[How it works](docs/how-it-works.md) follows one job through every step, and
+[Tiers and routing](docs/tiers-and-routing.md) has the details.
 
 ## Install
 
@@ -114,14 +115,14 @@ Everything `setup` does is also a command of its own:
 
 ```sh
 orcacompass status                        # agents, usage, and the pick for each tier
-orcacompass tiers                         # every model's tiers, with the numbers behind them
+orcacompass tiers                         # cost tiers, prices and capability evidence
 orcacompass agents                        # which agents are used, and why not
 orcacompass agents disable grok           # never route to Grok Build
 orcacompass prefer daily codex            # Codex first for everyday jobs, unless it runs too hot
 orcacompass ban claude-haiku              # never route a Claude Haiku model
 orcacompass route --tier daily --json     # a route for an everyday job
 orcacompass route --tier advanced --agent claude --agent codex --demand high
-orcacompass route --tier frontier --no-downgrade --json   # never fall back to a lower tier
+orcacompass route --tier frontier --no-downgrade --json   # never accept a capability shortfall
 ```
 
 With the Skill installed, the orchestrator does this for you: it rates each
@@ -140,8 +141,9 @@ For example, a routing decision can look like this (illustrative numbers):
 
 ```text
 $ orcacompass route --tier advanced
-advanced → claude · claude-opus-5-5 · medium (high confidence)
-  claude claude-opus-5-5: weekly 40% used, 62% of window elapsed (headroom 34%) → on pace for 65% before reset in 2d
+advanced → claude · claude-sonnet-5-5 · medium (high confidence)
+  cost: daily ($4.00/M blended, maker price)
+  claude claude-sonnet-5-5: weekly 40% used, 62% of window elapsed (headroom 34%) → on pace for 65% before reset in 2d
 ```
 
 ## User guide
@@ -154,7 +156,7 @@ Start with [Getting started](docs/getting-started.md), or browse the
 | Every command, flag, exit code and JSON response | [Commands](docs/commands.md) |
 | Preferences, bans, paths and defaults | [Configuration](docs/configuration.md) |
 | How routes are ranked and how fallbacks work | [Tiers and routing](docs/tiers-and-routing.md) |
-| Reasoning demand and supported effort levels | [Effort](docs/effort.md) |
+| Effort demand and supported effort levels | [Effort](docs/effort.md) |
 | How the orchestrator routes, launches and verifies | [Skill workflow](docs/skill-workflow.md) |
 | Checking that a worker's agent accepted its model | [Verify and rejections](docs/verify-and-rejections.md) |
 | Supported agents and where their models come from | [Models and agents](docs/models-and-agents.md) |

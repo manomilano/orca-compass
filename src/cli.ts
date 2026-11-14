@@ -1,5 +1,14 @@
 #!/usr/bin/env node
-import { existsSync, realpathSync } from 'node:fs';
+import { recordHandout } from './routing/handouts.js';
+import { cacheDir } from './paths.js';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { join } from 'node:path';
+import { AXES, parseSnapshot, type Axis, type SnapshotSource } from './evidence/snapshot.js';
+import { BUNDLED_URL } from './evidence/source.js';
+import { readTextFile } from './placements/agents/deps.js';
+import { modelFamily } from './placements/tiers.js';
+import type { AxisProfile, Profile } from './placements/profiles.js';
+import { parseNeeds } from './routing/needs.js';
 import { fileURLToPath } from 'node:url';
 import { parseArgs, type ParseArgsConfig } from 'node:util';
 import {
@@ -44,14 +53,16 @@ commands:
                                        install or update the CLI, then its matching Skill
   update [same options as install]     get the latest release and matching Skill
   uninstall [same options as install]  remove the selected Skill; --global also removes the shared CLI
-  route --tier <light|daily|advanced|frontier> [--no-downgrade] [--agent <id>]...
+  route --need coding=<l>,agentic=<l>,reasoning=<l> | --tier <light|daily|advanced|frontier> [--no-downgrade] [--agent <id>]...
         [--exclude-agent <id>]... [--demand <low|moderate|high|exceptional>]
         [--effort <effort>] [--tier-reason <reason>] [--json]
   verify --dispatch <id> [--wait <seconds>] [--json]
                                        did a new worker's agent accept its model
   rejected [--clear] [--json]          models agents refused at launch (skipped)
   status [--json]
-  tiers [--json]                       every model's tiers, from the placement table
+  ranking [--axis <coding|agentic|reasoning>] [--json]
+                                       model profiles, strongest first
+  tiers [--axis <axis>] [--json]       bands and models on each axis
   agents [--json]                     which agents are used, and why not
   agents disable|enable|only <id>... [--json]
   agents reset [--json]                use every agent again
@@ -69,6 +80,10 @@ commands:
 
 class UsageError extends Error {}
 
+function readConfig(io: IO): Config {
+  return loadConfig(undefined, (m) => io.err(`warning: ${m}`));
+}
+
 /** Runs one command and returns the exit code: 0 answered, 1 usage error, 2 config error. */
 export async function main(argv: string[], io: IO, deps: MainDeps = {}): Promise<number> {
   const [command, ...rest] = argv;
@@ -81,6 +96,7 @@ export async function main(argv: string[], io: IO, deps: MainDeps = {}): Promise
     if (command === 'verify') return await verifyCommand(rest, io, deps);
     if (command === 'rejected') return await rejectedCommand(rest, io, deps);
     if (command === 'status') return await statusCommand(rest, io, deps);
+    if (command === 'ranking') return await rankingCommand(rest, io, deps);
     if (command === 'tiers') return await tiersCommand(rest, io, deps);
     if (command === 'agents') return await agentsCommand(rest, io, deps);
     if (command === 'prefer') return await preferCommand(rest, io, deps);
@@ -117,6 +133,7 @@ function parse<T extends NonNullable<ParseArgsConfig['options']>>(args: string[]
 async function routeCommand(args: string[], io: IO, deps: MainDeps): Promise<number> {
   const v = parse(args, {
     tier: { type: 'string' },
+    need: { type: 'string' },
     'tier-reason': { type: 'string' },
     'no-downgrade': { type: 'boolean' },
     agent: { type: 'string', multiple: true },
@@ -125,9 +142,17 @@ async function routeCommand(args: string[], io: IO, deps: MainDeps): Promise<num
     demand: { type: 'string' },
     json: { type: 'boolean' },
   });
-  if (v.tier === undefined) throw new UsageError(`--tier is required (${TIERS.join(', ')})`);
-  const tier = v.tier.toLowerCase() as Tier;
-  if (!TIERS.includes(tier)) throw new UsageError(`unknown tier "${v.tier}" (expected ${TIERS.join(', ')})`);
+  if (v.tier === undefined && v.need === undefined) throw new UsageError('--need is required (or --tier as a shorthand)');
+  if (v.tier !== undefined && v.need !== undefined) throw new UsageError('use either --need or --tier, not both');
+  let request: RouteRequest;
+  if (v.need !== undefined) {
+    try { request = { needs: parseNeeds(v.need) }; }
+    catch (e) { throw new UsageError((e as Error).message); }
+  } else {
+    const tier = v.tier!.toLowerCase() as Tier;
+    if (!TIERS.includes(tier)) throw new UsageError(`unknown tier "${v.tier}" (expected ${TIERS.join(', ')})`);
+    request = { tier };
+  }
   const tierReason = v['tier-reason']?.trim();
   if (tierReason === '') throw new UsageError('--tier-reason must contain a short explanation');
   let effort: Effort | undefined;
@@ -153,7 +178,7 @@ async function routeCommand(args: string[], io: IO, deps: MainDeps): Promise<num
   const agents = agentIds(v.agent, '--agent', 'not routed');
   const excludeAgents = agentIds(v['exclude-agent'], '--exclude-agent', 'nothing excluded for it');
   const req: RouteRequest = {
-    tier,
+    ...request,
     ...(tierReason ? { tierReason } : {}),
     ...(v['no-downgrade'] ? { noDowngrade: true } : {}),
     ...(agents ? { agents } : {}),
@@ -162,13 +187,21 @@ async function routeCommand(args: string[], io: IO, deps: MainDeps): Promise<num
     ...(demand ? { demand } : {}),
   };
 
-  const config = loadConfig();
+  const config = readConfig(io);
   const env = await gatherEnvironment(config, deps);
   const d = route(req, env, config);
   d.warnings.push(...unknownAgents);
+  if (d.status === 'ok' && d.route) {
+    const chosen = d.route;
+    const model = env.discoveries.find((a) => a.agent === chosen.agent)?.models.find((m) => launchIds(m).includes(chosen.model));
+    if (model) {
+      try { recordHandout({ at: env.now, agent: chosen.agent, model: chosen.model, pools: model.poolNames, needs: d.needs }, config.handoutMinutes, deps.cacheDir ?? cacheDir()); }
+      catch (e) { d.warnings.push(`hand-out could not be saved: ${(e as Error).message}`); }
+    }
+  }
   if (v.json) {
     const sources = {
-      catalogSource: env.catalogSource, scoreSource: env.scoreSource ?? 'unavailable',
+      evidenceSource: env.evidenceSource, catalogSource: env.evidenceSource, scoreSource: env.evidenceSource,
       placementsBuiltAt: env.placementsBuiltAt,
     };
     io.out(JSON.stringify({ ...d, launch: formatLaunch(d) ?? null, ...sources }, null, 2));
@@ -204,14 +237,35 @@ function decisionText(d: Decision, now: number): string[] {
   let head: string;
   if (d.status === 'ok' && d.route) {
     const { agent, model, effort } = d.route;
-    head = `${d.tier} → ${agent} · ${model}${effort ? ` · ${effort}` : ''} (${d.confidence} confidence)`;
+    head = `${d.tier ?? d.requestedTier} → ${agent} · ${model}${effort ? ` · ${effort}` : ''} (${d.confidence} confidence)`;
   } else if (d.status === 'wait' && d.waitUntil !== undefined) {
     head = `${d.requestedTier} → wait until ${new Date(d.waitUntil).toISOString()} (in ${duration(d.waitUntil - now)})`;
   } else {
     head = `${d.requestedTier} → no route`;
   }
   const launch = formatLaunch(d);
-  return [head, ...d.reasons.map((r) => `  ${r}`), ...d.warnings.map((w) => `  warning: ${w}`), ...(launch ? [launch] : [])];
+  return [head, ...d.reasons.map((r) => `  ${r.startsWith('skipped:') ? skippedText(d.skipped) : r}`), ...d.warnings.map((w) => `  warning: ${w}`), ...(launch ? [launch] : [])];
+}
+
+/** Keep operational skips visible while bounding profile diagnostics in text only. */
+function skippedText(skipped: Decision['skipped']): string {
+  const full: string[] = [];
+  const needs = new Map<string, string[]>();
+  for (const s of skipped) {
+    const name = `${s.agent}${s.model ? ` ${s.model}` : ''}`;
+    if (/^(below need on |unranked:)/.test(s.reason)) {
+      const reasons = needs.get(name) ?? [];
+      reasons.push(s.reason);
+      needs.set(name, reasons);
+    } else full.push(`${name} (${s.reason})`);
+  }
+  for (const [name, reasons] of [...needs].slice(0, 6)) {
+    const below = reasons.every((r) => r.startsWith('below need on '));
+    const reason = below ? `below need on ${reasons.map((r) => r.replace(/^below need on (\w+) \((.*)\)$/, '$1 $2')).join(', ')}` : reasons.join(', ');
+    full.push(`${name} (${reason})`);
+  }
+  if (needs.size > 6) full.push(`… ${needs.size - 6} more (route --json lists them)`);
+  return `skipped: ${full.join(', ')}`;
 }
 
 // --- verify and rejected --------------------------------------------------------------------
@@ -221,7 +275,7 @@ async function verifyCommand(args: string[], io: IO, deps: MainDeps): Promise<nu
   if (!v.dispatch) throw new UsageError('--dispatch <id> is required (the dispatchId worker-start printed)');
   const wait = v.wait === undefined ? 60 : Number(v.wait);
   if (!Number.isFinite(wait) || wait < 0 || wait > 60) throw new UsageError(`--wait must be between 0 and 60 seconds (got "${v.wait}")`);
-  const config = loadConfig();
+  const config = readConfig(io);
   const clock = deps.clock ?? Date.now;
   const verdict = await verifyWorker(v.dispatch, {
     run: deps.run ?? runCommand,
@@ -283,7 +337,7 @@ function verifyText(d: Verdict, next: string[]): string[] {
 
 async function rejectedCommand(args: string[], io: IO, deps: MainDeps): Promise<number> {
   const v = parse(args, { clear: { type: 'boolean' }, json: { type: 'boolean' } });
-  const config = loadConfig();
+  const config = readConfig(io);
   const now = deps.now ?? Date.now();
   const all = readRejections();
   if (v.clear) writeRejections([]);
@@ -327,13 +381,14 @@ function buildStatus(gathered: Gathered, config: Config) {
         skipped.set(s.agent, s.reason);
       }
     }
-    // A structural upgrade belongs to another tier; this view lists only the tier's own candidates.
-    const own = d.tier === undefined || d.tier === tier;
+    // Cheaper covering picks belong here; structural upgrades still belong to another tier.
+    const own = !d.upgraded;
     const view: TierView = { status: own ? d.status : 'none', alternatives: own ? d.alternatives : [], warnings: own ? d.warnings : [] };
     if (own && d.route) {
       const prefix = `${d.route.agent} ${d.route.model}: `;
       const reason = d.reasons[0] ?? '';
-      view.pick = { ...d.route, confidence: d.confidence, reason: reason.startsWith(prefix) ? reason.slice(prefix.length) : reason };
+      const costLabel = d.tier && d.tier !== tier ? ` (${d.tier} cost tier)` : '';
+      view.pick = { ...d.route, confidence: d.confidence, reason: (reason.startsWith(prefix) ? reason.slice(prefix.length) : reason) + costLabel };
     }
     if (own && d.waitUntil !== undefined) view.waitUntil = d.waitUntil;
     tiers[tier] = view;
@@ -363,40 +418,36 @@ function buildStatus(gathered: Gathered, config: Config) {
   });
 
   const unclassified: { agent: string; model: string }[] = [];
-  const scored: { agent: string; model: string; tier: Tier; detail: string }[] = [];
   for (const disc of env.discoveries) {
     for (const m of disc.models) {
-      if (m.placements.length === 0) unclassified.push({ agent: disc.agent, model: m.modelId });
-      for (const cls of m.placements) {
-        if (cls.detail) scored.push({ agent: disc.agent, model: m.modelId, tier: cls.tier, detail: cls.detail });
-      }
+      if (m.profile.class === null) unclassified.push({ agent: disc.agent, model: m.modelId });
     }
   }
 
   return {
     now: env.now,
-    catalog: table.sources.catalog,
-    scores: table.sources.scores,
+    handouts: gathered.handouts,
+    handoutMinutes: config.handoutMinutes,
+    handoutPercent: config.handoutPercent,
+    evidence: table.sources.evidence,
     placements: placementsView(gathered, env.now),
     orcaAgents: env.orcaAgents ?? null,
     agents,
     banned: [...banned.values()],
     rejected: env.rejections ?? [],
     tiers,
-    scored,
     unclassified,
   };
 }
 
 type Status = ReturnType<typeof buildStatus>;
 
-function statusText(s: Status): string[] {
-  const { catalog, now } = s;
+function statusText(s: Status, sources: SnapshotSource[]): string[] {
+  const { evidence, now } = s;
+  const attribution = sources.length ? sources.map((s) => `${s.label}, ${s.license}, data of ${(s.dataDate ?? evidence.generatedAt).slice(0, 10)}`).join('; ')
+    : `LLMBenchmark.ai, CC BY 4.0, data of ${evidence.generatedAt.slice(0, 10)}`;
   const lines = [
-    `catalog: ${catalog.source}, ${catalog.models} models, fetched ${duration(now - catalog.fetchedAt)} ago`,
-    s.scores
-      ? `scores: ${s.scores.source}, ${s.scores.models} models (The Model Index, CC BY 4.0), fetched ${duration(now - s.scores.fetchedAt)} ago`
-      : 'scores: unavailable (only the family table assigns tiers)',
+    `evidence: ${evidence.source}, ${evidence.models} models (${attribution}), fetched ${duration(now - evidence.fetchedAt)} ago`,
     ...placementsLines(s.placements, now),
     orcaAgentsLine(s.orcaAgents ?? undefined),
     'agents:',
@@ -417,6 +468,7 @@ function statusText(s: Status): string[] {
       lines.push(`    ${p.name.replace(/^bucket:/, '')}: ${percent(p.usedPercent)} used, resets in ${duration(p.resetsAt - now)}, headroom ${headroomText(p.headroom)}${state}`);
     }
   }
+  if (s.handouts.length) lines.push(`hand-outs (last ${s.handoutMinutes}m): ${s.handouts.map((h) => `${h.agent} ${h.model} ${duration(now - h.at)} ago (${h.pools.map((p) => `${p.replace(/^bucket:/, '')} +${s.handoutPercent}%`).join(', ')})`).join('; ')}`);
   lines.push('tiers:');
   for (const tier of TIERS) {
     const t = s.tiers[tier];
@@ -436,19 +488,6 @@ function statusText(s: Status): string[] {
   }
   if (s.banned.length > 0) lines.push(`banned by you: ${s.banned.map((b) => `${b.agent} ${b.model}`).join(', ')}`);
   for (const r of s.rejected) lines.push(`skipped ${r.agent} ${r.model}, ${rejectedText(r, now)} (orcacompass rejected --clear forgets it)`);
-  if (s.scored.length > 0) {
-    lines.push(`placements explained (lineup, capability score): ${s.scored.length}`);
-    // OpenCode can place a hundred OpenRouter models by score: past 30, an agent shows 15.
-    const total = new Map<string, number>();
-    for (const x of s.scored) total.set(x.agent, (total.get(x.agent) ?? 0) + 1);
-    const shown = new Map<string, number>();
-    for (const x of s.scored) {
-      const n = (shown.get(x.agent) ?? 0) + 1;
-      shown.set(x.agent, n);
-      if (total.get(x.agent)! <= 30 || n <= 15) lines.push(`  ${x.agent} ${x.model}: tier ${x.tier} from ${x.detail}`);
-    }
-    for (const [agent, n] of total) if (n > 30) lines.push(`  ${agent}: … ${n - 15} more (status --json lists them)`);
-  }
   if (s.unclassified.length > 0) {
     lines.push(`unclassified (never routed): ${s.unclassified.length}`);
     const byAgent = new Map<string, string[]>();
@@ -464,9 +503,10 @@ function statusText(s: Status): string[] {
 
 async function statusCommand(args: string[], io: IO, deps: MainDeps): Promise<number> {
   const v = parse(args, { json: { type: 'boolean' } });
-  const config = loadConfig();
-  const s = buildStatus(await gather(config, deps), config);
-  io.out(v.json ? JSON.stringify(s, null, 2) : statusText(s).join('\n'));
+  const config = readConfig(io);
+  const gathered = await gather(config, deps);
+  const s = buildStatus(gathered, config);
+  io.out(v.json ? JSON.stringify(s, null, 2) : statusText(s, snapshotSources(gathered.table, deps)).join('\n'));
   return 0;
 }
 
@@ -497,7 +537,7 @@ async function agentsCommand(args: string[], io: IO, deps: MainDeps): Promise<nu
   const bad = rawIds.find((_, i) => !AGENT_IDS.includes(ids[i]));
   if (bad !== undefined) throw new UsageError(`unknown agent "${bad}" (known: ${AGENT_IDS.join(', ')})`);
 
-  const next = applyAgentChoice(loadConfig(), action as AgentAction, ids);
+  const next = applyAgentChoice(readConfig(io), action as AgentAction, ids);
   writeAgentChoice(next);
   const chosen = AGENT_IDS.filter((a) => isChosen(a, next));
   const notChosen = AGENT_IDS.filter((a) => !isChosen(a, next));
@@ -510,7 +550,7 @@ async function agentsCommand(args: string[], io: IO, deps: MainDeps): Promise<nu
 }
 
 async function listAgents(json: boolean, io: IO, deps: MainDeps): Promise<number> {
-  const config = loadConfig();
+  const config = readConfig(io);
   const env = await gatherEnvironment(config, deps);
   const agents = env.discoveries.map((d) => {
     const usage = env.usage[d.agent];
@@ -585,27 +625,27 @@ async function preferCommand(args: string[], io: IO, deps: MainDeps): Promise<nu
     if (positionals.length > 0 || values.all) throw new UsageError('use "prefer --risk-limit <percent>" on its own');
     const limit = parsePercent(rawLimit);
     if (limit === undefined) throw new UsageError(`--risk-limit must be a non-negative percent (got "${rawLimit}")`);
-    loadConfig();
+    readConfig(io);
     updateConfigFile((raw) => setPreferRiskLimit(raw, limit));
     if (!json) io.out(`wrote ${configPath()}`);
-    show(loadConfig());
+    show(readConfig(io));
     return 0;
   }
   if (positionals.length === 0) {
     if (values.all) throw new UsageError('--all only goes with "prefer clear"');
-    show(loadConfig());
+    show(readConfig(io));
     return 0;
   }
   if (positionals[0] === 'clear') {
     const rest = positionals.slice(1);
     if (values.all ? rest.length > 0 : rest.length !== 1) throw new UsageError('use "prefer clear <tier>" or "prefer clear --all"');
     const tier = values.all ? undefined : tierOf(rest[0]);
-    loadConfig();
+    readConfig(io);
     updateConfigFile((raw) => {
       for (const t of tier ? [tier] : TIERS) setPin(raw, t, undefined);
     });
     if (!json) io.out(`wrote ${configPath()}`);
-    show(loadConfig());
+    show(readConfig(io));
     return 0;
   }
 
@@ -615,7 +655,7 @@ async function preferCommand(args: string[], io: IO, deps: MainDeps): Promise<nu
   const agent = agentId(positionals[1]);
   const model = positionals[2];
 
-  const config = loadConfig();
+  const config = readConfig(io);
   const env = await gatherEnvironment(config, deps);
   const disc = env.discoveries.find((d) => d.agent === agent);
   if (!disc?.installed || disc.models.length === 0) {
@@ -627,7 +667,7 @@ async function preferCommand(args: string[], io: IO, deps: MainDeps): Promise<nu
   }
   const pin: Preference = { agent, ...(model ? { model } : {}) };
   updateConfigFile((raw) => setPin(raw, tier, pin));
-  if (json) show(loadConfig());
+  if (json) show(readConfig(io));
   else io.out([`wrote ${configPath()}`, `${tier} → ${prefLabel(pin)}`].join('\n'));
   return 0;
 }
@@ -636,7 +676,7 @@ async function preferCommand(args: string[], io: IO, deps: MainDeps): Promise<nu
 
 async function banCommand(args: string[], io: IO, deps: MainDeps): Promise<number> {
   const { values, positionals } = parsePositionals(args, { json: { type: 'boolean' } });
-  const config = loadConfig();
+  const config = readConfig(io);
   const env = await gatherEnvironment(config, deps);
   const entries = [...new Set(positionals.map((e) => e.trim().toLowerCase()))];
   const next = [...config.banModels];
@@ -662,7 +702,7 @@ async function unbanCommand(args: string[], io: IO, deps: MainDeps): Promise<num
   const { values, positionals } = parsePositionals(args, { json: { type: 'boolean' } });
   if (positionals.length === 0) throw new UsageError('use "unban <model-or-family>..."');
   const entries = positionals.map((e) => e.trim().toLowerCase());
-  const config = loadConfig();
+  const config = readConfig(io);
   for (const entry of entries) if (!config.banModels.includes(entry)) io.err(`warning: "${entry}" was not banned`);
   const next = config.banModels.filter((b) => !entries.includes(b));
   writeBans(next);
@@ -698,24 +738,19 @@ function showBans(banModels: string[], env: Environment, json: boolean, wrote: b
 
 async function refreshCommand(args: string[], io: IO, deps: MainDeps): Promise<number> {
   const v = parse(args, { json: { type: 'boolean' } });
-  const config = loadConfig();
+  const config = readConfig(io);
   const { table, saveError } = await loadPlacements(config, { ...deps, refresh: true });
-  const { catalog: c, scores: r } = table.sources;
+  const c = table.sources.evidence;
   const at = (t: number) => new Date(t).toISOString();
-  if (c.source !== 'network') io.err(`could not reach models.dev; still using the ${c.source} from ${at(c.fetchedAt)}`);
-  if (r?.source !== 'network') {
-    io.err(`could not load model scores from the OrcaCompass repository; ${r ? `still using the ${r.source} from ${at(r.fetchedAt)}` : 'no scores available'}`);
-  }
+  if (c.source !== 'network') io.err(`could not reach the OrcaCompass repository; still using the ${c.source} from ${at(c.fetchedAt)}`);
   if (saveError !== undefined) io.err(`placements: could not be saved: ${saveError}`);
   const models = table.agents.reduce((n, a) => n + a.models.length, 0);
   const placements = { builtAt: table.builtAt, models, agents: table.agents.length };
   if (v.json) {
-    io.out(JSON.stringify({ source: c.source, fetchedAt: c.fetchedAt, models: c.models, scores: r, placements }, null, 2));
+    io.out(JSON.stringify({ evidence: c, placements }, null, 2));
   } else {
-    const scoreLine = r ? `${r.source}, ${r.models} rated models (fetched ${at(r.fetchedAt)})` : 'unavailable';
     io.out([
-      `models.dev: ${c.source}, ${c.models} models (fetched ${at(c.fetchedAt)})`,
-      `model index: ${scoreLine}`,
+      `evidence: ${c.source}, ${c.models} models (snapshot of ${c.generatedAt})`,
       `placements: ${models} models across ${table.agents.length} agents (built now)`,
     ].join('\n'));
   }
@@ -733,6 +768,7 @@ const REBUILT_WORDS: Record<Staleness | 'refresh', string> = {
   config: 'config changed',
   'agent-appeared': 'new agent on PATH',
   refresh: 'refresh asked',
+  evidence: 'evidence changed',
 };
 
 function placementsView(g: Pick<Gathered, 'table' | 'rebuilt' | 'saveError'>, now: number) {
@@ -743,7 +779,6 @@ function placementsView(g: Pick<Gathered, 'table' | 'rebuilt' | 'saveError'>, no
     version: table.version,
     rebuilt: g.rebuilt ?? null,
     saveError: g.saveError ?? null,
-    scoreScale: table.sources.scoreScale,
   };
 }
 
@@ -754,37 +789,95 @@ function placementsLines(p: ReturnType<typeof placementsView>, now: number): str
   return lines;
 }
 
-function tiersText(table: PlacementTable, view: ReturnType<typeof placementsView>, now: number): string[] {
-  const { catalog, scores } = table.sources;
-  const lines = [
-    ...placementsLines(view, now),
-    `catalog: ${catalog.source}, ${catalog.models} models; scores: ${scores ? `${scores.source}, ${scores.models} models` : 'unavailable'}`,
-  ];
-  const rows = table.agents.flatMap((a) => a.models.flatMap((m) => m.placements.map((c) => ({ agent: a.agent, model: m.modelId, tier: c.tier, detail: c.detail ?? c.source }))));
-  rows.sort((x, y) => (x.agent < y.agent ? -1 : x.agent > y.agent ? 1 : x.model < y.model ? -1 : x.model > y.model ? 1 : 0));
-  for (const tier of TIERS) {
-    lines.push(`${tier}:`);
-    for (const r of rows.filter((x) => x.tier === tier)) lines.push(`  ${r.agent} ${r.model}  ${r.detail}`);
+function axisOption(raw: string | undefined): Axis | undefined {
+  if (raw !== undefined && !AXES.includes(raw as Axis)) throw new UsageError(`unknown axis "${raw}" (expected ${AXES.join(', ')})`);
+  return raw as Axis | undefined;
+}
+
+function axisText(axis: Axis, p: AxisProfile): string {
+  return p.score === null || p.band === null ? `${axis} unranked (no evidence or estimate)` : `${axis} ${p.score.toFixed(1)} ${p.band[0].toUpperCase()} ${p.label}(${p.benchmarks})`;
+}
+
+/** Match provenance to the placement generation without another network request. */
+function snapshotSources(table: PlacementTable, deps: MainDeps): SnapshotSource[] {
+  const read = deps.readFile ?? readTextFile;
+  const cached = parseSnapshot(read(join(deps.cacheDir ?? cacheDir(), 'evidence-snapshot.json')));
+  if (cached?.generatedAt === table.sources.evidence.generatedAt) return cached.sources;
+  const bundled = parseSnapshot(readFileSync(deps.bundled ?? BUNDLED_URL, 'utf8'));
+  return bundled?.generatedAt === table.sources.evidence.generatedAt ? bundled.sources : [];
+}
+
+function rankingModels(table: PlacementTable, axis?: Axis) {
+  const models = new Map<string, { id: string; class: Profile['class']; cost: Profile['cost']; hint: Profile['hint']; axes: Profile['axes']; agents: AgentId[]; family?: string }>();
+  for (const agent of table.agents) for (const m of agent.models) {
+    const existing = models.get(m.modelId);
+    if (existing) {
+      if (!existing.agents.includes(agent.agent)) existing.agents.push(agent.agent);
+    } else models.set(m.modelId, { id: m.modelId, ...m.profile, agents: [agent.agent], family: modelFamily(m.modelId, m.meta) });
   }
-  const unclassified = table.agents.flatMap((a) => a.models.filter((m) => m.placements.length === 0).map((m) => ({ agent: a.agent, model: m.modelId })));
-  lines.push(`unclassified: ${unclassified.length}`);
-  const byAgent = new Map<string, string[]>();
-  for (const u of unclassified) byAgent.set(u.agent, [...(byAgent.get(u.agent) ?? []), u.model]);
-  // OpenCode can list hundreds of OpenRouter models; tiers --json has them all.
-  for (const [agent, models] of byAgent) {
-    const more = models.length > 15 ? `, … ${models.length - 15} more` : '';
-    lines.push(`  ${agent}: ${models.slice(0, 15).join(', ')}${more}`);
+  const score = (m: { axes: Profile['axes'] }) => axis ? m.axes[axis].score ?? -Infinity : AXES.reduce((n, a) => n + (m.axes[a].score ?? 0), 0);
+  return [...models.values()].sort((a, b) =>
+    (axis ? 0 : TIERS.indexOf(b.cost?.tier as Tier) - TIERS.indexOf(a.cost?.tier as Tier) || TIERS.indexOf(b.class!) - TIERS.indexOf(a.class!)) || score(b) - score(a) || a.id.localeCompare(b.id));
+}
+
+async function rankingCommand(args: string[], io: IO, deps: MainDeps): Promise<number> {
+  const v = parse(args, { axis: { type: 'string' }, json: { type: 'boolean' } });
+  const axis = axisOption(v.axis);
+  const config = readConfig(io);
+  const { table } = await loadPlacements(config, deps);
+  const models = rankingModels(table, axis);
+  if (v.json) {
+    io.out(JSON.stringify({ generatedAt: table.sources.evidence.generatedAt, sources: snapshotSources(table, deps), bands: table.bands,
+      models: models.map(({ family, ...model }) => model) }, null, 2));
+  } else {
+    const axes = axis ? [axis] : AXES;
+    io.out(models.map((m) => `${m.id}  ${costText(m.cost)}  evidence ${m.class ?? 'unranked'}  ${axes.map((a) => axisText(a, m.axes[a])).join('  ')}  agents: ${m.agents.join(', ')}${m.hint && m.cost?.source === m.hint.source ? `  hint: ${m.hint.source}${m.family ? ` ${m.family}` : ''} (${m.hint.tier})${m.hint.detail ? ` ${m.hint.detail}` : ''}` : ''}`).join('\n'));
+  }
+  return 0;
+}
+
+function costText(cost: Profile['cost']): string {
+  return cost ? `${cost.tier} ${cost.blended === null ? 'no price' : `$${cost.blended.toFixed(2)}/M`} ${cost.source}` : 'unranked no price';
+}
+
+function tiersText(table: PlacementTable, view: ReturnType<typeof placementsView>, now: number, axis?: Axis): string[] {
+  const lines = placementsLines(view, now);
+  const rows = table.agents.flatMap((a) => a.models.map((m) => ({ agent: a.agent, model: m.modelId, profile: m.profile })));
+  rows.sort((a, b) => a.agent.localeCompare(b.agent) || a.model.localeCompare(b.model));
+  if (!axis) {
+    const [daily, advanced, frontier] = table.builtWith.costBands;
+    lines.push(`cost: light < $${daily} ≤ daily < $${advanced} ≤ advanced < $${frontier} ≤ frontier (per million tokens, 3:1 blended)`);
+    for (const tier of TIERS) {
+      lines.push(`${tier}:`);
+      for (const r of rows.filter((r) => r.profile.cost?.tier === tier)) lines.push(`  ${r.agent} ${r.model}  ${costText(r.profile.cost)}  evidence ${r.profile.class ?? 'unranked'}  ${AXES.map((a) => axisText(a, r.profile.axes[a])).join('  ')}`);
+    }
+    const unranked = rows.filter((r) => r.profile.cost === null);
+    lines.push(`unclassified: ${unranked.length}`);
+    for (const r of unranked) lines.push(`  ${r.agent} ${r.model}  unranked (no cost tier)`);
+    return lines;
+  }
+  for (const a of [axis]) {
+    const [daily, advanced, frontier] = table.bands[a];
+    lines.push(`${a}: light < ${daily} ≤ daily < ${advanced} ≤ advanced < ${frontier} ≤ frontier`);
+    for (const tier of TIERS) {
+      lines.push(`${tier}:`);
+      for (const r of rows.filter((r) => r.profile.axes[a].band === tier)) lines.push(`  ${r.agent} ${r.model}  ${axisText(a, r.profile.axes[a])}`);
+    }
+    const unranked = rows.filter((r) => r.profile.axes[a].band === null);
+    lines.push(`unclassified: ${unranked.length}`);
+    for (const r of unranked) lines.push(`  ${r.agent} ${r.model}  ${a} unranked`);
   }
   return lines;
 }
 
 async function tiersCommand(args: string[], io: IO, deps: MainDeps): Promise<number> {
-  const v = parse(args, { json: { type: 'boolean' } });
-  const config = loadConfig();
+  const v = parse(args, { axis: { type: 'string' }, json: { type: 'boolean' } });
+  const axis = axisOption(v.axis);
+  const config = readConfig(io);
   const now = deps.now ?? Date.now();
   const loaded = await loadPlacements(config, { ...deps, now });
   const view = placementsView(loaded, now);
-  io.out(v.json ? JSON.stringify({ ...loaded.table, age: view.age }, null, 2) : tiersText(loaded.table, view, now).join('\n'));
+  io.out(v.json ? JSON.stringify({ ...loaded.table, age: view.age }, null, 2) : tiersText(loaded.table, view, now, axis).join('\n'));
   return 0;
 }
 
@@ -825,7 +918,7 @@ async function setupCommand(args: string[], io: IO, deps: MainDeps): Promise<num
     return 1;
   }
   if (v.complete && !existsSync(configPath())) updateConfigFile(() => {});
-  const config = loadConfig();
+  const config = readConfig(io);
   const env = await gatherEnvironment(config, deps);
   if (v.json) {
     io.out(JSON.stringify(setupInfo(env, config), null, 2));
@@ -841,7 +934,7 @@ async function setupCommand(args: string[], io: IO, deps: MainDeps): Promise<num
 /** The user declined setup: create an empty config file, if there is none, so setup is not offered again. */
 async function skipSetup(json: boolean | undefined, io: IO, deps: MainDeps): Promise<number> {
   if (!existsSync(configPath())) updateConfigFile(() => {});
-  const config = loadConfig();
+  const config = readConfig(io);
   const env = await gatherEnvironment(config, deps);
   const used = env.discoveries.filter((d) => !agentSkipReason(d, env, config)).map((d) => d.agent);
   const orca = env.orcaAgents?.known ? 'they follow the agents enabled in Orca' : "Orca's agent switches could not be read";

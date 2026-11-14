@@ -40,8 +40,10 @@ describe('DEFAULT_CONFIG', () => {
       thresholds: { longPercent: 95, sessionPercent: 90 },
       defaultEffort: { light: 'low', daily: 'medium', advanced: 'medium', frontier: 'high' },
       effortPolicy: 'balanced',
-      scoreWeight: 0.4,
-      modelsDevTtlHours: 24,
+      costBands: [1, 5, 12],
+      handoutMinutes: 10,
+      handoutPercent: 5,
+      evidenceTtlHours: 24,
       placementsTtlHours: 5,
       usageStaleMinutes: 30,
       rejectionTtlHours: 168,
@@ -85,8 +87,10 @@ describe('loadConfig', () => {
       pins: { frontier: { agent: 'claude', model: 'claude-fable-5-1' } },
       tierOverrides: { 'grok-4.7': 'advanced' },
       defaultEffort: { light: 'minimal' },
-      scoreWeight: 0.6,
-      modelsDevTtlHours: 12,
+      costBands: [0.5, 4, 10],
+      handoutMinutes: 0,
+      handoutPercent: 12.5,
+      evidenceTtlHours: 1,
       usageStaleMinutes: 15,
       excludeNoZdr: true,
       cursorAuto: false,
@@ -96,14 +100,38 @@ describe('loadConfig', () => {
     expect(cfg.pins.frontier).toEqual({ agent: 'claude', model: 'claude-fable-5-1' });
     expect(cfg.tierOverrides).toEqual({ 'grok-4.7': 'advanced' });
     expect(cfg.defaultEffort).toEqual({ ...DEFAULT_CONFIG.defaultEffort, light: 'minimal' });
-    expect(cfg).toMatchObject({ scoreWeight: 0.6, modelsDevTtlHours: 12, usageStaleMinutes: 15, excludeNoZdr: true, cursorAuto: false });
+    expect(cfg).toMatchObject({ costBands: [0.5, 4, 10], handoutMinutes: 0, handoutPercent: 12.5, evidenceTtlHours: 1, usageStaleMinutes: 15, excludeNoZdr: true, cursorAuto: false });
   });
 
   it('ignores the retired priceThresholds key', () => {
-    write('{"priceThresholds":{"light":"cheap"},"scoreWeight":0}');
+    write('{"priceThresholds":{"light":"cheap"},"classWeight":0}');
     const cfg = loadConfig();
-    expect(cfg).toEqual({ ...DEFAULT_CONFIG, scoreWeight: 0 });
+    expect(cfg).toEqual(DEFAULT_CONFIG);
     expect(cfg).not.toHaveProperty('priceThresholds');
+  });
+
+  it('ignores removed keys and warns once per key', () => {
+    write('{"scoreWeight":0.4,"modelsDevTtlHours":12}');
+    const warnings: string[] = [];
+    expect(loadConfig(configPath(), (message) => warnings.push(message))).toEqual(DEFAULT_CONFIG);
+    expect(warnings).toEqual([
+      'scoreWeight is no longer used (OrcaCompass 0.2.2 ranks models by benchmark evidence; see costBands)',
+      'modelsDevTtlHours is no longer used (the evidence snapshot is the catalog; see evidenceTtlHours)',
+    ]);
+  });
+
+  it.each([['costBands', [5, 1, 12]], ['costBands', [1, 5]], ['costBands', ['1', 5, 12]], ['costBands', [-1, 5, 12]], ['costBands', [1, 1, 12]], ['costBands', [1, 5, 1e309]], ['costBands', null], ['handoutMinutes', -1]])('reports invalid %s', (key, value) => {
+    write(JSON.stringify({ [key]: value }));
+    expect(configErrorOf(() => loadConfig()).message).toContain(key);
+  });
+
+  it('warns that classWeight is no longer used and ignores its value', () => {
+    for (const value of [0.3, 7, null, 'old']) {
+      write(JSON.stringify({ classWeight: value }));
+      const warnings: string[] = [];
+      expect(loadConfig(configPath(), (w) => warnings.push(w))).toEqual(DEFAULT_CONFIG);
+      expect(warnings).toEqual(['classWeight is no longer used (OrcaCompass 0.2.2 scores models by evidence alone; cost tiers come from price, see costBands)']);
+    }
   });
 
   it('reads an explicit path', () => {
@@ -153,11 +181,7 @@ describe('loadConfig', () => {
       '{"allowAgents":[1]}',
       '{"thresholds":{"longPercent":"95"}}',
       '{"thresholds":5}',
-      '{"scoreWeight":"0.4"}',
-      '{"scoreWeight":1.5}',
-      '{"scoreWeight":-0.1}',
-      '{"scoreWeight":null}',
-      '{"modelsDevTtlHours":"24"}',
+      '{"handoutMinutes":-1}',
       '{"placementsTtlHours":-1}',
       '{"placementsTtlHours":"5"}',
       '{"usageStaleMinutes":-1}',
@@ -235,7 +259,7 @@ describe('writeAgentChoice', () => {
       '    ]',
       '}',
     ].join('\r\n'));
-    expect(loadConfig()).toMatchObject({ allowAgents: ['claude'], denyAgents: ['codex', 'grok'], scoreWeight: 0.5 });
+    expect(loadConfig()).toMatchObject({ allowAgents: ['claude'], denyAgents: ['codex', 'grok'], costBands: [1, 5, 12] });
   });
 
   it('removes allowAgents and denyAgents on reset', () => {
@@ -248,9 +272,9 @@ describe('writeAgentChoice', () => {
     write('{bad');
     expect(configErrorOf(() => writeAgentChoice({ denyAgents: ['grok'] })).message).toMatch(/invalid JSON/);
     expect(read()).toBe('{bad');
-    write('{"scoreWeight": 7}');
-    expect(configErrorOf(() => writeAgentChoice({ denyAgents: ['grok'] })).message).toMatch(/scoreWeight/);
-    expect(read()).toBe('{"scoreWeight": 7}');
+    write('{"costBands": [5, 1, 12]}');
+    expect(configErrorOf(() => writeAgentChoice({ denyAgents: ['grok'] })).message).toMatch(/costBands/);
+    expect(read()).toBe('{"costBands": [5, 1, 12]}');
   });
 });
 

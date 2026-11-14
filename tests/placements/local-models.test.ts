@@ -4,9 +4,9 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { DEFAULT_CONFIG } from '../../src/config.js';
 import { discoverCodex } from '../../src/placements/agents/codex.js';
-import { classifyLaunch } from '../../src/placements/tiers.js';
-import { MODEL_INDEX_URL, toRatings } from '../../src/placements/sources/modelindex.js';
-import { MODELS_DEV_URL } from '../../src/placements/sources/modelsdev.js';
+import { hintFor } from '../../src/placements/profiles.js';
+import { createHash } from 'node:crypto';
+import { EVIDENCE_MANIFEST_URL, EVIDENCE_SNAPSHOT_URL } from '../../src/evidence/source.js';
 import { gather } from '../../src/routing/environment.js';
 import { route } from '../../src/routing/router.js';
 import type { LaunchModel } from '../../src/types.js';
@@ -38,10 +38,9 @@ it('discovers a new local Fable after five hours while reusing 24-hour metadata 
       : fakeDeps.readFile!(path),
     fetchImpl: async (input: string | URL | Request) => {
       requests++;
-      if (String(input) === MODELS_DEV_URL) return new Response(JSON.stringify({ anthropic: { models: {
-        'claude-fable-5-1': { id: 'claude-fable-5-1', name: 'Claude Fable 5.1', family: 'claude-fable', release_date: '2026-09-01' },
-      } } }));
-      if (String(input) === MODEL_INDEX_URL) return new Response(JSON.stringify({ fetchedAt: NOW, ratings: toRatings(JSON.parse(fixture('modelindex-mini.json'))) }));
+      const snapshot = fixture('evidence-mini.json');
+      if (String(input) === EVIDENCE_MANIFEST_URL) return Response.json({ schemaVersion: 1, generatedAt: JSON.parse(snapshot).generatedAt, bytes: Buffer.byteLength(snapshot), sha256: createHash('sha256').update(snapshot).digest('hex') });
+      if (String(input) === EVIDENCE_SNAPSHOT_URL) return new Response(snapshot);
       throw new Error('Unexpected source');
     },
   };
@@ -57,7 +56,7 @@ it('discovers a new local Fable after five hours while reusing 24-hour metadata 
   const added = updated.env.discoveries.find((a) => a.agent === 'claude')!.models.find((m) => m.modelId === 'claude-fable-5-5')!;
   expect(added.meta).toBeUndefined();
   expect(added.poolNames).toEqual(['session', 'weekly', 'fableWeekly']);
-  expect(added.placements).toEqual([{ tier: 'frontier', source: 'family' }]);
+  expect(added.profile.hint).toEqual({ tier: 'frontier', source: 'family' });
   const decision = route({ tier: 'frontier', agents: ['claude'] }, updated.env, DEFAULT_CONFIG);
   expect(decision.route?.model).toBe('claude-fable-5-5');
   expect(decision.alternatives.map((a) => a.model)).not.toContain('claude-fable-5-1');
@@ -77,15 +76,15 @@ it.each([
 it('applies family bans and overrides to newly discovered versions without metadata', () => {
   const model = launch('claude-fable-5-5', 'Frontier intelligence for the most demanding work.');
   const config = { ...DEFAULT_CONFIG, tierOverrides: { 'claude-fable': 'daily' as const } };
-  expect(classifyLaunch(model, config)).toEqual([{ tier: 'daily', source: 'override' }]);
-  expect(classifyLaunch(model, { ...config, tierOverrides: { ...config.tierOverrides, 'claude-fable-5-5': 'light' } })).toEqual([{ tier: 'light', source: 'override' }]);
+  expect(hintFor(model.modelId, model.meta, model.lineup, config)).toEqual({ tier: 'daily', source: 'override' });
+  expect(hintFor(model.modelId, model.meta, model.lineup, { ...config, tierOverrides: { ...config.tierOverrides, 'claude-fable-5-5': 'light' } })).toEqual({ tier: 'light', source: 'override' });
   const env = placed({ ...machineEnv(), discoveries: [{ agent: 'claude', installed: true, models: [model] }] });
   const blocked = route({ tier: 'frontier', agents: ['claude'] }, env, { ...DEFAULT_CONFIG, banModels: ['claude-fable'] });
   expect(blocked.status).toBe('none');
   expect(blocked.skipped).toContainEqual({ agent: 'claude', model: 'claude-fable-5-5', reason: 'banned by you' });
 });
 
-it.each(['provider', 'orca'])('routes an arbitrarily named new Codex model using its %s description', async (source) => {
+it.each(['provider', 'orca'])('keeps an arbitrary model unranked when its %s description has no vendor evidence', async (source) => {
   const id = 'aurora-workbench';
   const readFile = (path: string) => {
     if (source === 'provider' && path.endsWith('models_cache.json')) return JSON.stringify({ models: [{ slug: id, visibility: 'list', supported_reasoning_levels: [{ effort: 'high' }], description: 'For your toughest challenges' }] });
@@ -96,12 +95,15 @@ it.each(['provider', 'orca'])('routes an arbitrarily named new Codex model using
   expect(discovery.models[0]).toMatchObject({ modelId: id, lineup: 'For your toughest challenges' });
   expect(discovery.models[0].meta).toBeUndefined();
   const env = placed({ ...machineEnv(), discoveries: [discovery] });
-  expect(route({ tier: 'frontier', agents: ['codex'] }, env, DEFAULT_CONFIG).route?.model).toBe(id);
+  const decision = route({ tier: 'frontier', agents: ['codex'] }, env, DEFAULT_CONFIG);
+  expect(decision.status).toBe('none');
+  expect(decision.skipped).toContainEqual({ agent: 'codex', model: id, reason: 'unranked: no evidence or estimate' });
+  expect(env.discoveries[0].models[0].profile.hint).toMatchObject({ tier: 'frontier', source: 'lineup' });
 });
 
 it('does not infer capability or a known family from arbitrary names', () => {
   for (const id of ['claude-mystery-9', 'claude-fable-preview', 'gpt-unfamiliar-99', 'aurora-workbench', 'claude-fable-999999999999999999']) {
-    expect(classifyLaunch(launch(id), DEFAULT_CONFIG)).toEqual([]);
+    expect(hintFor(id, undefined, undefined, DEFAULT_CONFIG)).toBeUndefined();
   }
 });
 
@@ -121,6 +123,7 @@ it('keeps an unclassified family name alias in its own identity group', () => {
   const alias = { ...launch('claude-fable', 'For your toughest challenges'), meta: { id: 'claude-fable', name: 'Alias', provider: 'anthropic', releaseDate: '2026-10-01' } };
   const env = placed({ ...machineEnv(), discoveries: [{ agent: 'claude', installed: true, models: [older, newer, alias] }] });
   const decision = route({ tier: 'frontier', agents: ['claude'] }, env, DEFAULT_CONFIG);
-  expect(decision.route?.model).toBe('claude-fable-5-5');
-  expect(decision.alternatives.map((a) => a.model)).toEqual(['claude-fable']);
+  // Without the removed ladder-vendor tie-break, the alias's explicit date wins this usage tie.
+  expect(decision.route?.model).toBe('claude-fable');
+  expect(decision.alternatives.map((a) => a.model)).toEqual(['claude-fable-5-5']);
 });

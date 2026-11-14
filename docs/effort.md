@@ -31,7 +31,7 @@ downgrade or upgrade keeps it: effort follows the work, not the model. A
 weaker model doing the job is not given more effort to compensate; the warning
 asks you to split the job or add checks instead.
 
-## Reasoning demand
+## Effort demand
 
 The orchestrator rates how much the job needs to think, from the work itself:
 
@@ -71,8 +71,7 @@ from (`supportSource`), most trusted first:
 | --- | --- | --- |
 | `provider` | The agent CLI's own model list or cache | Claude Code (its cached account catalog), Codex (`models_cache.json`), Cursor (effort variants in `cursor-agent models`), Grok (`models_cache.json`), Antigravity Gemini variants (effort in the id) |
 | `orca` | Orca's effort menu or catalog for that agent | Claude Code and Codex (when Orca's catalog is the source), Grok (from `grok models`, with Orca's ceilings), Antigravity non-Gemini models (`low`/`medium`/`high`), OpenCode (none) |
-| `catalog` | Models.dev `reasoning_options` | Claude Code and Codex when no local list is available |
-| `assumed` | A built-in guess | Claude Code and Codex on the Models.dev fallback when no efforts are listed: `low`, `medium`, `high`, `xhigh`, `max` |
+| `assumed` | A built-in guess | Claude Code and Codex on the evidence catalog fallback when no efforts are listed: `low`, `medium`, `high`, `xhigh`, `max` |
 
 ### Snapping (automatic targets)
 
@@ -113,18 +112,17 @@ Use `--effort` only when the user asked for a specific level.
 | `provider-default` | `--model <id>` only; the agent uses its own default | OpenCode (Orca passes no effort), Cursor Auto, any model with no settable effort |
 
 When `applied` is `provider-default`, the reason reads `effort: not set, codex
-uses its own default (medium); high wanted from high reasoning demand (balanced
+uses its own default (medium); high wanted from high effort demand (balanced
 policy)`, and `providerDefault` carries the agent's default when the provider
 reports one. The orchestrator must not claim an effort was set in that case.
 
 ### Per-agent details
 
 - **Claude Code**: efforts from its cached account catalog, then Orca's
-  catalog, then Models.dev per model, else assumed
+  catalog, then assumed
   `low`…`max`. Passed as `--effort`.
 - **Codex**: `supported_reasoning_levels` and `default_reasoning_level` from
-  `~/.codex/models_cache.json`; then Orca's catalog, then Models.dev effort
-  options or assumed `low` to `max` when neither local catalog supplies models.
+  `~/.codex/models_cache.json`; then Orca's catalog, then assumed `low` to `max` when neither local catalog supplies models.
   Passed as `--effort`. Orca checks effort against its own catalog for models it
   knows (for example `gpt-5.5` up to `xhigh`); whether the two lists always agree
   has not been checked.
@@ -174,14 +172,14 @@ reports one. The orchestrator must not claim an effort was set in that case.
 ```sh
 # everyday feature, a few local choices
 orcacompass route --tier daily --demand moderate
-#   effort: medium from moderate reasoning demand (balanced policy), passed as --effort
+#   effort: medium from moderate effort demand (balanced policy), passed as --effort
 
 # bulk rename across many files: cheap model, little thinking
 orcacompass route --tier light --demand low
 
 # one subtle race in one file: ordinary model, deep thinking
 orcacompass route --tier daily --demand high
-#   effort: high from high reasoning demand (balanced policy), passed as --effort
+#   effort: high from high effort demand (balanced policy), passed as --effort
 
 # the user asked for max on a Frontier job
 orcacompass route --tier frontier --effort max
