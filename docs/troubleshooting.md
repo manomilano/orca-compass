@@ -109,7 +109,11 @@ pool's reset time has already passed. See
 - `none` with `no usable agent`: no agent passed the checks above. Run
   `orcacompass agents`.
 - `none` with `all <tier> candidates blocked`: every model of that tier is at
-  or above its usage limit, and no lower tier can take the job.
+  or above its usage limit, and neither a pricier nor a lower tier can take the job.
+- A pricier model than expected, with the warning `cheaper <tier> cost tier
+  passed over`: every route in the cheaper tier that covers the job is blocked
+  or expected to end above `usageRiskLimit` (90% by default). Raise the limit
+  in the config to stay in the cheaper tier longer.
 - `wait`: you passed `--no-downgrade` and the requested tier is blocked.
   `waitUntil` says when the first candidate resets.
 - `none` with `--effort`: no candidate can apply that exact effort; the

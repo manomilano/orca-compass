@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-12T18:30:45.747Z",
+  "generatedAt": "2026-11-15T09:48:53.916Z",
   "sources": [
     {
       "id": "llmbenchmark",
       "label": "LLMBenchmark.ai",
       "url": "https://llmbenchmark.ai",
       "license": "CC BY 4.0",
-      "fetchedAt": "2026-11-12T18:30:45.747Z",
+      "fetchedAt": "2026-11-15T09:48:53.916Z",
       "dataDate": "2026-11-11T07:31:25.970Z"
     }
   ],
@@ -160,17 +160,17 @@
   },
   "bands": {
     "coding": [
-      70,
+      60,
       78,
       82
     ],
     "agentic": [
-      60,
+      35,
       72,
       80
     ],
     "reasoning": [
-      76,
+      70,
       84,
       89
     ]
@@ -606,6 +606,6 @@
     {"id":"hf-zai-org-glm-5-1-fp8-0670781a","aliases":["hf:zai-org/GLM-5.1-FP8"],"provider":"zai-org","name":"GLM-5.1-FP8","family":"hf-zai-org-glm","results":[],"scores":{}},
     {"id":"hf-zai-org-glm-5-2-fp8-c6fed4d6","aliases":["hf:zai-org/GLM-5.2-FP8"],"provider":"zai-org","name":"GLM-5.2-FP8","family":"hf-zai-org-glm","results":[],"scores":{}},
     {"id":"hf-zai-org-glm-5-3-bf16-c586208b","aliases":["hf:zai-org/GLM-5.3-BF16"],"provider":"zai-org","name":"GLM-5.3-BF16","family":"hf-zai-org-glm","results":[],"scores":{}},
-    {"id":"composer-2-5","provider":"cursor","name":"Composer 2.5","aliases":[],"family":"composer","results":[{"benchmark":"terminal-bench-2-0","value":69.3,"unit":"percent","kind":"vendor","source":"cursor","url":"https://cursor.com/composer","observedAt":"2026-11-10"},{"benchmark":"swe-bench-multilingual","value":79.8,"unit":"percent","kind":"vendor","source":"cursor","url":"https://cursor.com/composer","observedAt":"2026-11-10"}],"scores":{"coding":{"score":67.1,"benchmarks":2,"kind":"estimated"},"reasoning":{"score":75,"benchmarks":2,"kind":"estimated"}},"pricing":{"inputPerM":0.5,"outputPerM":2.5,"basis":"maker"}}
+    {"id":"composer-2-5","provider":"cursor","name":"Composer 2.5","aliases":[],"family":"composer","results":[{"benchmark":"terminal-bench-2-0","value":69.3,"unit":"percent","kind":"vendor","source":"cursor","url":"https://cursor.com/composer","observedAt":"2026-11-10"},{"benchmark":"swe-bench-multilingual","value":79.8,"unit":"percent","kind":"vendor","source":"cursor","url":"https://cursor.com/composer","observedAt":"2026-11-10"}],"scores":{"coding":{"score":67.1,"benchmarks":2,"kind":"estimated"},"reasoning":{"score":75,"benchmarks":2,"kind":"estimated"},"agentic":{"score":35.4,"benchmarks":18,"kind":"estimated","from":"kimi-k2-5"}},"pricing":{"inputPerM":0.5,"outputPerM":2.5,"basis":"maker"},"fallback":"kimi-k2-5"}
   ]
 }

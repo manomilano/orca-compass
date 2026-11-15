@@ -2,9 +2,10 @@ export type Axis = 'coding' | 'agentic' | 'reasoning';
 export const AXES: readonly Axis[] = ['coding', 'agentic', 'reasoning'];
 export type EvidenceKind = 'measured' | 'vendor' | 'reported';
 export interface SnapshotResult { benchmark: string; value: number; unit: 'percent' | 'points' | 'elo'; setting?: string; kind: EvidenceKind; source: string; observedAt: string; url: string }
-export interface SnapshotScore { score: number; benchmarks: number; kind: 'measured' | 'estimated' }
+/** `from` names the model an `estimated` score was copied from (a curated `fallback`), when it has no evidence of its own. */
+export interface SnapshotScore { score: number; benchmarks: number; kind: 'measured' | 'estimated'; from?: string }
 export interface SnapshotPricing { inputPerM: number; outputPerM: number; basis?: string }
-export interface SnapshotModel { id: string; aliases: string[]; provider: string; name: string; family?: string; releasedAt?: string; results: SnapshotResult[]; scores: Partial<Record<Axis, SnapshotScore>>; pricing?: SnapshotPricing }
+export interface SnapshotModel { id: string; aliases: string[]; provider: string; name: string; family?: string; releasedAt?: string; results: SnapshotResult[]; scores: Partial<Record<Axis, SnapshotScore>>; pricing?: SnapshotPricing; fallback?: string }
 export interface SnapshotSource { id: string; label: string; url: string; license: string; fetchedAt: string; dataDate?: string }
 export interface EvidenceSnapshot { schemaVersion: 1; generatedAt: string; sources: SnapshotSource[]; benchmarks: Record<string, { name: string; range: [number, number]; unit: 'percent' | 'points' | 'elo'; source: string }>; axes: Record<Axis, { weights: Record<string, number> }>; bands: Record<Axis, [number, number, number]>; models: SnapshotModel[] }
 export const SNAPSHOT_SCHEMA = 1;

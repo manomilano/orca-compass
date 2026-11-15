@@ -5,8 +5,12 @@ import { TIERS } from '../types.js';
 import { AXIS_WEIGHTS, axisScore, BENCHMARKS, MIN_BENCHMARKS, rescale } from './scoring.js';
 import { AXES, SNAPSHOT_SCHEMA, type Axis, type EvidenceSnapshot, type SnapshotModel, type SnapshotPricing, type SnapshotResult } from './snapshot.js';
 
+/**
+ * The first cut is the `low` need: it sits under the good small models, so a simple job can go to
+ * one. The other two sit under the current daily workers (`mid`) and the top models (`high`).
+ */
 export const DEFAULT_BANDS: EvidenceSnapshot['bands'] = {
-  coding: [70, 78, 82], agentic: [60, 72, 80], reasoning: [76, 84, 89],
+  coding: [60, 78, 82], agentic: [35, 72, 80], reasoning: [70, 84, 89],
 };
 
 export const METRIC_MAP: Record<string, { benchmark: string; priority: number }> = {
@@ -165,7 +169,7 @@ export function buildSnapshot(dataset: unknown, opts: BuildSnapshotOptions): Evi
     sources: [{ id: 'llmbenchmark', label: 'LLMBenchmark.ai', url: 'https://llmbenchmark.ai', license: 'CC BY 4.0', fetchedAt: opts.sourceFetchedAt, dataDate: data.generatedAt }],
     benchmarks: structuredClone(BENCHMARKS),
     axes: { coding: { weights: { ...AXIS_WEIGHTS.coding } }, agentic: { weights: { ...AXIS_WEIGHTS.agentic } }, reasoning: { weights: { ...AXIS_WEIGHTS.reasoning } } },
-    bands: structuredClone(opts.bands), models: estimateScores(mergeCurated(models, opts.curated), BENCHMARKS),
+    bands: structuredClone(opts.bands), models: applyFallbacks(estimateScores(mergeCurated(models, opts.curated), BENCHMARKS)),
   };
 }
 
@@ -178,6 +182,7 @@ export function mergeCurated(models: SnapshotModel[], curated: unknown): Snapsho
     if (!object(raw) || !strings(raw, ['id', 'provider', 'name']) || !Array.isArray(raw.results) ||
       (raw.aliases !== undefined && (!Array.isArray(raw.aliases) || !raw.aliases.every((alias) => typeof alias === 'string'))) ||
       (raw.family !== undefined && typeof raw.family !== 'string') ||
+      (raw.fallback !== undefined && (typeof raw.fallback !== 'string' || raw.fallback === '' || raw.fallback === raw.id)) ||
       (raw.releasedAt !== undefined && typeof raw.releasedAt !== 'string')) throw new Error('curated: invalid model');
     const results: SnapshotResult[] = raw.results.map((row: unknown) => {
       if (!object(row) || !strings(row, ['benchmark', 'source', 'url', 'observedAt']) ||
@@ -197,6 +202,7 @@ export function mergeCurated(models: SnapshotModel[], curated: unknown): Snapsho
     if (existing) {
       existing.results.push(...results);
       if (pricing) existing.pricing = pricing;
+      if (raw.fallback !== undefined) existing.fallback = raw.fallback as string;
     }
     else {
       const model: SnapshotModel = {
@@ -205,6 +211,7 @@ export function mergeCurated(models: SnapshotModel[], curated: unknown): Snapsho
         ...(raw.family !== undefined ? { family: raw.family as string } : {}),
         ...(raw.releasedAt !== undefined ? { releasedAt: raw.releasedAt as string } : {}),
         results, scores: {}, ...(pricing ? { pricing } : {}),
+        ...(raw.fallback !== undefined ? { fallback: raw.fallback as string } : {}),
       };
       merged.push(model);
       byId.set(model.id, model);
@@ -256,6 +263,27 @@ export function estimateScores(models: SnapshotModel[], benchmarks: EvidenceSnap
   return estimated.map((model) => ({ ...model, results: model.results.filter((row) => row.kind === 'measured' || used.has(row)) }));
 }
 
+/**
+ * A curated `fallback` names the model whose score stands in on every axis the model has no
+ * measured or estimated score for (Composer 2.5 has no agentic benchmark; Kimi K2.5 stands in).
+ * The copy is marked `estimated` with `from`, so it never counts as the model's own evidence.
+ */
+export function applyFallbacks(models: SnapshotModel[]): SnapshotModel[] {
+  const byId = new Map(models.map((model) => [model.id, model]));
+  return models.map((model) => {
+    if (model.fallback === undefined) return model;
+    const source = byId.get(model.fallback);
+    // A fallback the dataset dropped leaves the axes unranked; calibrationWarnings reports it.
+    if (!source) return model;
+    const scores = { ...model.scores };
+    for (const axis of AXES) {
+      const score = source.scores[axis];
+      if (!scores[axis] && score) scores[axis] = { score: score.score, benchmarks: score.benchmarks, kind: 'estimated', from: source.id };
+    }
+    return { ...model, scores };
+  });
+}
+
 const snapshotProfile = (model: SnapshotModel, snapshot: EvidenceSnapshot): Profile =>
   buildProfile(model.id, model, undefined, snapshot, DEFAULT_CONFIG);
 
@@ -286,7 +314,7 @@ export function diffSnapshots(previous: EvidenceSnapshot | undefined, next: Evid
 export function calibrationChecks(snapshot: EvidenceSnapshot): string[] {
   const failures: string[] = [];
   const models = new Map(snapshot.models.map((model) => [model.id, model]));
-  for (const [id, want] of [ ['claude-haiku-5-5', 'light'], ['gpt-6-1-terra', 'daily'], ['claude-opus-5-5', 'frontier'], ['claude-fable-5-1', 'frontier'], ['gpt-6-astra', 'frontier'] ] as const) {
+  for (const [id, want] of [ ['gpt-6-luna', 'light'], ['claude-haiku-5-5', 'daily'], ['gpt-6-1-terra', 'daily'], ['claude-opus-5-5', 'frontier'], ['claude-fable-5-1', 'frontier'], ['gpt-6-astra', 'frontier'] ] as const) {
     const model = models.get(id);
     const actual = model?.scores.coding && snapshotProfile(model, snapshot).axes.coding;
     if (actual?.band !== want) failures.push(`${id} coding: expected ${want}, got ${actual?.band ?? 'missing model or score'}`);
@@ -295,7 +323,10 @@ export function calibrationChecks(snapshot: EvidenceSnapshot): string[] {
 }
 
 export function calibrationWarnings(snapshot: EvidenceSnapshot): string[] {
-  return crossAxisFindings(snapshot, false);
+  const ids = new Set(snapshot.models.map((model) => model.id));
+  const missing = snapshot.models.filter((model) => model.fallback !== undefined && !ids.has(model.fallback))
+    .map((model) => `${model.id}: fallback ${model.fallback} is not in the snapshot`);
+  return [...crossAxisFindings(snapshot, false), ...missing];
 }
 
 function crossAxisFindings(snapshot: EvidenceSnapshot, hinted: boolean): string[] {

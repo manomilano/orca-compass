@@ -21,6 +21,7 @@ export const DEFAULT_CONFIG: Config = {
   excludeNoZdr: false,
   cursorAuto: true,
   preferRiskLimit: 100,
+  usageRiskLimit: 90,
   banModels: [],
   lastResortAgents: ['opencode'],
 };
@@ -154,6 +155,7 @@ function merge(raw: unknown): Config {
     c.cursorAuto = r.cursorAuto;
   }
   if (r.preferRiskLimit !== undefined) c.preferRiskLimit = num(r.preferRiskLimit, 'preferRiskLimit');
+  if (r.usageRiskLimit !== undefined) c.usageRiskLimit = num(r.usageRiskLimit, 'usageRiskLimit');
   if (r.banModels !== undefined) c.banModels = strings(r.banModels, 'banModels');
   if (r.lastResortAgents !== undefined) c.lastResortAgents = strings(r.lastResortAgents, 'lastResortAgents');
   return c;

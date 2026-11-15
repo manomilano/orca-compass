@@ -22,7 +22,7 @@ describe('profiles', () => {
   it('keeps the bundled model classes aligned with the calibrated reasoning bands', () => {
     const bundled = parseSnapshot(readFileSync(new URL('../../data/evidence-snapshot.json', import.meta.url), 'utf8'))!;
     const expected = {
-      'claude-haiku-5-5': 'light', 'gpt-6-luna': 'light', 'gpt-6-1-terra': 'daily',
+      'claude-haiku-5-5': 'daily', 'gpt-6-luna': 'daily', 'gpt-6-1-terra': 'daily',
       'claude-sonnet-5-5': 'frontier', 'gpt-6-1-sol': 'advanced', 'claude-opus-5-5': 'frontier',
       'gpt-6-astra': 'frontier', 'claude-fable-5-1': 'frontier', 'claude-fable-5-2': 'frontier',
     };

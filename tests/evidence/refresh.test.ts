@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { buildSnapshot, calibrationChecks, calibrationWarnings, DEFAULT_BANDS, diffSnapshots, displayName, estimateScores, familyOfSlug, mergeCurated } from '../../src/evidence/refresh.js';
+import { applyFallbacks, buildSnapshot, calibrationChecks, calibrationWarnings, DEFAULT_BANDS, diffSnapshots, displayName, estimateScores, familyOfSlug, mergeCurated } from '../../src/evidence/refresh.js';
 import { BENCHMARKS } from '../../src/evidence/scoring.js';
 import { parseSnapshot, type SnapshotModel, type SnapshotResult } from '../../src/evidence/snapshot.js';
 
@@ -205,6 +205,27 @@ describe('vendor estimates', () => {
     expect(snapshot.models.find((m) => m.id === 'claude-opus-4-7')!.scores).toEqual(model('claude-opus-4-7').scores);
   });
 
+  it('fills only the missing axes from a curated fallback model and marks where they came from', () => {
+    const score = (value: number) => ({ score: value, benchmarks: 3, kind: 'measured' as const });
+    const base = { aliases: [], provider: 'test', name: 'Test', results: [] };
+    const models: SnapshotModel[] = [
+      { ...base, id: 'stand-in', scores: { coding: score(40), agentic: score(35), reasoning: score(50) } },
+      { ...base, id: 'sparse', fallback: 'stand-in', scores: { coding: { score: 67, benchmarks: 2, kind: 'estimated' } } },
+      { ...base, id: 'orphan', fallback: 'gone', scores: {} },
+    ];
+    const [standIn, sparse, orphan] = applyFallbacks(models);
+    expect(standIn).toBe(models[0]);
+    expect(sparse.scores).toEqual({
+      coding: { score: 67, benchmarks: 2, kind: 'estimated' },
+      agentic: { score: 35, benchmarks: 3, kind: 'estimated', from: 'stand-in' },
+      reasoning: { score: 50, benchmarks: 3, kind: 'estimated', from: 'stand-in' },
+    });
+    // A fallback the dataset no longer has leaves the axes unranked and is reported, not fatal.
+    expect(orphan.scores).toEqual({});
+    expect(calibrationWarnings({ ...built, models })).toContain('orphan: fallback gone is not in the snapshot');
+    expect(() => mergeCurated([], { models: [{ id: 'x', provider: 'p', name: 'X', fallback: 'x', results: [] }] })).toThrow('curated: invalid model');
+  });
+
   it('retains vendor rows only when a successful estimate uses them', () => {
     const stripped = structuredClone(dataset);
     stripped.scores = stripped.scores.filter((s: { modelId: string }) => s.modelId !== 'anthropic/claude-fable-5.2');
@@ -261,11 +282,11 @@ describe('calibration and diffs', () => {
     expect(calibrationChecks(built)).toEqual([]);
   });
   it('calibrates raw scores with the spec bands without comparing Fable to Sonnet', () => {
-    const snapshot = buildSnapshot(dataset, { ...opts, bands: { coding: [70, 78, 82], agentic: [60, 72, 80], reasoning: [76, 84, 89] } });
+    const snapshot = buildSnapshot(dataset, { ...opts, bands: { coding: [60, 78, 82], agentic: [35, 72, 80], reasoning: [70, 84, 89] } });
     expect(snapshot.models.find((m) => m.id === 'claude-sonnet-5-5')!.scores.coding!.score).toBeGreaterThan(snapshot.models.find((m) => m.id === 'claude-fable-5-1')!.scores.coding!.score);
     expect(calibrationChecks(snapshot)).toEqual([]);
   });
-  it.each(['claude-fable-5-1', 'gpt-6-astra', 'claude-opus-5-5', 'claude-haiku-5-5', 'gpt-6-1-terra'])('reports missing calibration model %s', (id) => {
+  it.each(['claude-fable-5-1', 'gpt-6-astra', 'claude-opus-5-5', 'claude-haiku-5-5', 'gpt-6-1-terra', 'gpt-6-luna'])('reports missing calibration model %s', (id) => {
     expect(calibrationChecks({ ...built, models: built.models.filter((m) => m.id !== id) }).join('\n')).toContain(id);
   });
   it('checks the expected coding bands and missing evidence', () => {
@@ -275,7 +296,7 @@ describe('calibration and diffs', () => {
     delete bad.models.find((m) => m.id === 'claude-opus-5-5')!.scores.coding;
     const failures = calibrationChecks(bad).join('\n');
     expect(failures).toMatch(/gpt-6-astra.*frontier/i);
-    expect(failures).toMatch(/claude-haiku-5-5.*light/i);
+    expect(failures).toMatch(/claude-haiku-5-5.*daily/i);
     expect(failures).toContain('claude-opus-5-5');
   });
   it.each([undefined, 'claude-sonnet'])('allows measured cross-axis gaps with family %s', (family) => {
@@ -295,7 +316,7 @@ describe('calibration and diffs', () => {
     { id: 'gpt-6-2-sol', family: undefined },
     { id: 'grok-4-7', family: 'grok' },
   ])('fails for a hinted sparse model with a cross-axis gap: $id/$family', ({ id, family }) => {
-    const extra: SnapshotModel = { id, family, aliases: [], provider: 'test', name: 'Extra', results: [], scores: { coding: { score: 90, benchmarks: 2, kind: 'measured' }, agentic: { score: 40, benchmarks: 3, kind: 'estimated' } } };
+    const extra: SnapshotModel = { id, family, aliases: [], provider: 'test', name: 'Extra', results: [], scores: { coding: { score: 90, benchmarks: 2, kind: 'measured' }, agentic: { score: 30, benchmarks: 3, kind: 'estimated' } } };
     const snapshot = { ...built, models: [...built.models, extra] };
     expect(calibrationChecks(snapshot)).toEqual([`${id}: coding frontier and agentic light differ by more than one band`]);
     expect(calibrationWarnings(snapshot)).toEqual([]);
@@ -310,7 +331,7 @@ describe('calibration and diffs', () => {
   it('diffs bands and scores using raw evidence scores', () => {
     const next = structuredClone(built);
     next.models.find((m) => m.id === 'claude-haiku-5-5')!.scores.coding!.score = 80;
-    expect(diffSnapshots(built, next).join('\n')).toMatch(/claude-haiku-5-5.*coding.*light.*advanced/i);
+    expect(diffSnapshots(built, next).join('\n')).toMatch(/claude-haiku-5-5.*coding.*daily.*advanced/i);
     expect(diffSnapshots(undefined, built)[0]).toMatch(/added/i);
     expect(diffSnapshots(built, built)).toEqual([]);
     next.models = next.models.filter((m) => m.id !== 'gpt-6-luna');

@@ -23,7 +23,7 @@ describe('adequacy', () => {
   it('ignores an unranked axis only for min', () => {
     const composer = profile('composer-2-5');
     expect(coverage(composer, { coding: 'low', agentic: 'min', reasoning: 'min' })).toMatchObject({ covers: true, shortfall: 0 });
-    expect(coverage(composer, { coding: 'low', agentic: 'low', reasoning: 'min' })).toMatchObject({ covers: false, shortfall: 2, below: [{ axis: 'agentic', score: null, cut: 60 }] });
+    expect(coverage(composer, { coding: 'low', agentic: 'low', reasoning: 'min' })).toMatchObject({ covers: false, shortfall: 2, below: [{ axis: 'agentic', score: null, cut: 35 }] });
   });
   it('uses the weakest evidence only among needed axes', () => {
     const p = profile('claude-fable-5-2');

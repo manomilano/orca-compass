@@ -148,8 +148,11 @@ route without `--effort`.
    has no model selection flag.
 
 3. Routing chooses the cheapest cost tier whose evidence covers the job, then
-   the most headroom. Price determines cost only; scores and need cuts use raw
-   evidence. Parse JSON and inspect `status`, `reasons`, `warnings`, `confidence`,
+   the most headroom. When every covering route in that tier is blocked or
+   expected to end its usage window above `usageRiskLimit` (90%), the cheapest
+   pricier tier with a route in good standing is used instead, and a warning
+   names the tier passed over; relay it. Price determines cost only; scores
+   and need cuts use raw evidence. Parse JSON and inspect `status`, `reasons`, `warnings`, `confidence`,
    `downgraded`, and `upgraded`. Exit code 0 alone does not mean a route exists.
 4. For `status: "ok"`, append the returned `launchArgs` array to:
 
@@ -187,6 +190,9 @@ route without `--effort`.
      `worker-start --task <taskId> --retry-of <dispatchId>`, the same
      placement and the new `launchArgs`. Tell the user which model was refused
      and what replaced it.
+   - `unknown` with `unsent: true`: the agent is idle and the task never
+     reached its terminal. Do not reroute; read the terminal, keep waiting,
+     and run `verify` again once it is working.
    - `stalled`: the agent ended its turn without `worker_done` and no known
      refusal; read `tail`. If it is an error about its model, account or
      limits, stop it and route again with `--exclude-agent <agent>`; if it
@@ -215,8 +221,12 @@ route without `--effort`.
   money per token or runs on this machine; tell the user before launching
   several workers on it.
 - `upgraded: true`: surface the warning. The covering pick's cost tier is
-  higher than the requested tier because no cheaper route covers the job;
-  routing never promotes to bypass blocked usage.
+  higher than the requested tier because no cheaper route covers the job.
+- A warning `cheaper <tier> cost tier passed over …`: every covering route in
+  the cheaper tier is blocked or expected to end above `usageRiskLimit`, so a
+  pricier tier was used. A warning `every unblocked route that covers the job
+  is expected to end above …`: no route is in good standing and the pick is
+  the cheapest with the most room. Relay either warning to the user.
 - `status: "wait"`: inspect `waitUntil` (epoch milliseconds); wait until reset
   or retry without `--no-downgrade` if user constraints permit a downgrade.
 - `status: "none"`: launch using Orca's normal default without `--model`

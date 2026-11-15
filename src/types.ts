@@ -273,6 +273,11 @@ export interface Config {
   pins: Partial<Record<Tier, Preference>>;
   /** Above this projected usage, replace the favorite only with a known within-limit alternative. */
   preferRiskLimit: number;
+  /**
+   * A route expected to end its usage window above this percent is strained: it is used only when
+   * no other route that covers the job is below the limit, in any cost tier.
+   */
+  usageRiskLimit: number;
   /** Model ids or families the user never wants routed. */
   banModels: string[];
   /**

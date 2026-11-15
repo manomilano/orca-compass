@@ -106,6 +106,7 @@ It answers:
 | `started` | Working for 8 s or more with no refusal | Wait for `worker_done` as usual |
 | `reported` | Already sent `worker_done` | Nothing |
 | `rejected` | The agent refused the model (`message` has its words). Saved; every route skips it for `rejectionTtlHours` | Run each `cleanup` argv in order (stop, release), route again with the same flags, start the replacement on the same Task with `--task <taskId> --retry-of <dispatchId>`. Tell the user |
+| `unknown` with `unsent: true` | The agent is idle and the task never reached its terminal | Do not reroute. Read the terminal, keep waiting, and run `verify` again once it is working |
 | `stalled` | The agent ended its turn without `worker_done` and no known refusal | Read `tail`. Model/account/limit error: stop it and route again with `--exclude-agent`. A question: answer it in its terminal |
 | `failed` | The worker ended on its own | Read `tail`, release it, replace it as for `rejected`, excluding that agent for this job |
 | `unknown` | No verdict within `--wait` | Report the timeout and continue normal Orca supervision without repeating startup verification |
@@ -118,7 +119,9 @@ worker `verify` called `started`. Details: [Verify and rejections](verify-and-re
 | Field | Action |
 | --- | --- |
 | `downgraded: true` | Mention the downgrade and reason in the worker's task spec. Effort is not raised to make up for a weaker model; narrow the task or add checks |
-| `upgraded: true` | Surface the warning. Happens only when the requested and all lower tiers have no candidates, never to dodge usage limits |
+| `upgraded: true` | Surface the warning. Happens only when the requested and all lower tiers have no candidates |
+| warning `cheaper <tier> cost tier passed over …` | Every covering route in the cheaper tier is blocked or expected to end above `usageRiskLimit`, so a pricier tier was used. Relay it to the user |
+| warning `every unblocked route that covers the job is expected to end above …` | No route in good standing exists; the pick is the cheapest with the most room. Relay it, and keep the job small |
 | `effort.applied` | `flag`, `model-id`, or `provider-default` (the agent decides). Never claim an effort was set when it is `provider-default` |
 | warning `… is a last-resort agent …` | The route costs money per token or runs on this machine; tell the user before launching several workers on it |
 | `status: "wait"` | Read `waitUntil` (epoch ms). Wait, or retry without `--no-downgrade` if the user allows a downgrade |

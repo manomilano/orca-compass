@@ -20,5 +20,6 @@
   "excludeNoZdr": false,
   "cursorAuto": true,
   "preferRiskLimit": 100,
+  "usageRiskLimit": 90,
   "banModels": []
 }

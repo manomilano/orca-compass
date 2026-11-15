@@ -28,6 +28,7 @@ import { runCommand } from './system/run.js';
 import { configPath } from './paths.js';
 import { readRejections, recordRejection, writeRejections } from './routing/rejections.js';
 import { install, update, uninstall, type InstallDeps } from './install.js';
+import { VERSION } from './version.js';
 import { setupInfo, setupWizard, type Terminal } from './setup.js';
 import { verifyWorker, type Verdict } from './verify.js';
 
@@ -76,7 +77,8 @@ commands:
   setup                                answer a few questions (needs a terminal)
   setup --json                         what the setup questions need, for a chat setup
   setup --complete [--json]            finish chat setup, including unchanged defaults
-  setup --skip [--json]                keep the defaults and stop offering setup`;
+  setup --skip [--json]                keep the defaults and stop offering setup
+  --version                            print the installed version`;
 
 class UsageError extends Error {}
 
@@ -90,6 +92,10 @@ export async function main(argv: string[], io: IO, deps: MainDeps = {}): Promise
   try {
     if (command === 'help' || command === '--help' || command === '-h') {
       io.out(USAGE);
+      return 0;
+    }
+    if (command === 'version' || command === '--version' || command === '-v') {
+      io.out(VERSION);
       return 0;
     }
     if (command === 'route') return await routeCommand(rest, io, deps);
@@ -322,6 +328,13 @@ function verifyNext(d: Verdict, skipHours: number | undefined): string[] {
         'if it asks a question, answer it in its terminal; otherwise keep waiting',
       ];
     default:
+      if (d.unsent) {
+        return [
+          'do not reroute: the model was not refused and the agent has not started the task',
+          'read the terminal: the task text may still be unsent in the input box, or not delivered yet',
+          'keep waiting; run verify again once the agent is working',
+        ];
+      }
       return ['keep waiting as usual; run verify again later or read the terminal'];
   }
 }

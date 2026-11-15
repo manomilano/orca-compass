@@ -784,6 +784,30 @@ describe('verify and rejected', () => {
     expect(await main(['verify', '--dispatch', 'x', '--wait', 'soon'], io, verifyDeps)).toBe(1);
   });
 
+  it('prints the version for --version, -v and version', async () => {
+    for (const flag of ['--version', '-v', 'version']) {
+      stdout = [];
+      expect(await main([flag], io, deps)).toBe(0);
+      expect(out()).toMatch(/^\d+\.\d+\.\d+/);
+    }
+  });
+
+  it('tells the coordinator not to reroute when the prompt was never sent', async () => {
+    const idleWorker: Runner = async (cmd, args, opts) => {
+      if (args[0] === 'orchestration' && args[1] === 'worker-read') {
+        const projection = { stage: { activity: 'done', detail: 'input_accepted' }, outcome: 'in_progress', liveness: { verdict: 'live' } };
+        return { code: 0, stderr: '', stdout: JSON.stringify({ ok: true, result: { projection, terminal: { tail: ['  >_ OpenAI Codex', '›'] } } }) };
+      }
+      return orcaWorker(cmd, args, opts);
+    };
+    let elapsed = 0;
+    const timed = { ...verifyDeps, run: idleWorker, sleep: async (ms: number) => { elapsed += ms; }, clock: () => NOW + elapsed };
+    await main(['verify', '--dispatch', 'ctx_1', '--wait', '5', '--json'], io, timed);
+    const v = JSON.parse(out());
+    expect(v).toMatchObject({ status: 'unknown', unsent: true });
+    expect(v.next[0]).toBe('do not reroute: the model was not refused and the agent has not started the task');
+  });
+
   it('tells the coordinator to report a failed start to the user, and records no skip', async () => {
     const failedWorker: Runner = async (cmd, args, opts) => {
       if (args[0] === 'orchestration' && args[1] === 'worker-read') {
