@@ -15,6 +15,8 @@ export interface AgentDeps {
   env: NodeJS.ProcessEnv;
   cacheDir: string;
   now: number;
+  /** Orca's model catalog rows (each a probe's JSON), oldest first, or undefined when there is no catalog. Unset: not read. */
+  readOrcaCatalog?: (dbPath: string) => Promise<string[] | undefined>;
 }
 
 /** Reads a UTF-8 file, or undefined when it is missing or unreadable. */

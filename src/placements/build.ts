@@ -12,6 +12,7 @@ import { listDirectory, readTextFile, type AgentDeps, type Locator } from './age
 import { discoverGrok, locateGrok } from './agents/grok.js';
 import { discoverMuse, locateMuse } from './agents/muse.js';
 import { discoverOpencode, locateOpencode } from './agents/opencode.js';
+import { readOrcaCatalogRows } from './agents/orca-catalog.js';
 import { builtWith, PLACEMENTS_SCHEMA, writeTable } from './table.js';
 import { profileModels } from './profiles.js';
 
@@ -53,7 +54,12 @@ export async function buildPlacements(config: Config, deps: BuildDeps = {}): Pro
   const directory = deps.cacheDir ?? cacheDir();
   const evidence = await loadEvidence({ ttlHours: config.evidenceTtlHours, now, fetchImpl: deps.fetchImpl, refresh: deps.refresh, cacheDir: directory, bundled: deps.bundled });
   const { snapshot } = evidence;
+  // Every agent reads Orca's catalog; open it once.
+  const readCatalog = deps.readOrcaCatalog ?? readOrcaCatalogRows;
+  const catalogs = new Map<string, Promise<string[] | undefined>>();
+  const readOrcaCatalog = (path: string) => catalogs.get(path) ?? (catalogs.set(path, readCatalog(path)), catalogs.get(path)!);
   const agentDeps: AgentDeps = {
+    readOrcaCatalog,
     index: toModelIndex(snapshot),
     run: deps.run ?? runCommand,
     find: deps.find ?? findExecutable,

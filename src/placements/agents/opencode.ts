@@ -4,6 +4,7 @@ import { normalizeModelId } from '../ids.js';
 import type { AgentDiscovery, LaunchModel, ModelMeta } from '../../types.js';
 import type { AgentDeps, Locator } from './deps.js';
 import { listModels, savedNote } from './list-cache.js';
+import { orcaModels, withSkipped } from './orca-catalog.js';
 
 // Providers that serve models from this machine.
 const LOCAL = new Set(['ollama', 'lmstudio', 'llamacpp', 'llama.cpp', 'localai', 'vllm']);
@@ -68,11 +69,13 @@ export function locateOpencode(deps: Locator): string | undefined {
 export async function discoverOpencode(deps: AgentDeps): Promise<AgentDiscovery> {
   const exe = locateOpencode(deps);
   if (!exe) return { agent: 'opencode', installed: false, models: [], note: 'opencode not found' };
+  const orca = await orcaModels(deps, 'opencode');
+  if (orca.models.length > 0) return { agent: 'opencode', installed: true, models: toOpencodeModels(orca.models.map((m) => m.id), deps), note: `models from ${orca.path}` };
   const listing = await listModels(deps, exe, ['models'], 'opencode', (text) => parseOpencodeModels(text).map((id) => ({ id })));
   if (!listing.items) {
     const note = listing.signedOut ? `not signed in: ${listing.error}` : `opencode models failed: ${listing.error}`;
-    return { agent: 'opencode', installed: true, models: [], note, ...(listing.signedOut ? { signedOut: true } : {}) };
+    return { agent: 'opencode', installed: true, models: [], note: withSkipped(note, orca), ...(listing.signedOut ? { signedOut: true } : {}) };
   }
-  const note = savedNote('opencode models', listing, deps.now);
+  const note = withSkipped(savedNote('opencode models', listing, deps.now), orca);
   return { agent: 'opencode', installed: true, models: toOpencodeModels(listing.items.map((m) => m.id), deps), ...(note ? { note } : {}) };
 }

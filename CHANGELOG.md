@@ -19,6 +19,14 @@
   never arrives returns `unknown` with `unsent: true` and tells the
   coordinator not to reroute.
 - Added `orcacompass --version` (also `-v` and `version`).
+- Model lists now come first from Orca's model catalog, for every agent: the
+  models Orca's model picker offers, with the efforts and default effort Orca
+  allows for each. Each agent's own list or cache comes second. Orca moved
+  that catalog from `agent-model-catalog.json` to `agent-model-catalog.db`,
+  which 0.2.2 did not read; the JSON file is still read for older Orca
+  versions. Reading the database needs `node:sqlite` (Node.js 22.13+ without
+  flags); without it the agent's note says the catalog was skipped.
+- Muse is routed when Orca's catalog lists Muse models.
 
 ## 0.2.2
 

@@ -14,13 +14,13 @@ does not report as `unavailable`, and that you have not switched off with
 
 | Agent | Orca agent ID | Executable | Model list comes from | Effort levels | Usage data from Orca | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| Claude Code | `claude` | `claude` | its cached account catalog, then Orca's catalog, then Anthropic families in the evidence snapshot | from the same source, else `low` to `max` | session, weekly, Fable weekly | Supported |
-| Codex | `codex` | `codex` | `~/.codex/models_cache.json`, then Orca's model catalog, then the evidence snapshot (Codex ladder families only) | per model, from those files | session, weekly | Supported |
-| Cursor | `cursor` | `cursor-agent` (also `%LOCALAPPDATA%\cursor-agent`) | `cursor-agent models` | encoded in the model ID (`…-high`) | monthly, plus the `Cursor Models` and `Other Models` buckets | Supported |
-| Grok Build (xAI) | `grok` | `grok` (also `$GROK_HOME/bin`, `~/.grok/bin`) | `~/.grok/models_cache.json`, then `grok models` | per model from that cache; else `low` to `xhigh` (Grok 4.5 up to `high`) | weekly credits or monthly budget | Supported; verified on Windows |
-| Antigravity (Google) | `antigravity` | `agy` (also `%LOCALAPPDATA%\agy\bin`, `~/.local/bin`) | `agy models` | `low` to `high` | weekly, and 5-hour when reported, per quota group | Supported; verified on Windows |
-| OpenCode | `opencode` | `opencode` (also `~/.opencode/bin`) | `opencode models` | none (Orca passes no effort to OpenCode) | none: pay per use or local | Supported; last resort by default |
-| Muse (Meta) | `muse` | `muse` | none (Orca has no Muse model list) | — | none | Detected only, never routed |
+| Claude Code | `claude` | `claude` | Orca's model catalog, then its cached account catalog, then Anthropic families in the evidence snapshot | from the same source, else `low` to `max` | session, weekly, Fable weekly | Supported |
+| Codex | `codex` | `codex` | Orca's model catalog, then `~/.codex/models_cache.json`, then the evidence snapshot (Codex ladder families only) | per model, from those files | session, weekly | Supported |
+| Cursor | `cursor` | `cursor-agent` (also `%LOCALAPPDATA%\cursor-agent`) | Orca's model catalog, then `cursor-agent models` | encoded in the model ID (`…-high`) | monthly, plus the `Cursor Models` and `Other Models` buckets | Supported |
+| Grok Build (xAI) | `grok` | `grok` (also `$GROK_HOME/bin`, `~/.grok/bin`) | Orca's model catalog, then `~/.grok/models_cache.json`, then `grok models` | per model from Orca's catalog or that cache; else `low` to `xhigh` (Grok 4.5 up to `high`) | weekly credits or monthly budget | Supported; verified on Windows |
+| Antigravity (Google) | `antigravity` | `agy` (also `%LOCALAPPDATA%\agy\bin`, `~/.local/bin`) | Orca's model catalog, then `agy models` | `low` to `high` | weekly, and 5-hour when reported, per quota group | Supported; verified on Windows |
+| OpenCode | `opencode` | `opencode` (also `~/.opencode/bin`) | Orca's model catalog, then `opencode models` | none (Orca passes no effort to OpenCode) | none: pay per use or local | Supported; last resort by default |
+| Muse (Meta) | `muse` | `muse` | Orca's model catalog only | from Orca's catalog | none | Routed when Orca's catalog lists Muse models; otherwise detected only |
 
 **OpenCode** lists every model it can reach: providers with an API key
 (OpenRouter and others, pay per token), OpenCode's own models, and local
@@ -44,13 +44,18 @@ existing worktree (`--worktree current` or a selector), not a new one.
 Model lists are read when the placement table is built: every
 `placementsTtlHours` (5 hours by default), on `orcacompass refresh`, or when
 your tier settings change (see [Tiers and
-routing](tiers-and-routing.md#when-placement-runs)). Cursor, Antigravity and
-OpenCode lists come from live commands; Grok first reads its native model cache.
+routing](tiers-and-routing.md#when-placement-runs)). Every agent's list comes
+first from Orca's model catalog (`agent-model-catalog.db` in Orca's data
+folder, `%APPDATA%\orca` on Windows): the models Orca's model picker offers,
+with the efforts Orca allows for each. It is read read-only and needs
+`node:sqlite` (Node.js 22.13+ without flags); without it, or when Orca lists
+nothing for an agent, the agent's own source below is used and the agent's
+note says why. Cursor, Antigravity and OpenCode then use live commands; Grok
+first reads its native model cache.
 For live listings, the last good list is used only when the command fails;
 a sign-in prompt skips the agent as `not signed in`.
-Claude's list is the catalog Claude Code caches under
-`~/.claude/cache/model-catalog` for your account, then Orca's catalog, then
-the evidence snapshot. Model makers reachable today: Anthropic
+After Orca's catalog, Claude's list is the catalog Claude Code caches under
+`~/.claude/cache/model-catalog` for your account, then the evidence snapshot. Model makers reachable today: Anthropic
 and OpenAI (directly and through Cursor); Google, xAI, Meta, Moonshot, Zhipu,
 and DeepSeek through Cursor; xAI through Grok Build; Google, Anthropic and
 OpenAI through Antigravity; and Cursor's own Auto. Gemini models route through

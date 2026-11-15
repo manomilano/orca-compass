@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { homeDir } from '../paths.js';
 import type { OrcaAgents } from '../types.js';
 import { readTextFile } from '../placements/agents/deps.js';
+import { importSqlite } from '../system/sqlite.js';
 
 // Orca has no CLI or documented file for its agent on/off switches (Settings → Agents). They live in
 // settings.disabledTuiAgents of the active profile's state, which this reads strictly read-only.
@@ -88,22 +89,6 @@ export async function readSettingsPayload(dbPath: string): Promise<string | unde
     return typeof row?.payload === 'string' ? row.payload : undefined;
   } finally {
     db.close();
-  }
-}
-
-/** node:sqlite without its one-time ExperimentalWarning on stderr. */
-async function importSqlite(): Promise<typeof import('node:sqlite')> {
-  const emitWarning = process.emitWarning;
-  process.emitWarning = ((warning: string | Error, ...rest: unknown[]) => {
-    if (String(warning instanceof Error ? warning.message : warning).includes('SQLite')) return;
-    (emitWarning as (...args: unknown[]) => void).call(process, warning, ...rest);
-  }) as typeof process.emitWarning;
-  try {
-    return await import('node:sqlite');
-  } catch {
-    throw new Error(`this Node.js (${process.version}) has no node:sqlite; Node 22.5 or later is needed`);
-  } finally {
-    process.emitWarning = emitWarning;
   }
 }
 

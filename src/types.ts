@@ -22,7 +22,7 @@ export type EffortPolicy = 'efficient' | 'balanced' | 'quality';
 export const EFFORT_POLICIES: readonly EffortPolicy[] = ['efficient', 'balanced', 'quality'];
 export type Confidence = 'high' | 'medium' | 'low';
 export type AgentId = string;
-/** Every agent OrcaCompass knows, in display order (Muse is detected only, never routed). */
+/** Every agent OrcaCompass knows, in display order (Muse is routed only when Orca's model catalog lists it). */
 export const AGENT_IDS: readonly AgentId[] = ['claude', 'codex', 'cursor', 'grok', 'antigravity', 'opencode', 'muse'];
 
 export interface ModelMeta {

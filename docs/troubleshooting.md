@@ -82,8 +82,10 @@ for Cursor, `~/.grok/bin` (or `$GROK_HOME/bin`) for Grok Build, and
 before you installed an agent keeps the old PATH: open a new one, and restart
 Orca if the orchestrator runs in an Orca terminal that started earlier.
 
-Orca's agent switches are read from its profile database using `node:sqlite`.
-Use Node.js 24, or Node.js 22.13+ where SQLite works without extra flags.
+Orca's agent switches and its model catalog are read from Orca's databases
+using `node:sqlite`. Use Node.js 24, or Node.js 22.13+ where SQLite works
+without extra flags. Without it, each agent's models come from its own list
+and its note says `Orca's model catalog skipped`.
 When SQLite is unavailable, or when the file cannot be read,
 the switches are `unknown` and exclude nobody. The first line of
 `orcacompass agents` says which one applies.

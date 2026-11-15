@@ -8,8 +8,8 @@ for current behavior and supported agents.
 
 ## Areas for future work
 
-- Support Muse when a reliable model list is available, and consider adapters
-  for additional agents and orchestrators.
+- Check Muse routing on a machine where Orca's catalog lists Muse models, and
+  consider adapters for additional agents and orchestrators.
 - Replace the experimental read of Orca's internal agent-switch store with a
   supported interface.
 - Include OpenCode's existing-worktree requirement in launch arguments.

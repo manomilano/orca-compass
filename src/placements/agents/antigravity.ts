@@ -4,6 +4,7 @@ import { EFFORT_LADDER } from '../../routing/effort.js';
 import type { AgentDiscovery, Effort, LaunchModel } from '../../types.js';
 import type { AgentDeps, Locator } from './deps.js';
 import { listModels, savedNote } from './list-cache.js';
+import { orcaModels, withSkipped } from './orca-catalog.js';
 
 // Orca's effort choices for every Antigravity model (it passes them on as agy --effort).
 const EFFORTS: Effort[] = ['low', 'medium', 'high'];
@@ -85,11 +86,14 @@ export async function discoverAntigravity(deps: AgentDeps): Promise<AgentDiscove
   const exe = locateAntigravity(deps);
   if (!exe) return { agent: 'antigravity', installed: false, models: [], note: 'agy not found' };
 
+  const orca = await orcaModels(deps, 'antigravity');
+  if (orca.models.length > 0) return { agent: 'antigravity', installed: true, models: toLaunchModels(orca.models.map((m) => m.id), deps), note: `models from ${orca.path}` };
+
   const listing = await listModels(deps, exe, ['models'], 'antigravity', (text) => parseAgyModels(text).map((id) => ({ id })), NO_AUTO_UPDATE);
   if (!listing.items) {
     const note = listing.signedOut ? `not signed in: ${listing.error}` : `agy models gave no model ids: ${listing.error}`;
-    return { agent: 'antigravity', installed: true, models: [], note, ...(listing.signedOut ? { signedOut: true } : {}) };
+    return { agent: 'antigravity', installed: true, models: [], note: withSkipped(note, orca), ...(listing.signedOut ? { signedOut: true } : {}) };
   }
-  const note = savedNote('agy models', listing, deps.now);
+  const note = withSkipped(savedNote('agy models', listing, deps.now), orca);
   return { agent: 'antigravity', installed: true, models: toLaunchModels(listing.items.map((m) => m.id), deps), ...(note ? { note } : {}) };
 }
