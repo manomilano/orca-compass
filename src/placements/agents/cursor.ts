@@ -4,7 +4,6 @@ import { EFFORT_LADDER, parseEffort } from '../../routing/effort.js';
 import type { AgentDiscovery, Effort, LaunchModel } from '../../types.js';
 import type { AgentDeps, Locator } from './deps.js';
 import { listModels, savedNote, type ListedModel } from './list-cache.js';
-import { orcaModels, withSkipped } from './orca-catalog.js';
 
 const EFFORT_SUFFIX = /-(none|minimal|low|medium|high|xhigh|extra-high|max)$/;
 const THINKING = /-thinking(?=-|$)/g;
@@ -105,16 +104,11 @@ export async function discoverCursor(deps: AgentDeps): Promise<AgentDiscovery> {
   const exe = locateCursor(deps);
   if (!exe) return { agent: 'cursor', installed: false, models: [], note: 'cursor-agent not found' };
 
-  // Orca launches the ids in its catalog as they are, so they map like cursor-agent's own list.
-  const variants = (items: { id: string; label?: string }[]) => items.map((m) => ({ id: m.id, label: m.label ?? '', ...normalizeCursorId(m.id) }));
-  const orca = await orcaModels(deps, 'cursor');
-  if (orca.models.length > 0) return { agent: 'cursor', installed: true, models: toLaunchModels(variants(orca.models), deps), note: `models from ${orca.path}` };
-
   const listing = await listModels(deps, exe, ['models'], 'cursor', parseList);
   if (!listing.items) {
     const note = listing.signedOut ? `not signed in: ${listing.error}` : `cursor-agent models failed: ${listing.error}`;
-    return { agent: 'cursor', installed: true, models: [], note: withSkipped(note, orca), ...(listing.signedOut ? { signedOut: true } : {}) };
+    return { agent: 'cursor', installed: true, models: [], note, ...(listing.signedOut ? { signedOut: true } : {}) };
   }
-  const note = withSkipped(savedNote('cursor-agent models', listing, deps.now), orca);
-  return { agent: 'cursor', installed: true, models: toLaunchModels(variants(listing.items), deps), ...(note ? { note } : {}) };
+  const note = savedNote('cursor-agent models', listing, deps.now);
+  return { agent: 'cursor', installed: true, models: toLaunchModels(listing.items.map((m) => ({ id: m.id, label: m.label ?? '', ...normalizeCursorId(m.id) })), deps), ...(note ? { note } : {}) };
 }

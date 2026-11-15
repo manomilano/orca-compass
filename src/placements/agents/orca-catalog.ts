@@ -1,10 +1,8 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homeDir } from '../../paths.js';
-import { EFFORT_LADDER, parseEffort } from '../../routing/effort.js';
 import { orcaUserDataPath } from '../../routing/orca-settings.js';
 import { importSqlite } from '../../system/sqlite.js';
-import type { Effort } from '../../types.js';
 import type { AgentDeps } from './deps.js';
 
 export interface RawModel {
@@ -13,9 +11,10 @@ export interface RawModel {
   defaultEffort?: string;
   /** The provider's one-line description of the model's place in its lineup. */
   description?: string;
-  /** The name Orca's model picker shows. */
-  label?: string;
 }
+
+/** The agents whose model lists Orca saves in its catalog; it lists the others live and keeps them in memory. */
+export type OrcaCatalogAgent = 'claude' | 'codex';
 
 export const description = (v: unknown): { description: string } | Record<string, never> =>
   typeof v === 'string' && v.trim() !== '' ? { description: v.trim() } : {};
@@ -47,7 +46,6 @@ export function fromOrcaEntries(entries: unknown[], agent: string): RawModel[] {
       efforts: (Array.isArray(m.efforts) ? m.efforts : []).map((e: { value?: unknown }) => String(e?.value)),
       ...(typeof m.defaultEffort === 'string' ? { defaultEffort: m.defaultEffort } : {}),
       ...description(m.description),
-      ...(typeof m.label === 'string' ? { label: m.label } : {}),
     });
   }
   return [...byId.values()];
@@ -97,10 +95,11 @@ export interface OrcaModels {
 }
 
 /**
- * An agent's models as Orca lists them for its model picker, with each model's efforts: Orca's catalog database,
- * then the JSON file older Orca versions wrote. These are the models Orca can launch, so they come first.
+ * Claude Code's or Codex's models as Orca lists them for its model picker, with each model's efforts: Orca's
+ * catalog database, then the JSON file older Orca versions wrote. These are the models Orca can launch, so they
+ * come first.
  */
-export async function orcaModels(deps: AgentDeps, agent: string): Promise<OrcaModels> {
+export async function orcaModels(deps: AgentDeps, agent: OrcaCatalogAgent): Promise<OrcaModels> {
   const db = orcaCatalogPath(deps.env);
   let skipped: string | undefined;
   if (deps.readOrcaCatalog) {
@@ -119,20 +118,5 @@ export async function orcaModels(deps: AgentDeps, agent: string): Promise<OrcaMo
 }
 
 /** A discovery note that also says why Orca's catalog was skipped, when it was. */
-export function withSkipped(note: string, orca: OrcaModels): string;
-export function withSkipped(note: string | undefined, orca: OrcaModels): string | undefined;
-export function withSkipped(note: string | undefined, orca: OrcaModels): string | undefined {
-  return [note, orca.skipped].filter(Boolean).join('; ') || undefined;
-}
+export const withSkipped = (note: string, orca: OrcaModels): string => (orca.skipped ? `${note}; ${orca.skipped}` : note);
 
-/** The efforts Orca offers for a model, weakest first. */
-export const effortsOf = (m: RawModel): Effort[] => {
-  const offered = new Set(m.efforts.map(parseEffort));
-  return EFFORT_LADDER.filter((e) => offered.has(e));
-};
-
-/** The effort the agent uses when none is passed, when Orca knows it. */
-export const nativeEffortOf = (m: RawModel): { defaultEffort: Effort } | Record<string, never> => {
-  const native = m.defaultEffort === undefined ? undefined : parseEffort(m.defaultEffort);
-  return native ? { defaultEffort: native } : {};
-};

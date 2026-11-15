@@ -769,38 +769,16 @@ describe("Orca's model catalog", () => {
     const cx = await discoverCodex(deps({ readFile: fixtureFiles({ codexCache }), readOrcaCatalog }));
     expect(cx.models.length).toBeGreaterThan(0);
     expect(cx.note).toMatch(/models_cache\.json; Orca's model catalog skipped: .*Node 22\.5 or later/);
-    const muse = await discoverMuse(deps({ readOrcaCatalog }));
-    expect(muse).toMatchObject({ installed: true, models: [] });
-    expect(muse.note).toMatch(/not routed \(Orca's model catalog skipped: .*node:sqlite/);
   });
 
-  it('routes Muse once Orca lists its models, with their efforts', async () => {
-    const calls: { cmd: string; args: string[] }[] = [];
-    const rows = [probe('muse', [{ id: 'muse-wonder-1.0', label: 'Muse Wonder', description: 'Everyday work', defaultEffort: 'low', efforts: [{ value: 'high' }, { value: 'low' }] }])];
-    const muse = await discoverMuse(deps({ run: fakeRun('', calls), readOrcaCatalog: async () => rows }));
-    expect(muse.models).toEqual([{
-      agent: 'muse', modelId: 'muse-wonder-1.0', efforts: ['low', 'high'], effortSource: 'orca', defaultEffort: 'low',
-      launch: { kind: 'flag', model: 'muse-wonder-1.0' }, poolNames: ['session', 'weekly'], lineup: 'Everyday work',
-    }]);
-    expect(muse.note).toMatch(/agent-model-catalog\.db$/);
-    expect(calls).toEqual([]);
-  });
-
-  it('lists Grok, Cursor, OpenCode and Antigravity models from Orca without running their CLIs', async () => {
-    const rows = [
-      probe('grok', [{ id: 'grok-4.7', defaultEffort: 'high', efforts: [{ value: 'low' }, { value: 'high' }] }]),
-      probe('cursor', [{ id: 'gpt-6-astra-high', label: 'GPT-6 Astra High' }, { id: 'gpt-6-astra', label: 'GPT-6 Astra' }]),
-      probe('opencode', [{ id: 'openrouter/openai/gpt-6.1-sol' }]),
-      probe('antigravity', [{ id: 'gemini-3.8-flash', efforts: [{ value: 'low' }] }]),
-    ];
-    const orcaDeps = deps({ run: failRun, readFile: () => undefined, readOrcaCatalog: async () => rows });
-    const grok = await discoverGrok(orcaDeps);
-    expect(grok.models).toMatchObject([{ modelId: 'grok-4.7', efforts: ['low', 'high'], defaultEffort: 'high', effortSource: 'orca' }]);
-    const cursor = await discoverCursor(orcaDeps);
-    expect(cursor.models).toMatchObject([{ modelId: 'gpt-6-astra', launch: { kind: 'variant', ids: { high: 'gpt-6-astra-high' }, defaultId: 'gpt-6-astra' } }]);
-    expect((await discoverOpencode(orcaDeps)).models.map((m) => m.launch)).toEqual([{ kind: 'flag', model: 'openrouter/openai/gpt-6.1-sol' }]);
-    expect((await discoverAntigravity(orcaDeps)).models.map((m) => m.modelId)).toEqual(['gemini-3.8-flash']);
-    for (const d of [grok, cursor]) expect(d.note).toMatch(/agent-model-catalog\.db$/);
+  it('is read only for Claude Code and Codex, the agents whose model lists Orca saves there', async () => {
+    let reads = 0;
+    const rows = ['cursor', 'grok', 'opencode', 'antigravity', 'muse'].map((agent) => probe(agent, [{ id: 'gpt-6-astra', efforts: [] }]));
+    const orcaDeps = deps({ run: failRun, readFile: () => undefined, readOrcaCatalog: async () => (reads++, rows) });
+    for (const discover of [discoverCursor, discoverGrok, discoverOpencode, discoverAntigravity, discoverMuse]) {
+      expect((await discover(orcaDeps)).models).toEqual([]);
+    }
+    expect(reads).toBe(0);
   });
 
   it('reads the database read-only, rows in the order Orca wrote them, and nothing when there is none', async () => {

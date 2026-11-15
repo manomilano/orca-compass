@@ -4,7 +4,6 @@ import { EFFORT_LADDER, parseEffort } from '../../routing/effort.js';
 import type { AgentDiscovery, Effort, LaunchModel } from '../../types.js';
 import type { AgentDeps, Locator } from './deps.js';
 import { listModels, savedNote } from './list-cache.js';
-import { effortsOf as orcaEffortsOf, nativeEffortOf, orcaModels, withSkipped } from './orca-catalog.js';
 
 // Orca's effort choices for grok (it passes them on as --reasoning-effort).
 const EFFORTS: Effort[] = ['low', 'medium', 'high', 'xhigh'];
@@ -87,24 +86,18 @@ export async function discoverGrok(deps: AgentDeps): Promise<AgentDiscovery> {
   const exe = locateGrok(deps);
   if (!exe) return { agent: 'grok', installed: false, models: [], note: 'grok not found' };
 
-  const orca = await orcaModels(deps, 'grok');
-  if (orca.models.length > 0) {
-    const models = orca.models.map((m) => toLaunchModel({ id: m.id, efforts: orcaEffortsOf(m), ...nativeEffortOf(m) }, 'orca', deps));
-    return { agent: 'grok', installed: true, models, note: `models from ${orca.path}` };
-  }
-
   const cachePath = join(grokHome, 'models_cache.json');
   const cached = parseGrokCache(deps.readFile(cachePath));
   if (cached.length > 0) {
-    return { agent: 'grok', installed: true, models: cached.map((m) => toLaunchModel(m, 'provider', deps)), note: withSkipped(`models from ${cachePath}`, orca) };
+    return { agent: 'grok', installed: true, models: cached.map((m) => toLaunchModel(m, 'provider', deps)), note: `models from ${cachePath}` };
   }
 
   const listing = await listModels(deps, exe, ['models'], 'grok', (text) => parseGrokModels(text).map((id) => ({ id })));
   if (!listing.items) {
     const note = listing.signedOut ? `not signed in: ${listing.error}` : `grok models failed: ${listing.error}`;
-    return { agent: 'grok', installed: true, models: [], note: withSkipped(note, orca), ...(listing.signedOut ? { signedOut: true } : {}) };
+    return { agent: 'grok', installed: true, models: [], note, ...(listing.signedOut ? { signedOut: true } : {}) };
   }
-  const note = withSkipped(savedNote('grok models', listing, deps.now), orca);
+  const note = savedNote('grok models', listing, deps.now);
   const models = listing.items.map(({ id }) => toLaunchModel({ id, efforts: effortsOf(id) }, 'orca', deps));
   return { agent: 'grok', installed: true, models, ...(note ? { note } : {}) };
 }

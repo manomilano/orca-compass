@@ -136,8 +136,8 @@ route without `--effort`.
    for an effort the user asked for; `--no-downgrade` prevents capability
    shortfalls and Cursor auto fallback. A cheaper cost tier that covers the
    needs is still allowed. Agent ids are `claude`, `codex`, `cursor`,
-   `grok`, `antigravity`, `opencode`, and `muse` (routed only when Orca's model catalog
-   lists Muse models). An unknown id adds a warning with a likely match
+   `grok`, `antigravity`, `opencode`, and `muse` (detected only, never routed: Orca has no
+   Muse model list). An unknown id adds a warning with a likely match
    (`did you mean cursor?`); fix the id and route again.
    OpenCode is a last resort by default (API keys cost per token; local models
    take this machine): it is routed only when no other agent can take the job.
