@@ -87,14 +87,20 @@ Use the commands above to write the config; never edit the file yourself.
 
 Rate each job by the work, not spare capacity. Pass all three axes with `--need`:
 
-| Axis | min | low | mid | high |
-| --- | --- | --- | --- | --- |
-| coding | none | small contained edits | multi-file changes with tests | design-level or tricky code |
-| agentic | a single edit | run the tests | iterate with tools until green | long unsupervised runs or orchestration |
-| reasoning | mechanical | routine judgement | real analysis | open-ended design or hard debugging |
+| Axis | min | low | mid | high | top |
+| --- | --- | --- | --- | --- | --- |
+| coding | none | small contained edits | multi-file changes with tests | design-level or tricky code | architecture across a large codebase, or code where a subtle bug is costly (security, concurrency, data loss) |
+| agentic | a single edit | run the tests | iterate with tools until green | long unsupervised runs or orchestration | multi-hour autonomous work coordinating many steps or workers |
+| reasoning | mechanical | routine judgement | real analysis | open-ended design or hard debugging | novel problems with no known approach, or correctness that must hold under scrutiny |
+
+Use `top` only when `high` is not enough: a `high` route already failed at the
+job, or a mistake would be expensive. Most hard jobs are `high`; `top` leaves
+only the strongest models, for example
+`--need coding=top,agentic=high,reasoning=top`.
 
 Use `--tier` for the rare job that is the same on all axes: light, daily,
-advanced and frontier map to min, low, mid and high respectively. Supply a
+advanced and frontier map to min, low, mid and high respectively. There is no
+tier for `top`; pass it with `--need`. Supply a
 short explanation with `--tier-reason`; explain it in chat when asked.
 
 ## Rate the effort demand separately

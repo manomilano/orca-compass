@@ -14,8 +14,15 @@ it.each([
   ['unlicensed source', JSON.stringify({ ...mini, sources: [{ ...mini.sources[0], license: undefined }] })],
   ['model without id', JSON.stringify({ ...mini, models: [{ ...mini.models[0], id: undefined }] })],
   ['bands not ascending', JSON.stringify({ ...mini, bands: { ...mini.bands, coding: [84, 76, 68] } })],
+  ['a top cut not above the high cut', JSON.stringify({ ...mini, topBands: { coding: mini.bands.coding[2], agentic: 99, reasoning: 99 } })],
+  ['a top cut missing an axis', JSON.stringify({ ...mini, topBands: { coding: 99, agentic: 99 } })],
   ['weight on an unknown benchmark', JSON.stringify({ ...mini, axes: { ...mini.axes, coding: { weights: { nope: 100 } } } })],
 ])('rejects %s', (_, input) => { expect(parseSnapshot(input)).toBeUndefined(); });
+it('accepts top cuts above the high cuts, kept apart from the three bands 0.2.2 requires', () => {
+  const topBands = { coding: 99, agentic: 99, reasoning: 99 };
+  expect(parseSnapshot(JSON.stringify({ ...mini, topBands }))!.topBands).toEqual(topBands);
+  expect(parseSnapshot(text)!.topBands).toBeUndefined();
+});
 it('builds the catalog with aliases normalized', () => {
   const index = toModelIndex(parseSnapshot(text)!);
   expect(index['gpt-6-1-terra']).toEqual({ id: 'gpt-6-1-terra', provider: 'openai', name: 'GPT-6.1 Terra', family: 'gpt-terra', releaseDate: '2026-10-26' });

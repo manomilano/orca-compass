@@ -372,7 +372,7 @@ describe('placement table in the CLI', () => {
     expect(out()).not.toMatch(/^coding:/m);
     stdout = [];
     expect(await main(['tiers', '--axis', 'coding'], io, deps)).toBe(0);
-    expect(out()).toMatch(/^coding: light < 70 ≤ daily < 78 ≤ advanced < 82 ≤ frontier$/m);
+    expect(out()).toMatch(/^coding: light < 70 ≤ daily < 78 ≤ advanced < 82 ≤ frontier; the top need takes 87 or more$/m);
     expect(out()).not.toMatch(/^cost:/m);
   });
 
@@ -435,7 +435,7 @@ describe('placement table in the CLI', () => {
   it('selects tiers by axis and rejects unknown axes for both views', async () => {
     expect(await main(['tiers', '--axis', 'agentic'], io, deps)).toBe(0);
     // The refreshed raw-evidence snapshot moves the Advanced agentic cut from 70 to 72.
-    expect(out()).toMatch(/^agentic: light < 60 ≤ daily < 72 ≤ advanced < 80 ≤ frontier$/m);
+    expect(out()).toMatch(/^agentic: light < 60 ≤ daily < 72 ≤ advanced < 80 ≤ frontier; the top need takes 82 or more$/m);
     expect(out()).not.toMatch(/^coding:|^reasoning:/m);
     for (const command of ['tiers', 'ranking']) {
       expect(await main([command, '--axis', 'Coding'], io, deps)).toBe(1);

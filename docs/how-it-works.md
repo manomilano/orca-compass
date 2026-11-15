@@ -26,14 +26,17 @@ orcacompass route --need coding=mid,agentic=mid,reasoning=low --demand moderate 
 
 Each level is a minimum score on that axis. `min` has no minimum.
 
-| Axis | `low` | `mid` | `high` |
-| --- | --- | --- | --- |
-| coding | 60 | 75 | 82 |
-| agentic | 35 | 70 | 80 |
-| reasoning | 70 | 80 | 86 |
+| Axis | `low` | `mid` | `high` | `top` |
+| --- | --- | --- | --- | --- |
+| coding | 60 | 75 | 82 | 87 |
+| agentic | 35 | 70 | 80 | 82 |
+| reasoning | 70 | 80 | 86 | 90 |
 
 `low` sits under the good small models, so a simple job can go to one. `mid`
-sits under the current daily workers and `high` under the top models.
+sits under the current daily workers and `high` under the frontier models.
+`top` is for the rare job `high` is not enough for; today only Opus 5.5 and
+Fable 5.2 reach it on every axis. A model that meets a level also meets every
+level below it.
 
 So this job asks for coding 75 or more, agentic 70 or more and reasoning 70 or
 more. The cuts travel with the evidence snapshot, so a data refresh can move

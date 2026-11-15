@@ -13,6 +13,11 @@
   tier is blocked or strained, routing moves to the cheapest pricier tier that
   has a route with known usage below the limit, and warns. Before, the cheapest
   tier was kept until it was fully blocked, and then the job was downgraded.
+- New need level `top`, above `high`: coding 87, agentic 82, reasoning 90.
+  Pass it with `--need` (there is no tier for it), for the rare job where
+  `high` is not enough; the Skill says when. Its cuts are a separate
+  `topBands` field in the evidence snapshot, so 0.2.2 keeps reading the
+  snapshot.
 - Of two routes with the same headroom that both cover the job, the cheaper
   model now wins before the higher score. Routes on one agent share its usage
   pools, so a covering GPT-6.1 Terra is chosen before GPT-6.1 Sol. A model that

@@ -1,4 +1,5 @@
 import { AXES } from '../evidence/snapshot.js';
+import { DEFAULT_TOP_BANDS } from '../evidence/refresh.js';
 import { coverage, cutFor, EVIDENCE_ORDER, jobEvidence, needWeightedScore } from './adequacy.js';
 import { needsFromTier, tierOfNeeds, type Needs } from './needs.js';
 import { DEMAND_EFFORT, snapEffort } from './effort.js';
@@ -420,13 +421,14 @@ function compareRelease(a: LaunchModel, b: LaunchModel): number {
 
 
 function evaluate(model: PlacedModel, env: Environment, config: Config, needs: Needs, auto = false): Candidate {
-  const adequacy = coverage(model.profile, needs, env.bands);
+  const top = env.topBands ?? DEFAULT_TOP_BANDS;
+  const adequacy = coverage(model.profile, needs, env.bands, top);
   const quality: Quality = {
     class: model.profile.class, cost: model.profile.cost, covers: adequacy.covers, shortfall: adequacy.shortfall, overshoot: adequacy.overshoot,
     evidence: jobEvidence(model.profile, needs),
     axes: Object.fromEntries(AXES.map((axis) => {
       const p = model.profile.axes[axis];
-      return [axis, { score: p.score, band: p.band, evidence: p.label, benchmarks: p.benchmarks, need: needs[axis], cut: cutFor(needs[axis], env.bands[axis]) }];
+      return [axis, { score: p.score, band: p.band, evidence: p.label, benchmarks: p.benchmarks, need: needs[axis], cut: cutFor(needs[axis], env.bands[axis], top[axis]) }];
     })) as Quality['axes'],
   };
   const base: Candidate = {

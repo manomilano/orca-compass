@@ -334,6 +334,14 @@ describe('route with synthetic usage', () => {
     expect(d.alternatives).toContainEqual(expect.objectContaining({ agent: 'claude', model: 'claude-fable-5-1', blocked: true }));
   });
 
+  it('routes a top need only to models at or above the top cuts, and reports it as frontier', () => {
+    const d = r({ needs: { coding: 'top', agentic: 'top', reasoning: 'top' } });
+    // Opus 5.5 (87.4/82/90.6) reaches every top cut; Astra and Fable 5.1 are high but not top.
+    expect(d).toMatchObject({ status: 'ok', requestedTier: 'frontier', route: { agent: 'claude', model: 'claude-opus-5-5' } });
+    expect(d.reasons).toContain('needs coding=top agentic=top reasoning=top; fit group: advanced cost tier (2 models)');
+    expect(d.skipped).toContainEqual({ agent: 'codex', model: 'gpt-6-astra', reason: 'below need on coding (83.9 < 87)' });
+  });
+
   it('Codex-only Advanced: the cheaper covering Terra before Sol, not up to Astra', () => {
     expect(r({ tier: 'advanced', agents: ['codex'] })).toMatchObject({
       tier: 'daily', downgraded: false, upgraded: false, route: { model: 'gpt-6.1-terra', effort: 'medium' },

@@ -1,5 +1,6 @@
 import { loadEvidence } from '../evidence/source.js';
 import { toModelIndex } from '../evidence/catalog.js';
+import { DEFAULT_TOP_BANDS } from '../evidence/refresh.js';
 import { cacheDir } from '../paths.js';
 import { findExecutable, runCommand } from '../system/run.js';
 import { AGENT_IDS, type AgentDiscovery, type AgentId, type Config, type PlacementTable } from '../types.js';
@@ -77,6 +78,7 @@ export async function buildPlacements(config: Config, deps: BuildDeps = {}): Pro
     builtWith: builtWith(config),
     sources: { evidence: { source: evidence.source, fetchedAt: evidence.fetchedAt, models: snapshot.models.length, generatedAt: snapshot.generatedAt } },
     bands: snapshot.bands,
+    topBands: snapshot.topBands ?? DEFAULT_TOP_BANDS,
     agents: profileModels(discoveries, snapshot, config),
   };
   const saveError = writeTable(table, agentDeps.cacheDir);

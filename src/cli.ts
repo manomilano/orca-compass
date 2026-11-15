@@ -4,6 +4,7 @@ import { cacheDir } from './paths.js';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { AXES, parseSnapshot, type Axis, type SnapshotSource } from './evidence/snapshot.js';
+import { DEFAULT_TOP_BANDS } from './evidence/refresh.js';
 import { BUNDLED_URL } from './evidence/source.js';
 import { readTextFile } from './placements/agents/deps.js';
 import { modelFamily } from './placements/tiers.js';
@@ -840,7 +841,7 @@ async function rankingCommand(args: string[], io: IO, deps: MainDeps): Promise<n
   const { table } = await loadPlacements(config, deps);
   const models = rankingModels(table, axis);
   if (v.json) {
-    io.out(JSON.stringify({ generatedAt: table.sources.evidence.generatedAt, sources: snapshotSources(table, deps), bands: table.bands,
+    io.out(JSON.stringify({ generatedAt: table.sources.evidence.generatedAt, sources: snapshotSources(table, deps), bands: table.bands, topBands: table.topBands ?? DEFAULT_TOP_BANDS,
       models: models.map(({ family, ...model }) => model) }, null, 2));
   } else {
     const axes = axis ? [axis] : AXES;
@@ -871,7 +872,7 @@ function tiersText(table: PlacementTable, view: ReturnType<typeof placementsView
   }
   for (const a of [axis]) {
     const [daily, advanced, frontier] = table.bands[a];
-    lines.push(`${a}: light < ${daily} ≤ daily < ${advanced} ≤ advanced < ${frontier} ≤ frontier`);
+    lines.push(`${a}: light < ${daily} ≤ daily < ${advanced} ≤ advanced < ${frontier} ≤ frontier; the top need takes ${(table.topBands ?? DEFAULT_TOP_BANDS)[a]} or more`);
     for (const tier of TIERS) {
       lines.push(`${tier}:`);
       for (const r of rows.filter((r) => r.profile.axes[a].band === tier)) lines.push(`  ${r.agent} ${r.model}  ${axisText(a, r.profile.axes[a])}`);

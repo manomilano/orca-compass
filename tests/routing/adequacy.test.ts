@@ -11,8 +11,18 @@ const profile = (id: string) => buildProfile(id, undefined, undefined, snapshot,
 const needs = { coding: 'high', agentic: 'mid', reasoning: 'low' } as const;
 
 describe('adequacy', () => {
-  it('uses the axis cuts and no cut for min', () => {
-    expect(['min', 'low', 'mid', 'high'].map((n) => cutFor(n as 'min' | 'low' | 'mid' | 'high', [60, 70, 80]))).toEqual([null, 60, 70, 80]);
+  it('uses the axis cuts, the separate top cut, and no cut for min', () => {
+    expect((['min', 'low', 'mid', 'high', 'top'] as const).map((n) => cutFor(n, [60, 70, 80], 90))).toEqual([null, 60, 70, 80, 90]);
+  });
+  it('covers a top need only at or above the top cut, and counts a frontier score below it one step short', () => {
+    const needsTop = { coding: 'top', agentic: 'min', reasoning: 'min' } as const;
+    const opus = profile('claude-opus-5-5');
+    expect(opus.axes.coding).toMatchObject({ score: 87.4, band: 'frontier' });
+    expect(coverage(opus, needsTop, snapshot.bands, { coding: 88, agentic: 99, reasoning: 99 })).toMatchObject({ covers: false, shortfall: 1, below: [{ axis: 'coding', score: 87.4, cut: 88 }] });
+    expect(coverage(opus, needsTop, snapshot.bands, { coding: 87.4, agentic: 99, reasoning: 99 })).toMatchObject({ covers: true, shortfall: 0 });
+    // Without a top need, the top cut changes nothing.
+    const top = { coding: 80, agentic: 80, reasoning: 80 };
+    expect(coverage(opus, needsFromTier('frontier'), snapshot.bands, top)).toEqual(coverage(opus, needsFromTier('frontier'), snapshot.bands));
   });
   it('counts shortfall on each needed axis without compensating with stronger axes', () => {
     // Sol misses only the coding high cut; Haiku misses only the agentic low cut on raw evidence.

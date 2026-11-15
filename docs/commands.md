@@ -74,7 +74,7 @@ orcacompass route --need coding=high,agentic=mid,reasoning=low --demand high --a
 
 | Flag | Meaning |
 | --- | --- |
-| `--need <axes>` | All three axes: `coding`, `agentic`, `reasoning`, each `min`, `low`, `mid` or `high`; no spaces |
+| `--need <axes>` | All three axes: `coding`, `agentic`, `reasoning`, each `min`, `low`, `mid`, `high` or `top`; no spaces |
 | `--tier <t>` | Shorthand for equal needs: `light`, `daily`, `advanced`, `frontier`; mutually exclusive with `--need` |
 | `--tier-reason <text>` | Optional nonempty explanation from the coordinator, returned in JSON and text. The Skill keeps routine classification in the tool exchange and explains it in chat on request |
 | `--demand <d>` | `low`, `moderate`, `high`, `exceptional`; mapped to an effort through `effortPolicy` |

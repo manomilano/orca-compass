@@ -9,6 +9,9 @@ import { AXES, SNAPSHOT_SCHEMA, type Axis, type EvidenceSnapshot, type SnapshotM
  * The first cut is the `low` need: it sits under the good small models, so a simple job can go to
  * one. The other two sit under the current daily workers (`mid`) and the top models (`high`).
  */
+/** The `top` need: above `high`, for the strongest models only. */
+export const DEFAULT_TOP_BANDS: NonNullable<EvidenceSnapshot['topBands']> = { coding: 87, agentic: 82, reasoning: 90 };
+
 export const DEFAULT_BANDS: EvidenceSnapshot['bands'] = {
   coding: [60, 75, 82], agentic: [35, 70, 80], reasoning: [70, 80, 86],
 };
@@ -102,6 +105,7 @@ function readDataset(dataset: unknown): { generatedAt: string; models: DatasetMo
 export interface BuildSnapshotOptions {
   now: string;
   bands: EvidenceSnapshot['bands'];
+  topBands?: EvidenceSnapshot['topBands'];
   curated?: unknown;
   sourceFetchedAt: string;
 }
@@ -169,7 +173,7 @@ export function buildSnapshot(dataset: unknown, opts: BuildSnapshotOptions): Evi
     sources: [{ id: 'llmbenchmark', label: 'LLMBenchmark.ai', url: 'https://llmbenchmark.ai', license: 'CC BY 4.0', fetchedAt: opts.sourceFetchedAt, dataDate: data.generatedAt }],
     benchmarks: structuredClone(BENCHMARKS),
     axes: { coding: { weights: { ...AXIS_WEIGHTS.coding } }, agentic: { weights: { ...AXIS_WEIGHTS.agentic } }, reasoning: { weights: { ...AXIS_WEIGHTS.reasoning } } },
-    bands: structuredClone(opts.bands), models: applyFallbacks(estimateScores(mergeCurated(models, opts.curated), BENCHMARKS)),
+    bands: structuredClone(opts.bands), topBands: { ...(opts.topBands ?? DEFAULT_TOP_BANDS) }, models: applyFallbacks(estimateScores(mergeCurated(models, opts.curated), BENCHMARKS)),
   };
 }
 

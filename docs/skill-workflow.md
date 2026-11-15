@@ -7,8 +7,9 @@ agent or model always take precedence over a recommendation.
 
 ## Rate the work
 
-Rate coding, agentic and reasoning separately as `min`, `low`, `mid` or
-`high`, using the examples in the packaged Skill.
+Rate coding, agentic and reasoning separately as `min`, `low`, `mid`,
+`high` or `top`, using the examples in the packaged Skill. `top` is for the
+rare job where `high` is not enough; there is no tier for it.
 Rate effort demand separately as low, moderate, high or exceptional.
 `--tier` remains a shorthand for equal needs on every axis. Favorites still
 apply per tier.

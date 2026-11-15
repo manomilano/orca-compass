@@ -41,12 +41,16 @@ without evidence or an inheritance hint is unranked.
 ## Needs and ranking
 
 Pass all three axes, for example `--need coding=high,agentic=mid,reasoning=low`.
-Each level is `min`, `low`, `mid` or `high`; min has no cut, and the other
-levels correspond to the Daily, Advanced and Frontier evidence-band cuts
-(coding 60/75/82, agentic 35/70/80, reasoning 70/80/86). The `low` cut sits
-under the good small models, so a simple job can go to one.
+Each level is `min`, `low`, `mid`, `high` or `top`; min has no cut, `low`,
+`mid` and `high` correspond to the Daily, Advanced and Frontier evidence-band
+cuts (coding 60/75/82, agentic 35/70/80, reasoning 70/80/86), and `top` takes
+coding 87, agentic 82 or reasoning 90 and above (`topBands` in the evidence
+snapshot). The `low` cut sits under the good small models, so a simple job can
+go to one; `top` leaves only the strongest models. A model that meets a level
+also meets every level below it.
 `--tier` is a shorthand mapping light/daily/advanced/frontier to the same need
-level on every axis; it cannot be combined with `--need`. The requested tier
+level on every axis (min to high; `top` has no tier); it cannot be combined
+with `--need`. The requested tier
 expresses capability needs, so a covering pick may have a cheaper cost tier.
 
 A model covers a job when every axis meets its cut. Routing chooses the
