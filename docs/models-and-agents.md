@@ -20,7 +20,7 @@ does not report as `unavailable`, and that you have not switched off with
 | Grok Build (xAI) | `grok` | `grok` (also `$GROK_HOME/bin`, `~/.grok/bin`) | `~/.grok/models_cache.json`, then `grok models` | per model from that cache; else `low` to `xhigh` (Grok 4.5 up to `high`) | weekly credits or monthly budget | Supported; verified on Windows |
 | Antigravity (Google) | `antigravity` | `agy` (also `%LOCALAPPDATA%\agy\bin`, `~/.local/bin`) | `agy models` | `low` to `high` | weekly, and 5-hour when reported, per quota group | Supported; verified on Windows |
 | OpenCode | `opencode` | `opencode` (also `~/.opencode/bin`) | `opencode models` | none (Orca passes no effort to OpenCode) | none: pay per use or local | Supported; last resort by default |
-| Muse (Meta) | `muse` | `muse` | none (Orca has no Muse model list) | — | none | Detected only, never routed |
+| Muse (Meta) | `muse` | `muse` | built-in list: `muse-wonder-1.0`, `muse-spark-1.1`, `muse-ember-1.0`, `muse-spark-1.3` (neither Muse nor Orca lists Muse models) | `minimal` to `max`, default `high` (Orca's Muse menu) | none (Orca reports no Muse usage) | Supported; model ids not yet checked against a Muse account |
 
 **OpenCode** lists every model it can reach: providers with an API key
 (OpenRouter and others, pay per token), OpenCode's own models, and local

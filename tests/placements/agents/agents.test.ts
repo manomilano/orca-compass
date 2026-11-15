@@ -643,10 +643,15 @@ describe('discoverAntigravity', () => {
 });
 
 describe('discoverMuse', () => {
-  it('detects muse but offers no models, since Orca has no Muse model list', async () => {
+  it("routes the built-in Muse lineup with Orca's effort menu, since neither Muse nor Orca lists Muse models", async () => {
     const calls: { cmd: string; args: string[] }[] = [];
     const muse = await discoverMuse(deps({ run: fakeRun('', calls) }));
-    expect(muse).toEqual({ agent: 'muse', installed: true, models: [], note: 'no model list available from Orca; not routed' });
+    expect(muse.models.map((m) => m.modelId)).toEqual(['muse-wonder-1.0', 'muse-spark-1.1', 'muse-ember-1.0', 'muse-spark-1.3']);
+    expect(muse.models[3]).toEqual({
+      agent: 'muse', modelId: 'muse-spark-1.3', efforts: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'], effortSource: 'orca',
+      defaultEffort: 'high', launch: { kind: 'flag', model: 'muse-spark-1.3' }, poolNames: ['session', 'weekly'],
+    });
+    expect(muse.note).toMatch(/built-in Muse list/);
     expect(calls).toEqual([]);
     expect(await discoverMuse(deps({ find: () => undefined }))).toMatchObject({ installed: false, models: [] });
   });
@@ -775,9 +780,10 @@ describe("Orca's model catalog", () => {
     let reads = 0;
     const rows = ['cursor', 'grok', 'opencode', 'antigravity', 'muse'].map((agent) => probe(agent, [{ id: 'gpt-6-astra', efforts: [] }]));
     const orcaDeps = deps({ run: failRun, readFile: () => undefined, readOrcaCatalog: async () => (reads++, rows) });
-    for (const discover of [discoverCursor, discoverGrok, discoverOpencode, discoverAntigravity, discoverMuse]) {
+    for (const discover of [discoverCursor, discoverGrok, discoverOpencode, discoverAntigravity]) {
       expect((await discover(orcaDeps)).models).toEqual([]);
     }
+    expect((await discoverMuse(orcaDeps)).models.map((m) => m.modelId)).not.toContain('gpt-6-astra');
     expect(reads).toBe(0);
   });
 

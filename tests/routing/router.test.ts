@@ -660,7 +660,7 @@ describe('Grok, Antigravity and Muse', () => {
       ...env.discoveries,
       { agent: 'grok', installed: true, models: [grok47] },
       { agent: 'antigravity', installed: true, models: [flash, agySonnet] },
-      { agent: 'muse', installed: true, models: [], note: 'no model list available from Orca; not routed' },
+      { agent: 'muse', installed: true, models: [], note: 'no Muse models listed' },
     ],
     usage: {
       ...env.usage,
@@ -739,9 +739,9 @@ describe('Grok, Antigravity and Muse', () => {
     expect(route({ tier: 'daily', agents: ['antigravity'], noDowngrade: true }, full, config).status).toBe('wait');
   });
 
-  it('never routes Muse and says why', () => {
+  it('skips an installed agent that lists no models and says why', () => {
     expect(route({ tier: 'daily' }, ext, config).skipped)
-      .toContainEqual({ agent: 'muse', reason: 'no models: no model list available from Orca; not routed' });
+      .toContainEqual({ agent: 'muse', reason: 'no models: no Muse models listed' });
     const d = route({ tier: 'daily', agents: ['muse'] }, ext, config);
     expect(d.status).toBe('none');
     expect(d.reasons[0]).toBe('no usable agent');

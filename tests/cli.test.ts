@@ -176,7 +176,8 @@ describe('route', () => {
     expect(d.skipped.some((x: { agent: string }) => x.agent === 'gemini')).toBe(false);
     // Orca's "unavailable" outranks "not installed".
     expect(d.skipped).toContainEqual({ agent: 'grok', reason: 'not signed in or unavailable: Not signed in to Grok — run grok login' });
-    expect(d.skipped).toContainEqual({ agent: 'muse', reason: 'no models: no model list available from Orca; not routed' });
+    // Muse is routed from its built-in lineup, so its models are weighed one by one.
+    expect(d.skipped).toContainEqual(expect.objectContaining({ agent: 'muse', model: 'muse-wonder-1.0' }));
   });
 
   it('prints a compact text decision', async () => {
@@ -307,7 +308,7 @@ describe('status', () => {
     expect(out()).not.toMatch(/^\s+gemini\s/m);
     expect(out()).toMatch(/grok\s+not installed \(grok not found\)/);
     expect(out()).toMatch(/antigravity\s+not installed \(agy not found\)/);
-    expect(out()).toMatch(/muse\s+0 models, usage unknown: Orca reports no usage for muse — skipped: no models/);
+    expect(out()).toMatch(/muse\s+4 models, usage unknown: Orca reports no usage for muse$/m);
     expect(out()).toMatch(/frontier/);
     expect(out()).toMatch(/evidence: snapshot/);
     expect(out()).toMatch(/evidence: snapshot, \d+ models/);

@@ -27,6 +27,9 @@
   which 0.2.2 did not read; the JSON file is still read for older Orca
   versions. Reading the database needs `node:sqlite` (Node.js 22.13+ without
   flags); without it the agent's note says the catalog was skipped.
+- Muse is routed from a built-in list (Muse Wonder, Muse Spark 1.1, Muse
+  Ember, Muse Spark 1.3) with Orca's Muse efforts, `minimal` to `max`. Neither
+  Muse nor Orca lists Muse models, so 0.2.2 only detected Muse.
 
 ## 0.2.2
 
