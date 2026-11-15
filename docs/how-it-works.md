@@ -60,7 +60,7 @@ three axes. Price plays no part in this step.
 | Model | coding ≥ 75 | agentic ≥ 70 | reasoning ≥ 70 | Result |
 | --- | --- | --- | --- | --- |
 | Haiku 5.5 | 68.4 | 53.5 | 74.6 | out |
-| Composer 2.5 | 67.1 | 35.4 (assumed) | 75.0 | out |
+| Composer 2.5 | 67.1 | 35.7 (assumed) | 75.0 | out |
 | GPT-6.1 Terra | 76.4 | 69.1 | 82.3 | out |
 | Grok 4.7 | 64.8 | 43.7 | 75.1 | out |
 | GPT-6.1 Sol | 79.8 | 75.5 | 88.7 | qualifies |

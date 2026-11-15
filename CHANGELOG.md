@@ -13,6 +13,9 @@
   tier is blocked or strained, routing moves to the cheapest pricier tier that
   has a route with known usage below the limit, and warns. Before, the cheapest
   tier was kept until it was fully blocked, and then the job was downgraded.
+- Evidence refreshed from LLMBenchmark's 2026-11-15 dataset: Gemini 4 Hydrogen
+  and four other models added, Muse Wonder now has agentic and reasoning
+  scores, and about 900 more benchmark results.
 - New need level `top`, above `high`: coding 87, agentic 82, reasoning 90.
   Pass it with `--need` (there is no tier for it), for the rare job where
   `high` is not enough; the Skill says when. Its cuts are a separate
