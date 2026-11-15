@@ -23,7 +23,7 @@ describe('profiles', () => {
     const bundled = parseSnapshot(readFileSync(new URL('../../data/evidence-snapshot.json', import.meta.url), 'utf8'))!;
     const expected = {
       'claude-haiku-5-5': 'daily', 'gpt-6-luna': 'daily', 'gpt-6-1-terra': 'advanced',
-      'claude-sonnet-5-5': 'frontier', 'gpt-6-1-sol': 'advanced', 'claude-opus-5-5': 'frontier',
+      'claude-sonnet-5-5': 'frontier', 'gpt-6-1-sol': 'frontier', 'claude-opus-5-5': 'frontier',
       'gpt-6-astra': 'frontier', 'claude-fable-5-1': 'frontier', 'claude-fable-5-2': 'frontier',
     };
     const classes = Object.fromEntries(Object.keys(expected).map((id) => [id, buildProfile(id, undefined, undefined, bundled, DEFAULT_CONFIG).class]));

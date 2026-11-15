@@ -5,13 +5,18 @@
 - Lowered the `low` need cuts to coding 60, agentic 35 and reasoning 70 (from
   70, 60 and 76), so simple jobs can go to the good small models, and the
   `mid` cuts to coding 75, agentic 70 and reasoning 80 (from 78, 72 and 84).
-  `high` is unchanged. The cuts travel with the evidence snapshot, so 0.2.2
+  The `high` reasoning cut is 86 (from 89); the other `high` cuts are
+  unchanged. The cuts travel with the evidence snapshot, so 0.2.2
   picks them up on its next refresh.
 - A route expected to end its usage window above the new `usageRiskLimit`
   (default 90%) is strained. When every covering route in the cheapest cost
   tier is blocked or strained, routing moves to the cheapest pricier tier that
   has a route with known usage below the limit, and warns. Before, the cheapest
   tier was kept until it was fully blocked, and then the job was downgraded.
+- Of two routes with the same headroom that both cover the job, the cheaper
+  model now wins before the higher score. Routes on one agent share its usage
+  pools, so a covering GPT-6.1 Terra is chosen before GPT-6.1 Sol. A model that
+  falls short never wins on price.
 - Curated models can name a `fallback` model whose score stands in on axes
   they have no evidence for, labelled `assumed`. Composer 2.5 takes its
   agentic score from Kimi K2.5.

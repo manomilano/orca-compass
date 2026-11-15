@@ -506,6 +506,12 @@ function compareRanked(a: Candidate, b: Candidate): number {
   if (conf !== 0) return conf;
   const evidence = EVIDENCE_ORDER.indexOf(a.quality?.evidence ?? 'unranked') - EVIDENCE_ORDER.indexOf(b.quality?.evidence ?? 'unranked');
   if (evidence !== 0) return evidence;
+  // Equal headroom (routes on one agent share its pools): of two models that both cover the job, the cheaper one
+  // does it for less of them. A model that falls short never wins on price.
+  if (a.quality?.covers && b.quality?.covers) {
+    const pa = a.model.profile.cost?.blended ?? null, pb = b.model.profile.cost?.blended ?? null;
+    if (pa !== null && pb !== null && pa !== pb) return pa - pb;
+  }
   if (a.weightedScore !== b.weightedScore) return b.weightedScore - a.weightedScore;
   if (!!a.model.fast !== !!b.model.fast) return a.model.fast ? 1 : -1;
   const da = a.model.meta?.releaseDate ?? '';

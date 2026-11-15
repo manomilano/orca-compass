@@ -10,7 +10,7 @@ import { AXES, SNAPSHOT_SCHEMA, type Axis, type EvidenceSnapshot, type SnapshotM
  * one. The other two sit under the current daily workers (`mid`) and the top models (`high`).
  */
 export const DEFAULT_BANDS: EvidenceSnapshot['bands'] = {
-  coding: [60, 75, 82], agentic: [35, 70, 80], reasoning: [70, 80, 89],
+  coding: [60, 75, 82], agentic: [35, 70, 80], reasoning: [70, 80, 86],
 };
 
 export const METRIC_MAP: Record<string, { benchmark: string; priority: number }> = {

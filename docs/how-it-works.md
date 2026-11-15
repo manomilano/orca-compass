@@ -30,7 +30,7 @@ Each level is a minimum score on that axis. `min` has no minimum.
 | --- | --- | --- | --- |
 | coding | 60 | 75 | 82 |
 | agentic | 35 | 70 | 80 |
-| reasoning | 70 | 80 | 89 |
+| reasoning | 70 | 80 | 86 |
 
 `low` sits under the good small models, so a simple job can go to one. `mid`
 sits under the current daily workers and `high` under the top models.
