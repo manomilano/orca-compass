@@ -10,7 +10,7 @@ import { AXES, SNAPSHOT_SCHEMA, type Axis, type EvidenceSnapshot, type SnapshotM
  * one. The other two sit under the current daily workers (`mid`) and the top models (`high`).
  */
 export const DEFAULT_BANDS: EvidenceSnapshot['bands'] = {
-  coding: [60, 78, 82], agentic: [35, 72, 80], reasoning: [70, 84, 89],
+  coding: [60, 75, 82], agentic: [35, 70, 80], reasoning: [70, 80, 89],
 };
 
 export const METRIC_MAP: Record<string, { benchmark: string; priority: number }> = {
@@ -314,7 +314,7 @@ export function diffSnapshots(previous: EvidenceSnapshot | undefined, next: Evid
 export function calibrationChecks(snapshot: EvidenceSnapshot): string[] {
   const failures: string[] = [];
   const models = new Map(snapshot.models.map((model) => [model.id, model]));
-  for (const [id, want] of [ ['gpt-6-luna', 'light'], ['claude-haiku-5-5', 'daily'], ['gpt-6-1-terra', 'daily'], ['claude-opus-5-5', 'frontier'], ['claude-fable-5-1', 'frontier'], ['gpt-6-astra', 'frontier'] ] as const) {
+  for (const [id, want] of [ ['gpt-6-luna', 'light'], ['claude-haiku-5-5', 'daily'], ['gpt-6-1-terra', 'advanced'], ['claude-opus-5-5', 'frontier'], ['claude-fable-5-1', 'frontier'], ['gpt-6-astra', 'frontier'] ] as const) {
     const model = models.get(id);
     const actual = model?.scores.coding && snapshotProfile(model, snapshot).axes.coding;
     if (actual?.band !== want) failures.push(`${id} coding: expected ${want}, got ${actual?.band ?? 'missing model or score'}`);

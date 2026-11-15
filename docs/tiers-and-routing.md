@@ -43,7 +43,7 @@ without evidence or an inheritance hint is unranked.
 Pass all three axes, for example `--need coding=high,agentic=mid,reasoning=low`.
 Each level is `min`, `low`, `mid` or `high`; min has no cut, and the other
 levels correspond to the Daily, Advanced and Frontier evidence-band cuts
-(coding 60/78/82, agentic 35/72/80, reasoning 70/84/89). The `low` cut sits
+(coding 60/75/82, agentic 35/70/80, reasoning 70/80/89). The `low` cut sits
 under the good small models, so a simple job can go to one.
 `--tier` is a shorthand mapping light/daily/advanced/frontier to the same need
 level on every axis; it cannot be combined with `--need`. The requested tier

@@ -3,8 +3,9 @@
 ## 0.2.3
 
 - Lowered the `low` need cuts to coding 60, agentic 35 and reasoning 70 (from
-  70, 60 and 76), so simple jobs can go to the good small models. `mid` and
-  `high` are unchanged. The cuts travel with the evidence snapshot, so 0.2.2
+  70, 60 and 76), so simple jobs can go to the good small models, and the
+  `mid` cuts to coding 75, agentic 70 and reasoning 80 (from 78, 72 and 84).
+  `high` is unchanged. The cuts travel with the evidence snapshot, so 0.2.2
   picks them up on its next refresh.
 - A route expected to end its usage window above the new `usageRiskLimit`
   (default 90%) is strained. When every covering route in the cheapest cost

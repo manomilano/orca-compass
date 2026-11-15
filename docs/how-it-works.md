@@ -28,14 +28,14 @@ Each level is a minimum score on that axis. `min` has no minimum.
 
 | Axis | `low` | `mid` | `high` |
 | --- | --- | --- | --- |
-| coding | 60 | 78 | 82 |
-| agentic | 35 | 72 | 80 |
-| reasoning | 70 | 84 | 89 |
+| coding | 60 | 75 | 82 |
+| agentic | 35 | 70 | 80 |
+| reasoning | 70 | 80 | 89 |
 
 `low` sits under the good small models, so a simple job can go to one. `mid`
 sits under the current daily workers and `high` under the top models.
 
-So this job asks for coding 78 or more, agentic 72 or more and reasoning 70 or
+So this job asks for coding 75 or more, agentic 70 or more and reasoning 70 or
 more. The cuts travel with the evidence snapshot, so a data refresh can move
 them. [Skill workflow](skill-workflow.md) explains how to rate a job;
 `--tier` is a shorthand for the same level on every axis.
@@ -54,7 +54,7 @@ Every model has a coding, agentic and reasoning score from the LLMBenchmark
 evidence snapshot. A model qualifies only when it meets the minimum on all
 three axes. Price plays no part in this step.
 
-| Model | coding ≥ 78 | agentic ≥ 72 | reasoning ≥ 70 | Result |
+| Model | coding ≥ 75 | agentic ≥ 70 | reasoning ≥ 70 | Result |
 | --- | --- | --- | --- | --- |
 | Haiku 5.5 | 68.4 | 53.5 | 74.6 | out |
 | Composer 2.5 | 67.1 | 35.4 (assumed) | 75.0 | out |
@@ -67,7 +67,7 @@ three axes. Price plays no part in this step.
 | Fable 5.2 | 87.8 | 85.4 | 94.7 | qualifies |
 
 Each model that falls short is listed under `skipped` with the reason, for
-example `below need on coding (76.4 < 78)`. A model with no evidence at all is
+example `below need on agentic (69.1 < 70)`. A model with no evidence at all is
 `unranked` and skipped. A new release of a known family inherits the evidence
 of the release before it until its own data arrives. Composer 2.5 has no
 agentic benchmark, so Kimi K2.5's score stands in for it and is labelled

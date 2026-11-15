@@ -282,7 +282,7 @@ describe('calibration and diffs', () => {
     expect(calibrationChecks(built)).toEqual([]);
   });
   it('calibrates raw scores with the spec bands without comparing Fable to Sonnet', () => {
-    const snapshot = buildSnapshot(dataset, { ...opts, bands: { coding: [60, 78, 82], agentic: [35, 72, 80], reasoning: [70, 84, 89] } });
+    const snapshot = buildSnapshot(dataset, { ...opts, bands: { coding: [60, 75, 82], agentic: [35, 70, 80], reasoning: [70, 80, 89] } });
     expect(snapshot.models.find((m) => m.id === 'claude-sonnet-5-5')!.scores.coding!.score).toBeGreaterThan(snapshot.models.find((m) => m.id === 'claude-fable-5-1')!.scores.coding!.score);
     expect(calibrationChecks(snapshot)).toEqual([]);
   });

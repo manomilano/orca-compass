@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-15T09:48:53.916Z",
+  "generatedAt": "2026-11-15T22:10:10.127Z",
   "sources": [
     {
       "id": "llmbenchmark",
@@ -161,17 +161,17 @@
   "bands": {
     "coding": [
       60,
-      78,
+      75,
       82
     ],
     "agentic": [
       35,
-      72,
+      70,
       80
     ],
     "reasoning": [
       70,
-      84,
+      80,
       89
     ]
   },
