@@ -22,8 +22,8 @@ worker has to pick an agent, a model and a reasoning effort. On its own it
 cannot tell which of your installed models suits the job, or how much of each
 plan's usage is left before the limits reset. OrcaCompass makes that choice:
 the orchestrator rates how hard the job is, and OrcaCompass compares the
-installed Claude Code, Codex, Cursor, Grok Build, Antigravity and OpenCode
-routes using model metadata and current usage limits, explains its choice, and
+installed Claude Code, Codex, Cursor, Grok Build, Antigravity, OpenCode and
+Muse routes using model metadata and current usage limits, explains its choice, and
 returns launch arguments. The orchestrator still launches the worker. It ships
 as an Agent Skill backed by a small TypeScript CLI.
 
@@ -34,8 +34,9 @@ as an Agent Skill backed by a small TypeScript CLI.
    and separate cost tiers from price (3:1 input/output blend, `costBands`
    default `[1, 5, 12]`; hints are the fallback when price is missing).
 3. **It chooses a route** from the cheapest cost tier whose evidence covers
-   the job, then the most headroom, accounting for recent hand-outs.
-   Cursor `auto` is a fallback.
+   the job, then the most headroom (the cheaper model on a tie), accounting
+   for recent hand-outs. When that tier is close to its usage limits, it moves
+   up a cost tier and warns. Cursor `auto` is a fallback.
 
 ```sh
 orcacompass route --need coding=mid,agentic=low,reasoning=low --demand moderate --json

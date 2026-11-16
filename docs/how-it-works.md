@@ -165,8 +165,9 @@ next route picks another model. See
 - **Every Daily route is blocked or close to its limit.** The fit group moves
   up to the cheapest tier with a route below `usageRiskLimit`: Opus 5.5
   through Claude Code, with a warning.
-- **Every qualifying route is close to its limit.** The fit group stays
-  Daily and the route with the most room is used, with a warning.
+- **Every qualifying route is close to its limit.** The job keeps its level:
+  the cheapest tier with an unblocked qualifying route (Daily here) is used,
+  and its route with the most room, with a warning.
 - **Every qualifying route is blocked.** OrcaCompass picks the closest model
   that falls short and marks the route `downgraded`, or returns `wait` with
   `--no-downgrade`. See

@@ -116,7 +116,8 @@ pool's reset time has already passed. See
   passed over`: every route in the cheaper tier that covers the job is blocked
   or expected to end above `usageRiskLimit` (90% by default). Raise the limit
   in the config to stay in the cheaper tier longer.
-- `wait`: you passed `--no-downgrade` and the requested tier is blocked.
+- `wait`: you passed `--no-downgrade` and every route that covers the job is
+  blocked.
   `waitUntil` says when the first candidate resets.
 - `none` with `--effort`: no candidate can apply that exact effort; the
   reasons list what each one offers. Use `--demand` instead to let OrcaCompass
