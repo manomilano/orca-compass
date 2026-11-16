@@ -9,7 +9,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { buildSnapshot, calibrationChecks, calibrationWarnings, DEFAULT_BANDS, diffSnapshots } from '../dist/evidence/refresh.js';
+import { buildSnapshot, calibrationChecks, calibrationWarnings, DEFAULT_BANDS, DEFAULT_TOP_BANDS, diffSnapshots } from '../dist/evidence/refresh.js';
 import { AXIS_WEIGHTS, BENCHMARKS } from '../dist/evidence/scoring.js';
 import { parseSnapshot } from '../dist/evidence/snapshot.js';
 
@@ -82,7 +82,7 @@ async function main() {
   if (datasetText === undefined) throw new Error(`dataset not found: ${from} (commit it there, pass --from <file>, or use --fetch)`);
   const dataset = JSON.parse(datasetText);
   const now = new Date().toISOString();
-  const snapshot = buildSnapshot(dataset, { now, sourceFetchedAt: now, bands: previous?.bands ?? DEFAULT_BANDS, curated });
+  const snapshot = buildSnapshot(dataset, { now, sourceFetchedAt: now, bands: previous?.bands ?? DEFAULT_BANDS, topBands: previous?.topBands ?? DEFAULT_TOP_BANDS, curated });
   const failures = calibrationChecks(snapshot);
   for (const warning of calibrationWarnings(snapshot)) console.error(`WARNING: ${warning}`);
   if (failures.length) {

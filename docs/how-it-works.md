@@ -26,13 +26,19 @@ orcacompass route --need coding=mid,agentic=mid,reasoning=low --demand moderate 
 
 Each level is a minimum score on that axis. `min` has no minimum.
 
-| Axis | `low` | `mid` | `high` |
-| --- | --- | --- | --- |
-| coding | 70 | 78 | 82 |
-| agentic | 60 | 72 | 80 |
-| reasoning | 76 | 84 | 89 |
+| Axis | `low` | `mid` | `high` | `top` |
+| --- | --- | --- | --- | --- |
+| coding | 60 | 75 | 82 | 87 |
+| agentic | 35 | 70 | 80 | 82 |
+| reasoning | 70 | 80 | 86 | 90 |
 
-So this job asks for coding 78 or more, agentic 72 or more and reasoning 76 or
+`low` sits under the good small models, so a simple job can go to one. `mid`
+sits under the current daily workers and `high` under the frontier models.
+`top` is for the rare job `high` is not enough for; today only Opus 5.5 and
+Fable 5.2 reach it on every axis. A model that meets a level also meets every
+level below it.
+
+So this job asks for coding 75 or more, agentic 70 or more and reasoning 70 or
 more. The cuts travel with the evidence snapshot, so a data refresh can move
 them. [Skill workflow](skill-workflow.md) explains how to rate a job;
 `--tier` is a shorthand for the same level on every axis.
@@ -51,10 +57,10 @@ Every model has a coding, agentic and reasoning score from the LLMBenchmark
 evidence snapshot. A model qualifies only when it meets the minimum on all
 three axes. Price plays no part in this step.
 
-| Model | coding ≥ 78 | agentic ≥ 72 | reasoning ≥ 76 | Result |
+| Model | coding ≥ 75 | agentic ≥ 70 | reasoning ≥ 70 | Result |
 | --- | --- | --- | --- | --- |
 | Haiku 5.5 | 68.4 | 53.5 | 74.6 | out |
-| Composer 2.5 | 67.1 | no data | 75.0 | out |
+| Composer 2.5 | 67.1 | 35.7 (assumed) | 75.0 | out |
 | GPT-6.1 Terra | 76.4 | 69.1 | 82.3 | out |
 | Grok 4.7 | 64.8 | 43.7 | 75.1 | out |
 | GPT-6.1 Sol | 79.8 | 75.5 | 88.7 | qualifies |
@@ -64,9 +70,11 @@ three axes. Price plays no part in this step.
 | Fable 5.2 | 87.8 | 85.4 | 94.7 | qualifies |
 
 Each model that falls short is listed under `skipped` with the reason, for
-example `below need on coding (76.4 < 78)`. A model with no evidence at all is
+example `below need on agentic (69.1 < 70)`. A model with no evidence at all is
 `unranked` and skipped. A new release of a known family inherits the evidence
-of the release before it until its own data arrives. See
+of the release before it until its own data arrives. Composer 2.5 has no
+agentic benchmark, so Kimi K2.5's score stands in for it and is labelled
+`assumed`. See
 [Model data](model-data.md).
 
 ## 4. Price decides how much model to spend
@@ -84,7 +92,9 @@ from cheap to expensive; it is not what your subscription charges.
 
 The cheapest tier with at least one qualifying model is the fit group: Daily.
 Opus, Fable and Astra could do the job, but they are not used for it. A
-pricier tier is used only when no cheaper tier has a qualifying model. Change
+pricier tier is used when no cheaper tier has a qualifying model, or when
+every qualifying route in the cheaper tiers is blocked or close to its usage
+limit (see step 5). Change
 the thresholds with `costBands`, or move a model with `tierOverrides`; see
 [Tiers and routing](tiers-and-routing.md).
 
@@ -101,7 +111,16 @@ point.
 | Claude Code, Sonnet 5.5 | weekly reset less than a day ago | 55% |
 | Cursor, Sonnet 5.5 or Gemini 4 Carbon | 76% used, 78% of the window gone | 3% |
 
-A route at or over a limit is blocked and skipped. Routes handed out in the
+A route at or over a limit is blocked and skipped. A route expected to end
+its usage window above `usageRiskLimit` (90%) is strained: it ranks after the
+others. When every route in the fit group is blocked or strained, the
+cheapest pricier tier with a route in good standing takes over, and the route
+carries a warning that names the tier it passed over. When every covering
+route is strained, the job keeps its level on the cheapest tier's route with
+the most room, with a warning; it is downgraded only when every covering route
+is blocked. In the example the
+Cursor routes are strained, but Codex and Claude Code are not, so the fit
+group stays Daily. Routes handed out in the
 last `handoutMinutes` (10) count as `handoutPercent` (5%) more usage, so
 workers launched back to back spread across subscriptions. A favorite set
 with `orcacompass prefer` can take the place of this pick; see
@@ -143,9 +162,14 @@ next route picks another model. See
   drops out and Sonnet 5.5 (84.3) still qualifies in the Daily tier.
 - **No Daily model qualifies.** The fit group moves up to Advanced (Opus 5.5),
   then Frontier.
-- **Every qualifying route is blocked.** OrcaCompass does not move to a
-  pricier tier to get around a usage limit. It picks the closest model that
-  falls short and marks the route `downgraded`, or returns `wait` with
+- **Every Daily route is blocked or close to its limit.** The fit group moves
+  up to the cheapest tier with a route below `usageRiskLimit`: Opus 5.5
+  through Claude Code, with a warning.
+- **Every qualifying route is close to its limit.** The job keeps its level:
+  the cheapest tier with an unblocked qualifying route (Daily here) is used,
+  and its route with the most room, with a warning.
+- **Every qualifying route is blocked.** OrcaCompass picks the closest model
+  that falls short and marks the route `downgraded`, or returns `wait` with
   `--no-downgrade`. See
   [Fallbacks](tiers-and-routing.md#fallbacks-downgrade-upgrade-wait-none).
 - **Nothing can be routed.** Cursor `auto` is the last fallback before waiting;

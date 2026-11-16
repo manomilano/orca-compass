@@ -71,6 +71,7 @@ export async function gather(config: Config, deps: GatherDeps = {}): Promise<Gat
   const env: Environment = {
     now,
     bands: table.bands,
+    ...(table.topBands ? { topBands: table.topBands } : {}),
     discoveries: table.agents,
     usage: applyHandouts(usage, handouts, config.handoutPercent),
     orcaAgents,

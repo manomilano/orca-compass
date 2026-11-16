@@ -16,7 +16,7 @@ export function parseHandouts(text: string | undefined): Handout[] {
     return raw.handouts.filter((h: unknown): h is Handout => object(h) && typeof h.at === 'number' && Number.isFinite(h.at) &&
       typeof h.agent === 'string' && h.agent.length > 0 && typeof h.model === 'string' && h.model.length > 0 &&
       Array.isArray(h.pools) && h.pools.every((p: unknown) => typeof p === 'string') && object(h.needs) &&
-      AXES.every((axis) => ['min', 'low', 'mid', 'high'].includes((h.needs as Record<string, string>)[axis])));
+      AXES.every((axis) => ['min', 'low', 'mid', 'high', 'top'].includes((h.needs as Record<string, string>)[axis])));
   } catch { return []; }
 }
 export function readHandouts(readFile: (p: string) => string | undefined = readTextFile, dir: string = cacheDir()): Handout[] {

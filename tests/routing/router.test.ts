@@ -21,7 +21,8 @@ describe('routing by cost tier', () => {
     expect(d).toMatchObject({ status: 'ok', tier: 'daily', route: { agent: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' } });
     expect(d.reasons.join('\n')).toContain('fit group: daily cost tier (4 models)');
     expect(d.reasons).toContain('cost: daily ($4.00/M blended, maker price)');
-    expect(d.alternatives.map((a) => a.model)).toEqual(['claude-sonnet-5-5-medium', 'gpt-6.1-sol', 'gpt-6.1-terra']);
+    // At Codex's shared headroom the cheaper Terra ranks before Sol.
+    expect(d.alternatives.map((a) => a.model)).toEqual(['claude-sonnet-5-5-medium', 'gpt-6.1-terra', 'gpt-6.1-sol']);
   });
   it('Advanced uses the Daily-cost Sonnet because its raw evidence covers every mid cut', () => {
     // 84.3/78.2/87.3 clears the fixture cuts 76/70/78; price, not evidence class, forms the group.
@@ -81,26 +82,60 @@ describe('per-axis routing', () => {
     expect(d.warnings).toContain("claude-sonnet-5-5 falls short of the job's needs by 1 band step (agentic); effort is not raised to make up for it: split the job or add stronger checks");
     expect(route({ needs: fableNeeds, agents: ['claude'], noDowngrade: true }, blocked, config)).toMatchObject({ status: 'wait', waitUntil: 1793282400000 });
   });
-  it('never promotes above a blocked fit group', () => {
-    // Leave Claude Haiku and dearer Opus available while blocking the Daily-cost Codex/Cursor group.
+  it('moves to a pricier group only when the cheaper one has no sound route and the pricier one does', () => {
+    // Claude offers Light-cost Haiku (short of the job) and Advanced-cost Opus; the Daily-cost group is Codex and Cursor.
     const e = onlyModels(env, 'claude', ['claude-haiku-5-5', 'claude-opus-5-5']);
     const blocked = withPool(withPool(e, 'codex', 'weekly', { usedPercent: 96 }), 'cursor', 'bucket:Other Models', { usedPercent: 96 });
-    expect(route({ tier: 'daily' }, blocked, DEFAULT_CONFIG)).toMatchObject({ downgraded: true, route: { agent: 'claude', model: 'claude-haiku-5-5' }, quality: { shortfall: 1 } });
-    expect(route({ tier: 'daily', noDowngrade: true }, blocked, DEFAULT_CONFIG).status).toBe('wait');
+    const d = route({ tier: 'daily' }, blocked, DEFAULT_CONFIG);
+    expect(d).toMatchObject({ status: 'ok', tier: 'advanced', downgraded: false, route: { agent: 'claude', model: 'claude-opus-5-5' } });
+    expect(d.warnings.some((w) => w.startsWith('cheaper daily cost tier passed over: every route there that covers the job is blocked or expected to end above 90% of its usage window (usageRiskLimit): '))).toBe(true);
+    expect(d.reasons.join('\n')).toContain('fit group: advanced cost tier');
+    // Strained is enough to pass a group over: Cursor at 93% of a month with 71% of it left, Codex already on pace to run out.
+    const strained = withPool(e, 'cursor', 'bucket:Other Models', { usedPercent: 93 });
+    expect(route({ tier: 'daily' }, strained, DEFAULT_CONFIG)).toMatchObject({ tier: 'advanced', route: { agent: 'claude', model: 'claude-opus-5-5' } });
+    // A higher limit keeps the cheapest group, as before.
+    expect(route({ tier: 'daily' }, strained, { ...DEFAULT_CONFIG, usageRiskLimit: 1000 })).toMatchObject({ tier: 'daily', warnings: [] });
   });
-  it('breaks quota ties by evidence then need-weighted score', () => {
+  it('stays in the cheapest group when no pricier group has a sound route', () => {
+    const e = onlyModels(env, 'claude', ['claude-haiku-5-5', 'claude-opus-5-5']);
+    // Claude at 93% is not blocked, but strained: nothing pricier is in better standing than the Daily group.
+    const tight = withPool(withPool(e, 'cursor', 'bucket:Other Models', { usedPercent: 93 }), 'claude', 'weekly', { usedPercent: 93 });
+    const d = route({ tier: 'daily' }, tight, DEFAULT_CONFIG);
+    expect(d).toMatchObject({ status: 'ok', tier: 'daily', downgraded: false });
+    expect(d.warnings).toEqual([`every unblocked route that covers the job is expected to end above 90% of its usage window (usageRiskLimit); ${d.route!.agent} ${d.route!.model} is the cheapest with the most room`]);
+    // Blocked cheapest group and only strained pricier routes: the job keeps its level on the roomiest
+    // strained route that covers it, instead of a downgrade (or a wait with --no-downgrade).
+    const blocked = withPool(withPool(withPool(e, 'codex', 'weekly', { usedPercent: 96 }), 'cursor', 'bucket:Other Models', { usedPercent: 96 }), 'claude', 'weekly', { usedPercent: 93 });
+    const kept = route({ tier: 'daily' }, blocked, DEFAULT_CONFIG);
+    expect(kept).toMatchObject({ status: 'ok', tier: 'advanced', downgraded: false, route: { agent: 'claude', model: 'claude-opus-5-5' }, quality: { covers: true } });
+    expect(kept.warnings).toContain('every unblocked route that covers the job is expected to end above 90% of its usage window (usageRiskLimit); claude claude-opus-5-5 is the cheapest with the most room');
+    expect(route({ tier: 'daily', noDowngrade: true }, blocked, DEFAULT_CONFIG)).toMatchObject({ status: 'ok', route: { model: 'claude-opus-5-5' } });
+    // With every route blocked, it waits for the earliest reset.
+    const allBlocked = withPool(blocked, 'claude', 'weekly', { usedPercent: 96 });
+    expect(route({ tier: 'daily' }, allBlocked, DEFAULT_CONFIG).status).toBe('wait');
+  });
+  it('does not pass a group over for a pricier route whose usage is unknown', () => {
+    const e = onlyModels(env, 'claude', ['claude-haiku-5-5', 'claude-opus-5-5']);
+    const strained = withUsageStatus(withPool(e, 'cursor', 'bucket:Other Models', { usedPercent: 93 }), 'unknown', ['claude']);
+    expect(route({ tier: 'daily' }, strained, DEFAULT_CONFIG).tier).toBe('daily');
+  });
+  it('breaks quota ties by evidence, then the lower price, then need-weighted score', () => {
     const req = { tier: 'frontier', agents: ['cursor'] } as const;
     // Put two covering models in Advanced cost; Fable 5.2 scores 795.3 vs Opus 780, on identical pools.
     const config: Config = { ...DEFAULT_CONFIG, tierOverrides: { 'claude-fable-5-2': 'advanced' } };
     const tied = withCursorModels(env, [cursorVariant('claude-fable-5-2')], 0.5, config);
     const run = (e: Environment) => route({ ...req, agents: [...req.agents] }, e, config);
-    expect(run(tied).route?.model).toBe('claude-fable-5-2-high');
+    // Opus is $8/M and Fable $16/M: the cheaper covering model wins before the score.
+    expect(run(tied).route?.model).toBe('claude-opus-5-5-high');
     const changed = structuredClone(tied);
     const cursor = changed.discoveries.find((d) => d.agent === 'cursor')!;
+    // Weaker evidence outranks price.
     cursor.models.find((m) => m.modelId === 'claude-opus-5-5')!.profile.axes.coding.label = 'partial';
     expect(run(changed).route?.model).toBe('claude-fable-5-2-high');
-    cursor.models.find((m) => m.modelId === 'claude-fable-5-2')!.profile.axes.reasoning.label = 'estimated';
-    expect(run(changed).route?.model).toBe('claude-opus-5-5-high');
+    // At the same price, the higher need-weighted score wins.
+    cursor.models.find((m) => m.modelId === 'claude-opus-5-5')!.profile.axes.coding.label = 'measured';
+    for (const m of cursor.models) if (m.profile.cost) m.profile.cost = { ...m.profile.cost, blended: 8 };
+    expect(run(changed).route?.model).toBe('claude-fable-5-2-high');
   });
   it('uses Cursor auto only as an allowed, unblocked fallback', () => {
     const auto = withCursorModels(withPool(env, 'cursor', 'bucket:Other Models', { usedPercent: 96 }), [CURSOR_AUTO]);
@@ -305,9 +340,17 @@ describe('route with synthetic usage', () => {
     expect(d.alternatives).toContainEqual(expect.objectContaining({ agent: 'claude', model: 'claude-fable-5-1', blocked: true }));
   });
 
-  it('Codex-only Advanced: Sol, not up to Astra', () => {
+  it('routes a top need only to models at or above the top cuts, and reports it as frontier', () => {
+    const d = r({ needs: { coding: 'top', agentic: 'top', reasoning: 'top' } });
+    // Opus 5.5 (87.4/82/90.6) reaches every top cut; Astra and Fable 5.1 are high but not top.
+    expect(d).toMatchObject({ status: 'ok', requestedTier: 'frontier', route: { agent: 'claude', model: 'claude-opus-5-5' } });
+    expect(d.reasons).toContain('needs coding=top agentic=top reasoning=top; fit group: advanced cost tier (2 models)');
+    expect(d.skipped).toContainEqual({ agent: 'codex', model: 'gpt-6-astra', reason: 'below need on coding (83.9 < 87)' });
+  });
+
+  it('Codex-only Advanced: the cheaper covering Terra before Sol, not up to Astra', () => {
     expect(r({ tier: 'advanced', agents: ['codex'] })).toMatchObject({
-      tier: 'daily', downgraded: false, upgraded: false, route: { model: 'gpt-6.1-sol', effort: 'medium' },
+      tier: 'daily', downgraded: false, upgraded: false, route: { model: 'gpt-6.1-terra', effort: 'medium' },
     });
   });
 
@@ -425,11 +468,11 @@ describe('route with synthetic usage', () => {
   it('explains the pick with its tightest pool and names the runner-up and skipped agents', () => {
     const d = r({ tier: 'daily', excludeAgents: ['claude'] });
     expect(d.reasons[0]).toBe('cursor claude-sonnet-5-5-medium: Other Models 6.3% used, 29% of window elapsed (headroom 64%, counted as 20% for a reset beyond 7d) → on pace for 22% before reset in 22d');
-    expect(d.reasons).toContain('next best: codex gpt-6.1-sol (weekly headroom -14%, resets in 5d)');
+    expect(d.reasons).toContain('next best: codex gpt-6.1-terra (weekly headroom -14%, resets in 5d)');
     expect(d.skipped).toContainEqual({ agent: 'muse', reason: 'not installed' });
     expect(d.alternatives.map((a) => [a.agent, a.model, a.blocked])).toEqual([
-      ['codex', 'gpt-6.1-sol', false],
       ['codex', 'gpt-6.1-terra', false],
+      ['codex', 'gpt-6.1-sol', false],
     ]);
     expect(d.alternatives[0].headroom).toBeCloseTo(-0.1375, 3);
     expect(d.alternatives[1].headroom).toBeCloseTo(-0.1375, 3);
@@ -636,7 +679,7 @@ describe('Grok, Antigravity and Muse', () => {
       ...env.discoveries,
       { agent: 'grok', installed: true, models: [grok47] },
       { agent: 'antigravity', installed: true, models: [flash, agySonnet] },
-      { agent: 'muse', installed: true, models: [], note: 'no model list available from Orca; not routed' },
+      { agent: 'muse', installed: true, models: [], note: 'no Muse models listed' },
     ],
     usage: {
       ...env.usage,
@@ -715,9 +758,9 @@ describe('Grok, Antigravity and Muse', () => {
     expect(route({ tier: 'daily', agents: ['antigravity'], noDowngrade: true }, full, config).status).toBe('wait');
   });
 
-  it('never routes Muse and says why', () => {
+  it('skips an installed agent that lists no models and says why', () => {
     expect(route({ tier: 'daily' }, ext, config).skipped)
-      .toContainEqual({ agent: 'muse', reason: 'no models: no model list available from Orca; not routed' });
+      .toContainEqual({ agent: 'muse', reason: 'no models: no Muse models listed' });
     const d = route({ tier: 'daily', agents: ['muse'] }, ext, config);
     expect(d.status).toBe('none');
     expect(d.reasons[0]).toBe('no usable agent');

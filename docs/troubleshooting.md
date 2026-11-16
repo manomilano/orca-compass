@@ -82,8 +82,10 @@ for Cursor, `~/.grok/bin` (or `$GROK_HOME/bin`) for Grok Build, and
 before you installed an agent keeps the old PATH: open a new one, and restart
 Orca if the orchestrator runs in an Orca terminal that started earlier.
 
-Orca's agent switches are read from its profile database using `node:sqlite`.
-Use Node.js 24, or Node.js 22.13+ where SQLite works without extra flags.
+Orca's agent switches and its model catalog are read from Orca's databases
+using `node:sqlite`. Use Node.js 24, or Node.js 22.13+ where SQLite works
+without extra flags. Without it, Claude Code's and Codex's models come from
+their own caches and their notes say `Orca's model catalog skipped`.
 When SQLite is unavailable, or when the file cannot be read,
 the switches are `unknown` and exclude nobody. The first line of
 `orcacompass agents` says which one applies.
@@ -109,8 +111,13 @@ pool's reset time has already passed. See
 - `none` with `no usable agent`: no agent passed the checks above. Run
   `orcacompass agents`.
 - `none` with `all <tier> candidates blocked`: every model of that tier is at
-  or above its usage limit, and no lower tier can take the job.
-- `wait`: you passed `--no-downgrade` and the requested tier is blocked.
+  or above its usage limit, and neither a pricier nor a lower tier can take the job.
+- A pricier model than expected, with the warning `cheaper <tier> cost tier
+  passed over`: every route in the cheaper tier that covers the job is blocked
+  or expected to end above `usageRiskLimit` (90% by default). Raise the limit
+  in the config to stay in the cheaper tier longer.
+- `wait`: you passed `--no-downgrade` and every route that covers the job is
+  blocked.
   `waitUntil` says when the first candidate resets.
 - `none` with `--effort`: no candidate can apply that exact effort; the
   reasons list what each one offers. Use `--demand` instead to let OrcaCompass

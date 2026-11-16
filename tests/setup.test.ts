@@ -21,7 +21,7 @@ const runner: Runner = async (_cmd, args) => {
 
 const deps: MainDeps = {
   run: runner,
-  find: (name) => (['grok', 'agy'].includes(name) ? undefined : `/fake/bin/${name}`),
+  find: (name) => (['grok', 'agy', 'muse'].includes(name) ? undefined : `/fake/bin/${name}`),
   readFile: (p) => {
     if (p.endsWith('models_cache.json')) return codexCache;
     if (p.endsWith('agent-model-catalog.json')) return undefined;
@@ -114,7 +114,7 @@ describe('setup --json', () => {
     expect(agent('claude')).toMatchObject({ chosen: true, preselected: true, verdict: 'used' });
     expect(agent('codex')).toMatchObject({ chosen: false, preselected: false, verdict: 'not used: excluded by config' });
     expect(agent('cursor')).toMatchObject({ enabledInOrca: 'no', chosen: true, preselected: false });
-    expect(agent('muse')).toMatchObject({ installed: true, models: 0, preselected: false });
+    expect(agent('muse')).toMatchObject({ installed: false, models: 0, preselected: false });
 
     expect(Object.keys(j.tiers)).toEqual(['light', 'daily', 'advanced', 'frontier']);
     for (const t of Object.values(j.tiers) as Record<string, unknown>[]) {

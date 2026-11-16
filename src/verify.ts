@@ -20,6 +20,8 @@ export interface Verdict {
   detail: string;
   /** The last lines of the worker's terminal, with `stalled`, `failed` and `unknown`. */
   tail?: string[];
+  /** With `unknown`: the agent sat idle and Orca's task header never showed in its terminal, so the prompt was probably not sent yet. */
+  unsent?: true;
   /** Orca commands that clean up the worker before a replacement starts, in order. */
   cleanup: string[][];
 }
@@ -88,6 +90,9 @@ export function parseWorkerRead(stdout: string, code: number | null = 0, error?:
   };
 }
 
+/** The header Orca puts on a worker's prompt. Without it in the terminal, the agent has not been given the task. */
+const TASK_HEADER = /===\s*TASK\s*===/;
+
 const lastLines = (tail: string[], n = 12): string[] => tail.map((l) => l.trimEnd()).filter((l) => l.trim() !== '').slice(-n);
 
 export async function verifyWorker(dispatchId: string, deps: VerifyDeps, opts: VerifyOptions): Promise<Verdict> {
@@ -112,10 +117,14 @@ export async function verifyWorker(dispatchId: string, deps: VerifyDeps, opts: V
   let workingSince: number | undefined;
   let doneSince: number | undefined;
   let lastError: string | undefined;
+  let promptSeen = false;
   for (;;) {
     if (remaining() === 0) {
-      const detail = lastError ? `orca worker-read failed: ${lastError}` : timeoutDetail;
-      return { ...base, status: 'unknown', detail, ...(tail.length ? { tail: lastLines(tail) } : {}), cleanup: [] };
+      const unsent = !lastError && doneSince !== undefined && !promptSeen;
+      const detail = lastError ? `orca worker-read failed: ${lastError}`
+        : unsent ? `the agent is idle and the task is not in its terminal after ${waitMs / 1000}s: the prompt was probably not sent yet`
+        : timeoutDetail;
+      return { ...base, status: 'unknown', detail, ...(tail.length ? { tail: lastLines(tail) } : {}), ...(unsent ? { unsent: true as const } : {}), cleanup: [] };
     }
     const read = await orca(['worker-read', '--source', 'terminal', '--limit', '80']);
     const obs = parseWorkerRead(read.stdout, read.code, read.error);
@@ -127,6 +136,7 @@ export async function verifyWorker(dispatchId: string, deps: VerifyDeps, opts: V
       const o = obs.value;
       // An exited terminal can come back empty: keep the last output that was seen.
       if (o.tail.length > 0) tail = o.tail;
+      promptSeen ||= tail.some((l) => TASK_HEADER.test(l));
       const settled = o.liveness === 'exited' || o.outcome === 'failed';
       const message = model ? findRejection(model, tail) : undefined;
       if (message) {
@@ -142,8 +152,10 @@ export async function verifyWorker(dispatchId: string, deps: VerifyDeps, opts: V
         return { ...base, status: 'started', detail: `working for ${Math.round((now - workingSince) / 1000)}s with no refusal`, cleanup: [] };
       }
       // The agent's turn ended without worker_done: a refusal not recognized, an error, or a question in its own prompt.
+      // An agent idle at an empty prompt, with no task header in its terminal, has not been given the task yet:
+      // keep polling, since Orca can deliver the prompt late.
       doneSince = o.activity === 'done' && o.outcome === 'in_progress' ? (doneSince ?? now) : undefined;
-      if (doneSince !== undefined && now - doneSince >= 3_000) {
+      if (doneSince !== undefined && promptSeen && now - doneSince >= 3_000) {
         return { ...base, status: 'stalled', detail: 'the agent stopped without worker_done', tail: lastLines(tail), cleanup: [] };
       }
     }

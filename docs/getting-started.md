@@ -7,7 +7,8 @@ This page covers installing OrcaCompass, what happens the first time it runs
 
 - **Node.js 24 is recommended** for both using OrcaCompass and building it
   from source. The published CLI supports Node.js 20+, but reading Orca's
-  agent switches needs Node.js 22.13+ without extra flags (`node:sqlite`).
+  agent switches and model catalog needs Node.js 22.13+ without extra flags
+  (`node:sqlite`).
   When SQLite is unavailable, those switches are reported as `unknown`.
   Development tools have newer Node requirements than the published CLI;
   see [Development setup](https://github.com/manomilano/orca-compass/blob/main/CONTRIBUTING.md#development-setup).

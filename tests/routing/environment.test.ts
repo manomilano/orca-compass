@@ -153,7 +153,7 @@ describe('gather', () => {
     expect(env.scoreSource).toBe(env.evidenceSource);
     expect(env.evidenceGeneratedAt).toBeDefined();
     expect(env.discoveries.map((d) => d.agent)).toEqual([...AGENT_IDS]);
-    expect(env.discoveries.find((d) => d.agent === 'muse')).toMatchObject({ installed: true, models: [] });
+    expect(env.discoveries.find((d) => d.agent === 'muse')?.models.map((m) => m.modelId)).toEqual(['muse-wonder-1.0', 'muse-spark-1.1', 'muse-ember-1.0', 'muse-spark-1.3']);
     expect(env.usage.grok.status).toBe('unavailable');
     expect(env.usage.claude.status).toBe('ok');
     expect(env.orcaAgents).toEqual({ known: true, disabled: [], source: '/fake/orca/profile-state.db' });

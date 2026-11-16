@@ -2,11 +2,14 @@ export type Axis = 'coding' | 'agentic' | 'reasoning';
 export const AXES: readonly Axis[] = ['coding', 'agentic', 'reasoning'];
 export type EvidenceKind = 'measured' | 'vendor' | 'reported';
 export interface SnapshotResult { benchmark: string; value: number; unit: 'percent' | 'points' | 'elo'; setting?: string; kind: EvidenceKind; source: string; observedAt: string; url: string }
-export interface SnapshotScore { score: number; benchmarks: number; kind: 'measured' | 'estimated' }
+/** `from` names the model an `estimated` score was copied from (a curated `fallback`), when it has no evidence of its own. */
+export interface SnapshotScore { score: number; benchmarks: number; kind: 'measured' | 'estimated'; from?: string }
 export interface SnapshotPricing { inputPerM: number; outputPerM: number; basis?: string }
-export interface SnapshotModel { id: string; aliases: string[]; provider: string; name: string; family?: string; releasedAt?: string; results: SnapshotResult[]; scores: Partial<Record<Axis, SnapshotScore>>; pricing?: SnapshotPricing }
+export interface SnapshotModel { id: string; aliases: string[]; provider: string; name: string; family?: string; releasedAt?: string; results: SnapshotResult[]; scores: Partial<Record<Axis, SnapshotScore>>; pricing?: SnapshotPricing; fallback?: string }
 export interface SnapshotSource { id: string; label: string; url: string; license: string; fetchedAt: string; dataDate?: string }
-export interface EvidenceSnapshot { schemaVersion: 1; generatedAt: string; sources: SnapshotSource[]; benchmarks: Record<string, { name: string; range: [number, number]; unit: 'percent' | 'points' | 'elo'; source: string }>; axes: Record<Axis, { weights: Record<string, number> }>; bands: Record<Axis, [number, number, number]>; models: SnapshotModel[] }
+export interface EvidenceSnapshot { schemaVersion: 1; generatedAt: string; sources: SnapshotSource[]; benchmarks: Record<string, { name: string; range: [number, number]; unit: 'percent' | 'points' | 'elo'; source: string }>; axes: Record<Axis, { weights: Record<string, number> }>; bands: Record<Axis, [number, number, number]>;
+  /** The `top` need cut per axis, above the `high` cut. Kept out of `bands`, whose three cuts 0.2.2 requires. */
+  topBands?: Record<Axis, number>; models: SnapshotModel[] }
 export const SNAPSHOT_SCHEMA = 1;
 export const ALLOWED_LICENSES: readonly string[] = ['CC BY 4.0', 'CC0 1.0', 'MIT'];
 
@@ -26,6 +29,11 @@ export function parseSnapshot(text: string | undefined): EvidenceSnapshot | unde
       return Array.isArray(band) && band.length === 3 && band.every((n: unknown) => typeof n === 'number' && Number.isFinite(n)) && band[0] < band[1] && band[1] < band[2] &&
         object(entry) && object(entry.weights) && Object.keys(entry.weights).every((key) => Object.hasOwn(benchmarks, key));
     })) return undefined;
+    const top = value.topBands;
+    if (top !== undefined && !(object(top) && AXES.every((axis) => {
+      const cut = top[axis];
+      return typeof cut === 'number' && Number.isFinite(cut) && cut > (bands[axis] as number[])[2] && cut <= 100;
+    }))) return undefined;
     return value as unknown as EvidenceSnapshot;
   } catch { return undefined; }
 }

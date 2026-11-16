@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -12,7 +12,7 @@ import { readTextFile, type AgentDeps } from '../../../src/placements/agents/dep
 import { discoverGrok, parseGrokCache, parseGrokModels } from '../../../src/placements/agents/grok.js';
 import { discoverMuse } from '../../../src/placements/agents/muse.js';
 import { discoverOpencode, parseOpencodeModels, toOpencodeModels } from '../../../src/placements/agents/opencode.js';
-import { orcaCatalogPath } from '../../../src/placements/agents/orca-catalog.js';
+import { orcaCatalogPath, readOrcaCatalogRows } from '../../../src/placements/agents/orca-catalog.js';
 import type { Runner } from '../../../src/system/run.js';
 import type { Effort, ModelIndex, ModelMeta } from '../../../src/types.js';
 
@@ -106,18 +106,18 @@ describe('where agents keep their files', () => {
   });
 
   it('reads Orca\'s catalog from ORCA_USER_DATA_PATH, as Orca\'s own settings are', () => {
-    expect(orcaCatalogPath({ ...env, ORCA_USER_DATA_PATH: '/custom/orca' })).toBe(join('/custom/orca', 'agent-model-catalog.json'));
+    expect(orcaCatalogPath({ ...env, ORCA_USER_DATA_PATH: '/custom/orca' })).toBe(join('/custom/orca', 'agent-model-catalog.db'));
   });
 
   it.skipIf(process.platform === 'win32')('finds Orca\'s catalog in its default folder when XDG_CONFIG_HOME is empty', () => {
     const expected = process.platform === 'darwin'
-      ? join('/fake/home', 'Library', 'Application Support', 'orca', 'agent-model-catalog.json')
-      : join('/fake/home', '.config', 'orca', 'agent-model-catalog.json');
+      ? join('/fake/home', 'Library', 'Application Support', 'orca', 'agent-model-catalog.db')
+      : join('/fake/home', '.config', 'orca', 'agent-model-catalog.db');
     expect(orcaCatalogPath({ ...env, XDG_CONFIG_HOME: '' })).toBe(expected);
   });
 
   it.runIf(process.platform === 'win32')('finds Orca\'s catalog under the profile when APPDATA is missing', () => {
-    expect(orcaCatalogPath({ USERPROFILE: '/fake/profile' })).toBe(join('/fake/profile', 'AppData', 'Roaming', 'orca', 'agent-model-catalog.json'));
+    expect(orcaCatalogPath({ USERPROFILE: '/fake/profile' })).toBe(join('/fake/profile', 'AppData', 'Roaming', 'orca', 'agent-model-catalog.db'));
   });
 });
 
@@ -297,7 +297,10 @@ describe('discoverCodex', () => {
   it('reads the Codex models cache, skipping hidden models and ultra', async () => {
     const reads: string[] = [];
     const cx = await discoverCodex(deps({ readFile: fixtureFiles({ codexCache }, reads) }));
-    expect(reads[0]).toBe(join('/fake/codex', 'models_cache.json'));
+    // Orca's catalog comes first; without one, Codex's own cache.
+    expect(reads).toHaveLength(2);
+    expect(reads[0]).toMatch(/agent-model-catalog\.json$/);
+    expect(reads[1]).toBe(join('/fake/codex', 'models_cache.json'));
     expect(cx).toMatchObject({ agent: 'codex', installed: true });
     expect(cx.models.map((m) => m.modelId)).toContain('gpt-6-astra');
     expect(cx.models.map((m) => m.modelId)).not.toContain('gpt-reserve');
@@ -640,10 +643,15 @@ describe('discoverAntigravity', () => {
 });
 
 describe('discoverMuse', () => {
-  it('detects muse but offers no models, since Orca has no Muse model list', async () => {
+  it("routes the built-in Muse lineup with Orca's effort menu, since neither Muse nor Orca lists Muse models", async () => {
     const calls: { cmd: string; args: string[] }[] = [];
     const muse = await discoverMuse(deps({ run: fakeRun('', calls) }));
-    expect(muse).toEqual({ agent: 'muse', installed: true, models: [], note: 'no model list available from Orca; not routed' });
+    expect(muse.models.map((m) => m.modelId)).toEqual(['muse-wonder-1.0', 'muse-spark-1.1', 'muse-ember-1.0', 'muse-spark-1.3']);
+    expect(muse.models[3]).toEqual({
+      agent: 'muse', modelId: 'muse-spark-1.3', efforts: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'], effortSource: 'orca',
+      defaultEffort: 'high', launch: { kind: 'flag', model: 'muse-spark-1.3' }, poolNames: ['session', 'weekly'],
+    });
+    expect(muse.note).toMatch(/built-in Muse list/);
     expect(calls).toEqual([]);
     expect(await discoverMuse(deps({ find: () => undefined }))).toMatchObject({ installed: false, models: [] });
   });
@@ -702,5 +710,96 @@ describe('discoverOpencode', () => {
     expect(await discoverOpencode(deps({ find: () => undefined }))).toEqual({ agent: 'opencode', installed: false, models: [], note: 'opencode not found' });
     const failing: Runner = async () => ({ code: 1, stdout: '', stderr: 'connection refused' });
     expect(await discoverOpencode(deps({ run: failing }))).toMatchObject({ installed: true, models: [], note: 'opencode models failed: connection refused' });
+  });
+});
+
+// Orca's catalog database as Orca writes it: one row per probe, each the probe's JSON, oldest first.
+const probe = (agent: string, models: unknown[]) =>
+  JSON.stringify({ agent, fingerprint: 'f', discovered: { models, origin: 'probe', at: 1, complete: true }, live: null });
+
+describe("Orca's model catalog", () => {
+  it("comes before Codex's own cache: the newest probe that found models, with Orca's efforts and default", async () => {
+    const reads: string[] = [];
+    const rows = [
+      probe('codex', [{ id: 'gpt-6-luna', efforts: [{ value: 'low' }] }]),
+      probe('claude', [{ id: 'claude-opus-5-5', efforts: [] }]),
+      probe('codex', [{ id: 'gpt-6-astra', description: 'Frontier', defaultEffort: 'medium', efforts: ['low', 'medium', 'high', 'xhigh'].map((value) => ({ value })) }]),
+      probe('codex', []),
+    ];
+    const cx = await discoverCodex(deps({ readFile: fixtureFiles({ codexCache }, reads), readOrcaCatalog: async () => rows }));
+    expect(cx.models.map((m) => m.modelId)).toEqual(['gpt-6-astra']);
+    expect(cx.models[0]).toMatchObject({
+      efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'medium', effortSource: 'orca', lineup: 'Frontier', meta: index['gpt-6-astra'],
+    });
+    expect(cx.note).toMatch(/agent-model-catalog\.db$/);
+    // Codex's cache is still read, for the defaults Orca does not record.
+    expect(reads).toEqual([join('/fake/codex', 'models_cache.json')]);
+  });
+
+  it("takes a Codex model's default effort from Codex's cache when Orca does not record one", async () => {
+    const rows = [probe('codex', [{ id: 'gpt-6-astra', efforts: [{ value: 'low' }, { value: 'high' }] }])];
+    const cached = JSON.parse(codexCache).models.find((m: { slug: string }) => m.slug === 'gpt-6-astra').default_reasoning_level;
+    const cx = await discoverCodex(deps({ readFile: fixtureFiles({ codexCache }), readOrcaCatalog: async () => rows }));
+    expect(cx.models[0]).toMatchObject({ modelId: 'gpt-6-astra', efforts: ['low', 'high'], effortSource: 'orca', defaultEffort: cached });
+  });
+
+  it("comes before Claude Code's account catalog, listing an alias once as the model it launches", async () => {
+    const rows = [probe('claude', [
+      { id: 'claude-opus-5-5', resolvedModel: 'claude-opus-5-5', efforts: [{ value: 'high' }, { value: 'xhigh' }] },
+      { id: 'opus', resolvedModel: 'claude-opus-5-5', efforts: [] },
+      { id: 'claude-sonnet-4-6', defaultEffort: 'high', efforts: [{ value: 'low' }, { value: 'high' }] },
+    ])];
+    const cache = JSON.stringify({ fetchedAt: 1, catalog: { config: { models: [{ id: 'claude-haiku-5-5' }] } } });
+    const cl = await discoverClaude(deps({
+      readOrcaCatalog: async () => rows,
+      listDir: () => ['acct-1-cc.json'],
+      readFile: (p) => (p.endsWith('-cc.json') ? cache : undefined),
+    }));
+    expect(cl.models.map((m) => m.modelId)).toEqual(['claude-opus-5-5', 'claude-sonnet-4-6']);
+    expect(cl.models[0]).toMatchObject({ efforts: ['high', 'xhigh'], effortSource: 'orca' });
+    expect(cl.models[1]).toMatchObject({ defaultEffort: 'high', meta: index['claude-sonnet-4-6'] });
+    expect(cl.note).toMatch(/agent-model-catalog\.db$/);
+  });
+
+  it('falls back to the JSON file older Orca versions wrote when the database lists nothing for the agent', async () => {
+    const cx = await discoverCodex(deps({ readFile: fixtureFiles({ orcaCatalog }), readOrcaCatalog: async () => [probe('claude', [{ id: 'claude-opus-5-5', efforts: [] }])] }));
+    expect(cx.note).toMatch(/agent-model-catalog\.json$/);
+    expect(cx.models.every((m) => m.effortSource === 'orca')).toBe(true);
+  });
+
+  it('is skipped with the reason when this Node.js cannot read it, and the next source is used', async () => {
+    const readOrcaCatalog = async (): Promise<string[]> => {
+      throw new Error('this Node.js (v20.19.0) has no node:sqlite; Node 22.5 or later is needed');
+    };
+    const cx = await discoverCodex(deps({ readFile: fixtureFiles({ codexCache }), readOrcaCatalog }));
+    expect(cx.models.length).toBeGreaterThan(0);
+    expect(cx.note).toMatch(/models_cache\.json; Orca's model catalog skipped: .*Node 22\.5 or later/);
+  });
+
+  it('is read only for Claude Code and Codex, the agents whose model lists Orca saves there', async () => {
+    let reads = 0;
+    const rows = ['cursor', 'grok', 'opencode', 'antigravity', 'muse'].map((agent) => probe(agent, [{ id: 'gpt-6-astra', efforts: [] }]));
+    const orcaDeps = deps({ run: failRun, readFile: () => undefined, readOrcaCatalog: async () => (reads++, rows) });
+    for (const discover of [discoverCursor, discoverGrok, discoverOpencode, discoverAntigravity]) {
+      expect((await discover(orcaDeps)).models).toEqual([]);
+    }
+    expect((await discoverMuse(orcaDeps)).models.map((m) => m.modelId)).not.toContain('gpt-6-astra');
+    expect(reads).toBe(0);
+  });
+
+  it('reads the database read-only, rows in the order Orca wrote them, and nothing when there is none', async () => {
+    const { DatabaseSync } = await import('node:sqlite');
+    const dir = mkdtempSync(join(tmpdir(), 'oc-orca-catalog-'));
+    const path = join(dir, 'agent-model-catalog.db');
+    const db = new DatabaseSync(path);
+    db.exec('CREATE TABLE rows(key TEXT PRIMARY KEY, seq INTEGER NOT NULL, value TEXT NOT NULL)');
+    const insert = db.prepare('INSERT INTO rows VALUES (?, ?, ?)');
+    insert.run('b', 2, 'second');
+    insert.run('a', 1, 'first');
+    db.close();
+    expect(await readOrcaCatalogRows(path)).toEqual(['first', 'second']);
+    const missing = join(dir, 'missing.db');
+    expect(await readOrcaCatalogRows(missing)).toBeUndefined();
+    expect(existsSync(missing)).toBe(false);
   });
 });

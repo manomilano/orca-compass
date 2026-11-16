@@ -33,7 +33,7 @@ Columns:
 | `codex` | `codex` | ✅ | ✅ | Supported: routed |
 | `cursor` | `cursor-agent` | ✅ (effort is part of the model id) | ✅ | Supported: routed; also carries xAI, Google, Meta and other models through Cursor |
 | `antigravity` | `agy` | ✅ | ✅ | Supported: routed |
-| `muse` | `muse --trust-workspace` | ✅ | ✅ (flag) | Detected only, never routed: Orca accepts `--model`, but there is no Muse model list to route from |
+| `muse` | `muse --trust-workspace` | ✅ | ✅ (flag) | Orca accepts any `--model`; neither Muse nor Orca lists Muse models, so OrcaCompass routes a built-in list |
 | `grok` | `grok` | ✅ (since 1.4.246; passed as `-m` / `--reasoning-effort`) | ❌ | Supported: routed. OrcaCompass reads Grok's models (`~/.grok/models_cache.json`, then `grok models`), tiers them and knows their effort limits. Orca does not auto-trust folders for Grok, so a worker in a folder Grok has not trusted stops at its trust prompt. xAI models also route through Cursor |
 | `hermes` | `hermes --tui` | — | — | Not supported: Orca passes no model to Hermes |
 | `gemini` | `gemini` | ❌ | — | Not an agent here: Gemini models route through Antigravity or Cursor |
@@ -84,7 +84,11 @@ Source: `src/routing/environment.ts` and `src/placements/agents/*.ts`, `src/rout
 1. **Find the CLI** with `find(<binary>, extra dirs)`. Not found → `installed: false`, never routed.
 2. **Read the model list** when the placement table is built (every
    `placementsTtlHours`, on `refresh`, or when the table is stale), never on a
-   route that reuses a fresh table. Live model-list commands run through
+   route that reuses a fresh table. For Claude Code and Codex, Orca's model
+   catalog comes first (`src/placements/agents/orca-catalog.ts`): the newest
+   probe in `agent-model-catalog.db` that found models for the agent, opened
+   read-only once per build, then the `agent-model-catalog.json` older Orca
+   versions wrote. Orca saves no other agent's list there. Live model-list commands run through
    `listModels` (`src/placements/agents/list-cache.ts`): a good
    listing is saved to the OrcaCompass cache; if the command later fails, the
    saved copy is used with its age ("using the list from 3h ago"). A sign-in
@@ -118,9 +122,9 @@ Source: `src/routing/environment.ts` and `src/placements/agents/*.ts`, `src/rout
 |---|---|---|---|---|---|---|---|
 | **Adapter** | `claude.ts` | `codex.ts` | `cursor.ts` | `antigravity.ts` | `grok.ts` | `opencode.ts` | `muse.ts` |
 | **Finds** | `claude` on PATH | `codex` on PATH | `cursor-agent` on PATH or `%LOCALAPPDATA%\cursor-agent` | `agy` on PATH, `%LOCALAPPDATA%\agy\bin` or `~/.local/bin` | `grok` on PATH, `$GROK_HOME/bin` or `~/.grok/bin` | `opencode` on PATH or `~/.opencode/bin` | `muse` on PATH |
-| **Model list** | Claude Code's cached account catalog, then Orca's `agent-model-catalog.json`, then Anthropic families in the evidence snapshot | `$CODEX_HOME/models_cache.json` (`visibility: list`), then Orca's `agent-model-catalog.json`, then the evidence snapshot's Codex ladder families without `-latest` aliases | `cursor-agent models`, live | `agy models`, live (`id<TAB>label` rows) | `~/.grok/models_cache.json` (Grok's own, hidden models dropped); else `grok models`, live | `opencode models`, live (`provider/model` rows; OpenRouter `~` aliases skipped) | None: detected only, never routed |
+| **Model list** | Orca's `agent-model-catalog.db`, then Claude Code's cached account catalog, then Anthropic families in the evidence snapshot | Orca's `agent-model-catalog.db`, then `$CODEX_HOME/models_cache.json` (`visibility: list`), then the evidence snapshot's Codex ladder families without `-latest` aliases | `cursor-agent models`, live | `agy models`, live (`id<TAB>label` rows) | `~/.grok/models_cache.json` (Grok's own, hidden models dropped); else `grok models`, live | `opencode models`, live (`provider/model` rows; OpenRouter `~` aliases skipped) | Built-in: `muse-wonder-1.0`, `muse-spark-1.1`, `muse-ember-1.0`, `muse-spark-1.3` (`MUSE_FALLBACK_MODELS`) |
 | **Grouping** | — | — | Variants grouped by base id: effort, `-thinking` and `-fast` are stripped; `cursor-` prefix and old `claude-4.6-sonnet` ids normalized | `-low/-medium/-high` ids grouped; `-thinking` dropped to match the evidence snapshot | — | A model listed by several providers kept once, from the cheapest (local, then free, then paid) | — |
-| **Effort** | From the selected account or Orca catalog; on the evidence snapshot fallback, assumed `low` to `max` | Codex cache levels + default, then Orca's catalog; on the evidence snapshot fallback, assumed `low` to `max` | Inside the model id (`…-high`); the plain id stands for `medium`; fast-only levels dropped | Gemini: inside the id. Others: Orca's `low`/`medium`/`high` via `--effort` | Grok cache levels + default (none for multi-agent models); from `grok models`: `low` to `xhigh`, capped as in Orca's seed (4.5 up to `high`) | None (Orca passes no effort to OpenCode) | — |
+| **Effort** | Orca's catalog levels + default, else the account catalog; on the evidence snapshot fallback, assumed `low` to `max` | Orca's catalog levels + default, else the Codex cache's; on the evidence snapshot fallback, assumed `low` to `max` | Inside the model id (`…-high`); the plain id stands for `medium`; fast-only levels dropped | Gemini: inside the id. Others: Orca's `low`/`medium`/`high` via `--effort` | Grok cache levels + default (none for multi-agent models); from `grok models`: `low` to `xhigh`, capped as in Orca's seed (4.5 up to `high`) | None (Orca passes no effort to OpenCode) | — |
 | **`launchArgs`** | `--model --effort` | `--model --effort` | `--model <variant id>` | `--model <variant id>` (Gemini) or `--model --effort` | `--model --effort` | `--model <provider/model>` | — |
 | **Usage pools** | `session`, `weekly`, plus `fableWeekly` for Fable | `session`, `weekly` | `monthly` + `Cursor Models` or `Other Models` bucket (which models draw on which is inferred) | Per quota group (`Gemini Models`, `Claude and GPT models`): 5-hour and long; else Orca's `session`/`weekly` | `weekly`, `monthly` | None: pay per use or local; the route says how it is paid | — |
 | **Refusal `verify` matches** | `There's an issue with the selected model` (idles) | `model is not supported when using Codex…` (idles) | `Cannot use this model` (exits) | `invalid model selection` / `not recognized as a known model` (exits) | `Couldn't set model … unknown model id` (exits) | `Model unavailable` | — |

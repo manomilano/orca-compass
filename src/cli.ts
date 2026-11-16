@@ -4,6 +4,7 @@ import { cacheDir } from './paths.js';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { AXES, parseSnapshot, type Axis, type SnapshotSource } from './evidence/snapshot.js';
+import { DEFAULT_TOP_BANDS } from './evidence/refresh.js';
 import { BUNDLED_URL } from './evidence/source.js';
 import { readTextFile } from './placements/agents/deps.js';
 import { modelFamily } from './placements/tiers.js';
@@ -28,6 +29,7 @@ import { runCommand } from './system/run.js';
 import { configPath } from './paths.js';
 import { readRejections, recordRejection, writeRejections } from './routing/rejections.js';
 import { install, update, uninstall, type InstallDeps } from './install.js';
+import { VERSION } from './version.js';
 import { setupInfo, setupWizard, type Terminal } from './setup.js';
 import { verifyWorker, type Verdict } from './verify.js';
 
@@ -76,7 +78,8 @@ commands:
   setup                                answer a few questions (needs a terminal)
   setup --json                         what the setup questions need, for a chat setup
   setup --complete [--json]            finish chat setup, including unchanged defaults
-  setup --skip [--json]                keep the defaults and stop offering setup`;
+  setup --skip [--json]                keep the defaults and stop offering setup
+  --version                            print the installed version`;
 
 class UsageError extends Error {}
 
@@ -90,6 +93,10 @@ export async function main(argv: string[], io: IO, deps: MainDeps = {}): Promise
   try {
     if (command === 'help' || command === '--help' || command === '-h') {
       io.out(USAGE);
+      return 0;
+    }
+    if (command === 'version' || command === '--version' || command === '-v') {
+      io.out(VERSION);
       return 0;
     }
     if (command === 'route') return await routeCommand(rest, io, deps);
@@ -322,6 +329,13 @@ function verifyNext(d: Verdict, skipHours: number | undefined): string[] {
         'if it asks a question, answer it in its terminal; otherwise keep waiting',
       ];
     default:
+      if (d.unsent) {
+        return [
+          'do not reroute: the model was not refused and the agent has not started the task',
+          'read the terminal: the task text may still be unsent in the input box, or not delivered yet',
+          'keep waiting; run verify again once the agent is working',
+        ];
+      }
       return ['keep waiting as usual; run verify again later or read the terminal'];
   }
 }
@@ -827,7 +841,7 @@ async function rankingCommand(args: string[], io: IO, deps: MainDeps): Promise<n
   const { table } = await loadPlacements(config, deps);
   const models = rankingModels(table, axis);
   if (v.json) {
-    io.out(JSON.stringify({ generatedAt: table.sources.evidence.generatedAt, sources: snapshotSources(table, deps), bands: table.bands,
+    io.out(JSON.stringify({ generatedAt: table.sources.evidence.generatedAt, sources: snapshotSources(table, deps), bands: table.bands, topBands: table.topBands ?? DEFAULT_TOP_BANDS,
       models: models.map(({ family, ...model }) => model) }, null, 2));
   } else {
     const axes = axis ? [axis] : AXES;
@@ -858,7 +872,7 @@ function tiersText(table: PlacementTable, view: ReturnType<typeof placementsView
   }
   for (const a of [axis]) {
     const [daily, advanced, frontier] = table.bands[a];
-    lines.push(`${a}: light < ${daily} ≤ daily < ${advanced} ≤ advanced < ${frontier} ≤ frontier`);
+    lines.push(`${a}: light < ${daily} ≤ daily < ${advanced} ≤ advanced < ${frontier} ≤ frontier; the top need takes ${(table.topBands ?? DEFAULT_TOP_BANDS)[a]} or more`);
     for (const tier of TIERS) {
       lines.push(`${tier}:`);
       for (const r of rows.filter((r) => r.profile.axes[a].band === tier)) lines.push(`  ${r.agent} ${r.model}  ${axisText(a, r.profile.axes[a])}`);

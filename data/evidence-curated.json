@@ -5,6 +5,7 @@
       "provider": "cursor",
       "name": "Composer 2.5",
       "family": "composer",
+      "fallback": "kimi-k2-5",
       "pricing": { "inputPerM": 0.5, "outputPerM": 2.5, "basis": "maker" },
       "priceUrl": "https://cursor.com/changelog/composer-2-5",
       "results": [

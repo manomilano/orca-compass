@@ -28,6 +28,7 @@ orcacompass install [-g|--global | -l|--local] [-y|--yes] [-a|--agent <name>]...
 orcacompass update [same options as install]
 orcacompass uninstall [same options as install]
 orcacompass --help
+orcacompass --version
 ```
 
 | Command | What it does | Writes |
@@ -73,7 +74,7 @@ orcacompass route --need coding=high,agentic=mid,reasoning=low --demand high --a
 
 | Flag | Meaning |
 | --- | --- |
-| `--need <axes>` | All three axes: `coding`, `agentic`, `reasoning`, each `min`, `low`, `mid` or `high`; no spaces |
+| `--need <axes>` | All three axes: `coding`, `agentic`, `reasoning`, each `min`, `low`, `mid`, `high` or `top`; no spaces |
 | `--tier <t>` | Shorthand for equal needs: `light`, `daily`, `advanced`, `frontier`; mutually exclusive with `--need` |
 | `--tier-reason <text>` | Optional nonempty explanation from the coordinator, returned in JSON and text. The Skill keeps routine classification in the tool exchange and explains it in chat on request |
 | `--demand <d>` | `low`, `moderate`, `high`, `exceptional`; mapped to an effort through `effortPolicy` |
@@ -112,7 +113,7 @@ source fields and `placementsBuiltAt`:
 | `confidence` | `high`, `medium`, `low` |
 | `risk` | `{ pool, usedPercent, elapsedPercent, projectedPercent, tooEarly, resetsAt }` for the route; `null` when usage is unknown |
 | `reasons` | One line per fact behind the choice; the needs line includes `fit group: daily cost tier (3 models)`, and a route adds `cost: daily ($4.00/M blended, maker price)` (tier, count, price and source vary) |
-| `warnings` | Downgrade, upgrade, skipped preference, last-resort use |
+| `warnings` | Downgrade, upgrade, skipped preference, last-resort use, a cheaper cost tier passed over for usage, every covering route above `usageRiskLimit` |
 | `alternatives` | Up to five other candidates from the chosen tier (requested tier without a pick): `agent`, `model`, `effort`, `tier`, `headroom` (fraction, or `null`), `confidence`, `blocked`, `risk`, `reason` |
 | `skipped` | `{ agent, model?, reason }` for excluded agents and banned/refused models in the requested tier. Superseded releases and no-ZDR exclusions are omitted. Preference exclusions appear in `warnings` |
 | `waitUntil` | Epoch ms when a blocked requested-tier candidate resets; with `wait`, sometimes with `none` |
@@ -146,6 +147,7 @@ returns early. Each Orca command is limited to the remaining budget and at most
 | `message` | With `rejected`: the agent's refusal, in its own words |
 | `detail` | One line: what was seen |
 | `tail` | With `stalled`, `failed`, `unknown`: the last lines of the terminal |
+| `unsent` | `true` with `unknown` when the agent stayed idle and the task never appeared in its terminal: the prompt was probably not sent yet. Do not reroute |
 | `cleanup` | Orca argv lists to run in order before a replacement (`worker-stop`, then `worker-release`; only `worker-release` when the worker already exited) |
 | `skippedForHours` | With `rejected`: how long routes skip this agent and model (`rejectionTtlHours`) |
 | `next` | What the orchestrator does next, in order, including the `worker-start --task <taskId> --retry-of <dispatchId>` command for a replacement |

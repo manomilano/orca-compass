@@ -78,7 +78,8 @@ export function parseTable(text: string | undefined): PlacementTable | undefined
   const b = raw.builtWith;
   if (!isObj(b) || !isObj(b.tierOverrides) || !validCostBands(b.costBands)) return undefined;
   const s = raw.sources;
-  if (!isObj(s) || !validSource(s.evidence) || !isObj(s.evidence) || typeof s.evidence.generatedAt !== 'string' || !Number.isFinite(Date.parse(s.evidence.generatedAt)) || !validBands(raw.bands)) return undefined;
+  if (!isObj(s) || !validSource(s.evidence) || !isObj(s.evidence) || typeof s.evidence.generatedAt !== 'string' || !Number.isFinite(Date.parse(s.evidence.generatedAt)) || !validBands(raw.bands) ||
+    (raw.topBands !== undefined && !(isObj(raw.topBands) && AXES.every((axis) => typeof (raw.topBands as Record<string, unknown>)[axis] === 'number')))) return undefined;
   if (!Array.isArray(raw.agents) || !raw.agents.every(validAgent)) return undefined;
   return raw as unknown as PlacementTable;
 }

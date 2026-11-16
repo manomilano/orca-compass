@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.2.3
+
+- Lowered the `low` need cuts to coding 60, agentic 35 and reasoning 70 (from
+  70, 60 and 76), so simple jobs can go to the good small models, and the
+  `mid` cuts to coding 75, agentic 70 and reasoning 80 (from 78, 72 and 84).
+  The `high` reasoning cut is 86 (from 89); the other `high` cuts are
+  unchanged. The cuts travel with the evidence snapshot, so 0.2.2
+  picks them up on its next refresh.
+- A route expected to end its usage window above the new `usageRiskLimit`
+  (default 90%) is strained. When every covering route in the cheapest cost
+  tier is blocked or strained, routing moves to the cheapest pricier tier that
+  has a route with known usage below the limit, and warns. When every covering
+  route is strained, the one with the most room in the cheapest tier that is
+  not fully blocked is used, with a warning, so the job keeps its level. Before,
+  the cheapest tier was kept until it was fully blocked, and then the job was
+  downgraded even if a pricier covering route still had room.
+- Evidence refreshed from LLMBenchmark's 2026-11-15 dataset: Gemini 4 Hydrogen
+  and four other models added, Muse Wonder now has agentic and reasoning
+  scores, and about 900 more benchmark results.
+- New need level `top`, above `high`: coding 87, agentic 82, reasoning 90.
+  Pass it with `--need` (there is no tier for it), for the rare job where
+  `high` is not enough; the Skill says when. Its cuts are a separate
+  `topBands` field in the evidence snapshot, so 0.2.2 keeps reading the
+  snapshot.
+- The Skill defines every level of each skill (coding: implementation
+  difficulty; agentic: autonomy and adaptive execution; reasoning: cognitive
+  problem-solving difficulty), so the orchestrator rates jobs more
+  consistently.
+- Of two routes with the same headroom that both cover the job, the cheaper
+  model now wins before the higher score. Routes on one agent share its usage
+  pools, so a covering GPT-6.1 Terra is chosen before GPT-6.1 Sol. A model that
+  falls short never wins on price.
+- Curated models can name a `fallback` model whose score stands in on axes
+  they have no evidence for, labelled `assumed`. Composer 2.5 takes its
+  agentic score from Kimi K2.5.
+- `verify` no longer reports `stalled` for an agent that is idle because the
+  task never reached its terminal. It keeps waiting for the prompt, and if it
+  never arrives returns `unknown` with `unsent: true` and tells the
+  coordinator not to reroute.
+- Added `orcacompass --version` (also `-v` and `version`).
+- Claude Code's and Codex's model lists now come first from Orca's model
+  catalog: the models Orca's model picker offers, with the efforts and default
+  effort Orca allows for each. Their own caches come second. Orca saves no
+  other agent's list there, so the others keep their own sources. Orca moved
+  that catalog from `agent-model-catalog.json` to `agent-model-catalog.db`,
+  which 0.2.2 did not read; the JSON file is still read for older Orca
+  versions. Reading the database needs `node:sqlite` (Node.js 22.13+ without
+  flags); without it the agent's note says the catalog was skipped.
+- Muse is routed from a built-in list (Muse Wonder, Muse Spark 1.1, Muse
+  Ember, Muse Spark 1.3) with Orca's Muse efforts, `minimal` to `max`. Neither
+  Muse nor Orca lists Muse models, so 0.2.2 only detected Muse.
+
 ## 0.2.2
 
 - Replaced Model Index and Models.dev sources with a daily

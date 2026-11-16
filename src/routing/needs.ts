@@ -1,14 +1,15 @@
 import { AXES, type Axis } from '../evidence/snapshot.js';
 import { TIERS, type Tier } from '../types.js';
 
-export type Need = 'min' | 'low' | 'mid' | 'high';
-export const NEEDS: readonly Need[] = ['min', 'low', 'mid', 'high'];
+/** `top` sits above `high` for the rare job only the strongest models should take; `--tier` stops at `high`. */
+export type Need = 'min' | 'low' | 'mid' | 'high' | 'top';
+export const NEEDS: readonly Need[] = ['min', 'low', 'mid', 'high', 'top'];
 export type Needs = Record<Axis, Need>;
 
 /** Strict CLI syntax: every axis exactly once, with no normalization hiding mistakes. */
 export function parseNeeds(text: string): Needs {
   const result: Partial<Needs> = {};
-  const invalid = () => new Error('--need must name all three axes, e.g. --need coding=high,agentic=mid,reasoning=low (levels: min, low, mid, high)');
+  const invalid = () => new Error('--need must name all three axes, e.g. --need coding=high,agentic=mid,reasoning=low (levels: min, low, mid, high, top)');
   for (const entry of text.split(',')) {
     const parts = entry.split('=');
     const axis = parts[0] as Axis;
@@ -26,5 +27,5 @@ export function needsFromTier(tier: Tier): Needs {
 }
 
 export function tierOfNeeds(needs: Needs): Tier {
-  return TIERS[Math.max(...AXES.map((axis) => NEEDS.indexOf(needs[axis])))];
+  return TIERS[Math.min(TIERS.length - 1, Math.max(...AXES.map((axis) => NEEDS.indexOf(needs[axis]))))];
 }

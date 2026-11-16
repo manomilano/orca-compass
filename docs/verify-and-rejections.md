@@ -39,8 +39,8 @@ orcacompass verify --dispatch <dispatchId> [--wait 60] --json
 | `reported` | Orca's outcome is `succeeded`: the worker already sent `worker_done` |
 | `failed` | The terminal exited or the outcome is `failed`, with no recognized refusal |
 | `started` | Activity has been `working` for 8 s (`workingMs`) with no refusal |
-| `stalled` | Activity is `done` while the outcome is still `in_progress` for 3 s: the agent ended its turn without `worker_done` (an unrecognized refusal, another error, or a question in its own prompt) |
-| `unknown` | No verdict within `--wait` seconds (default and maximum 60), or Orca's commands kept failing |
+| `stalled` | The task header is in the terminal and activity is `done` while the outcome is still `in_progress` for 3 s: the agent ended its turn without `worker_done` (an unrecognized refusal, another error, or a question in its own prompt) |
+| `unknown` | No verdict within `--wait` seconds (default and maximum 60), or Orca's commands kept failing. With `unsent: true`: the agent sat idle the whole time and Orca's `=== TASK ===` header never appeared in its terminal, so the prompt was probably not sent yet |
 
 The total timeout includes `worker-show`, reads, and polling delays. Each
 command uses at most 20 s and is shortened to the time remaining. Verification

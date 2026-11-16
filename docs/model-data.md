@@ -7,7 +7,9 @@ weights, bands and licensed source metadata. Optional model `pricing` is
 `{ inputPerM, outputPerM, basis? }`, in USD per million tokens. The refresh
 copies LLMBenchmark pricing: the maker API price when the maker serves the
 model on OpenRouter, otherwise the median across providers; `basis` records
-which. Curated rows can carry pricing too. Missing or unusable dataset prices
+which. Curated rows can carry pricing too, and a `fallback` model id: on axes
+the curated model has no score for, the fallback model's score stands in and
+is labelled `assumed` (Composer 2.5 takes its agentic score from Kimi K2.5). Missing or unusable dataset prices
 are omitted; schema 1 still accepts rows without pricing.
 
 Price decides the cost tier only, using a 3:1 input/output blend and configurable

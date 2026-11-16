@@ -22,7 +22,7 @@ export type EffortPolicy = 'efficient' | 'balanced' | 'quality';
 export const EFFORT_POLICIES: readonly EffortPolicy[] = ['efficient', 'balanced', 'quality'];
 export type Confidence = 'high' | 'medium' | 'low';
 export type AgentId = string;
-/** Every agent OrcaCompass knows, in display order (Muse is detected only, never routed). */
+/** Every agent OrcaCompass knows, in display order. */
 export const AGENT_IDS: readonly AgentId[] = ['claude', 'codex', 'cursor', 'grok', 'antigravity', 'opencode', 'muse'];
 
 export interface ModelMeta {
@@ -134,6 +134,8 @@ export interface PlacementTable {
     evidence: SourceInfo & { generatedAt: string };
   };
   bands: EvidenceSnapshot['bands'];
+  /** The `top` need cuts; absent in tables built before 0.2.3. */
+  topBands?: EvidenceSnapshot['topBands'];
   agents: PlacedAgent[];
 }
 
@@ -145,6 +147,7 @@ export type OrcaAgents =
 export interface Environment {
   now: number;
   bands: EvidenceSnapshot['bands'];
+  topBands?: EvidenceSnapshot['topBands'];
   /** Every agent with its models already placed (the placement table's rows). */
   discoveries: PlacedAgent[];
   usage: Record<AgentId, AgentUsage>;
@@ -273,6 +276,11 @@ export interface Config {
   pins: Partial<Record<Tier, Preference>>;
   /** Above this projected usage, replace the favorite only with a known within-limit alternative. */
   preferRiskLimit: number;
+  /**
+   * A route expected to end its usage window above this percent is strained: it is used only when
+   * no other route that covers the job is below the limit, in any cost tier.
+   */
+  usageRiskLimit: number;
   /** Model ids or families the user never wants routed. */
   banModels: string[];
   /**

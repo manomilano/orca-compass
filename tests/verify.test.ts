@@ -125,6 +125,21 @@ describe('verifyWorker', () => {
     expect(v.tail).toEqual(['=== TASK ===', 'Probe task.', '■ You have hit your usage limit.']);
   });
 
+  it('an idle agent that never got the task is not stalled: it waits, then says the prompt was probably not sent', async () => {
+    const banner = ['  >_ OpenAI Codex (v0.169.0)', '›', '  GPT-6.1-Sol medium'];
+    const { deps } = fake(show('codex', 'gpt-6.1-sol'), [{ activity: 'done', tail: banner }]);
+    const v = await verifyWorker('ctx_1', deps, { waitMs: 9_000 });
+    expect(v).toMatchObject({ status: 'unknown', unsent: true, cleanup: [], tail: banner.map((l) => l.trimEnd()) });
+    expect(v.detail).toBe('the agent is idle and the task is not in its terminal after 9s: the prompt was probably not sent yet');
+  });
+
+  it('a prompt that arrives late still gives started', async () => {
+    const idle = { activity: 'done', tail: ['›'] };
+    const working = { activity: 'working', tail: [...PREAMBLE, 'Reading files'] };
+    const { deps } = fake(show('codex', 'gpt-6.1-sol'), [idle, idle, idle, idle, working]);
+    expect(await verifyWorker('ctx_1', deps, opts)).toMatchObject({ status: 'started' });
+  });
+
   it('an exit without a known refusal is failed', async () => {
     const { deps } = fake(show('antigravity', 'gemini-3.8-flash-high'), [{ outcome: 'failed', liveness: 'exited', detail: 'process_exited', tail: ['panic'] }]);
     expect(await verifyWorker('ctx_1', deps, opts)).toMatchObject({ status: 'failed', detail: 'the worker ended without worker_done (process exited)', tail: ['panic'] });

@@ -8,6 +8,7 @@
 <img src="docs/assets/orca-comic-strip.jpg" width="100%" alt="Three-panel orca comic. 1: the pod trusts its leader to match each job to its best model. 2: the leader is unsure which model fits each job and how to share the load, thinking of Anthropic, OpenAI, and + more. 3: holding a glowing compass, the leader sends each worker along a route to Anthropic, OpenAI, or + more." />
 </p>
 
+[![npm version](https://img.shields.io/npm/v/orcacompass?logo=npm&label=npm)](https://www.npmjs.com/package/orcacompass)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node.js: 20+](https://img.shields.io/badge/Node.js-%3E%3D20-339933?logo=nodedotjs&logoColor=white)](package.json)
 [![Platforms: Windows, macOS, Linux](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-64748b)](#install)
@@ -23,7 +24,8 @@ plan's usage is left before the limits reset. OrcaCompass makes that choice:
 the orchestrator rates how hard the job is, and OrcaCompass compares the
 installed Claude Code, Codex, Cursor, Grok Build, Antigravity and OpenCode
 routes using model metadata and current usage limits, explains its choice, and
-returns launch arguments. The orchestrator still launches the worker. It ships
+returns launch arguments. Muse has basic support: a built-in model list and no
+usage data. The orchestrator still launches the worker. It ships
 as an Agent Skill backed by a small TypeScript CLI.
 
 ## How it works
@@ -33,8 +35,9 @@ as an Agent Skill backed by a small TypeScript CLI.
    and separate cost tiers from price (3:1 input/output blend, `costBands`
    default `[1, 5, 12]`; hints are the fallback when price is missing).
 3. **It chooses a route** from the cheapest cost tier whose evidence covers
-   the job, then the most headroom, accounting for recent hand-outs.
-   Cursor `auto` is a fallback.
+   the job, then the most headroom (the cheaper model on a tie), accounting
+   for recent hand-outs. When that tier is close to its usage limits, it moves
+   up a cost tier and warns. Cursor `auto` is a fallback.
 
 ```sh
 orcacompass route --need coding=mid,agentic=low,reasoning=low --demand moderate --json

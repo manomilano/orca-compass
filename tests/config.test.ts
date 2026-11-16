@@ -50,6 +50,7 @@ describe('DEFAULT_CONFIG', () => {
       excludeNoZdr: false,
       cursorAuto: true,
       preferRiskLimit: 100,
+      usageRiskLimit: 90,
       banModels: [],
       lastResortAgents: ['opencode'],
     });
@@ -193,6 +194,7 @@ describe('loadConfig', () => {
       '{"tierOverrides":[]}',
       '{"preferRiskLimit":-1}',
       '{"preferRiskLimit":"100"}',
+      '{"usageRiskLimit":"90"}',
       '{"banModels":"grok"}',
       '{"lastResortAgents":"opencode"}',
     ]) {

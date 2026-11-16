@@ -1,4 +1,5 @@
 import { AXES } from '../evidence/snapshot.js';
+import { DEFAULT_TOP_BANDS } from '../evidence/refresh.js';
 import { coverage, cutFor, EVIDENCE_ORDER, jobEvidence, needWeightedScore } from './adequacy.js';
 import { needsFromTier, tierOfNeeds, type Needs } from './needs.js';
 import { DEMAND_EFFORT, snapEffort } from './effort.js';
@@ -47,6 +48,8 @@ interface Candidate {
   /** A session pool within 20 points of its block threshold: reported, and a tiebreak after headroom. */
   hotSession?: UsagePool;
   blocked: boolean;
+  /** Not blocked, but expected to end its usage window above `usageRiskLimit`: avoided while a route below the limit covers the job. */
+  strained: boolean;
   blockedPools: UsagePool[];
   expiredPools: string[];
   confidence: Confidence;
@@ -138,12 +141,27 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
   const { candidates: all, fallback } = collectCandidates(agents, env, config, req, skipped);
   const honors = (c: Candidate): boolean => !req.effort || canApplyEffort(c.model, req.effort);
   const named = all.filter((c) => c.tier !== null);
+  const coveringOf = (candidates: Candidate[]): Candidate[] => candidates.filter((c) => c.quality?.covers && c.tier !== null);
+  // The cheapest cost tier that covers the job. One exception: when no route there is sound (unblocked
+  // and below the usage risk limit), the cheapest pricier tier with a sound route of known usage takes over.
+  // When every tier is strained, the cheapest one with an unblocked route of known usage keeps the job at its
+  // level (its roomiest route wins) rather than downgrading it.
+  const sound = (c: Candidate): boolean => !c.blocked && !c.strained;
   const fitOf = (candidates: Candidate[]): Candidate[] => {
-    const covering = candidates.filter((c) => c.quality?.covers && c.tier !== null);
-    const lowest = TIERS.find((tier) => covering.some((c) => c.tier === tier));
+    const covering = coveringOf(candidates);
+    const cheapest = TIERS.find((tier) => covering.some((c) => c.tier === tier));
+    const from = (test: (c: Candidate) => boolean): Tier | undefined =>
+      TIERS.slice(TIERS.indexOf(cheapest!)).find((tier) => covering.some((c) => c.tier === tier && test(c)));
+    const lowest = cheapest === undefined || covering.some((c) => c.tier === cheapest && sound(c)) ? cheapest
+      : from((c) => sound(c) && c.rank !== null)
+        ?? (covering.some((c) => c.tier === cheapest && !c.blocked) ? cheapest : from((c) => !c.blocked && c.rank !== null))
+        ?? cheapest;
     return covering.filter((c) => c.tier === lowest).sort(compareRanked);
   };
+  const covering = coveringOf(named.filter(honors));
   const fit = fitOf(named.filter(honors));
+  // Cheaper covering routes the fit group stepped over because of their usage.
+  const passedOver = fit.length ? covering.filter((c) => TIERS.indexOf(c.tier!) < TIERS.indexOf(fit[0].tier!)).sort(compareRanked) : [];
   const requested = req.tier;
   const plan = effortPlan(req, config);
   const target = plan.target;
@@ -167,6 +185,7 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
     const down = quality !== null && !quality.covers;
     const up = quality?.covers === true && cand.tier !== null && TIERS.indexOf(cand.tier) > TIERS.indexOf(requested);
     const others = group.filter((c) => c !== cand && !overRisk.has(c));
+    const inFit = group === fit && fit.includes(cand);
     const reasons = [`${cand.model.agent} ${chosen.model}: ${describe(cand, env.now)}`, needLine];
     if (quality?.cost) {
       const { tier, blended, source } = quality.cost;
@@ -190,6 +209,14 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
     if (up) {
       reasons.push(`upgraded from ${requested}: no model in the ${requested} cost tier covers the job`);
       warnings.push(`no model in the ${requested} cost tier covers the job; using ${cand.tier}`);
+    }
+    if (inFit && passedOver.length) {
+      const tiers = [...new Set(passedOver.map((c) => c.tier!))].join(' and ');
+      const list = passedOver.slice(0, 4).map((c) => `${c.model.agent} ${c.model.modelId} (${summary(c, env.now)})`).join(', ');
+      warnings.push(`cheaper ${tiers} cost tier passed over: every route there that covers the job is blocked or expected to end above ${config.usageRiskLimit}% of its usage window (usageRiskLimit): ${list}`);
+    }
+    if (inFit && cand.strained) {
+      warnings.push(`every unblocked route that covers the job is expected to end above ${config.usageRiskLimit}% of its usage window (usageRiskLimit); ${cand.model.agent} ${chosen.model} is the cheapest with the most room`);
     }
     const next = others.find((c) => !c.blocked);
     if (next) reasons.push(`next best: ${next.model.agent} ${resolve(next, target).model} (${summary(next, env.now)})`);
@@ -400,18 +427,19 @@ function compareRelease(a: LaunchModel, b: LaunchModel): number {
 
 
 function evaluate(model: PlacedModel, env: Environment, config: Config, needs: Needs, auto = false): Candidate {
-  const adequacy = coverage(model.profile, needs, env.bands);
+  const top = env.topBands ?? DEFAULT_TOP_BANDS;
+  const adequacy = coverage(model.profile, needs, env.bands, top);
   const quality: Quality = {
     class: model.profile.class, cost: model.profile.cost, covers: adequacy.covers, shortfall: adequacy.shortfall, overshoot: adequacy.overshoot,
     evidence: jobEvidence(model.profile, needs),
     axes: Object.fromEntries(AXES.map((axis) => {
       const p = model.profile.axes[axis];
-      return [axis, { score: p.score, band: p.band, evidence: p.label, benchmarks: p.benchmarks, need: needs[axis], cut: cutFor(needs[axis], env.bands[axis]) }];
+      return [axis, { score: p.score, band: p.band, evidence: p.label, benchmarks: p.benchmarks, need: needs[axis], cut: cutFor(needs[axis], env.bands[axis], top[axis]) }];
     })) as Quality['axes'],
   };
   const base: Candidate = {
     model, tier: model.profile.cost?.tier ?? null, quality: auto ? null : quality, below: adequacy.below, weightedScore: needWeightedScore(model.profile, needs),
-    headroom: null, rank: null, blocked: false, blockedPools: [], expiredPools: [], confidence: 'low', projections: {}, handoutMinutes: config.handoutMinutes, handoutPercent: config.handoutPercent,
+    headroom: null, rank: null, blocked: false, strained: false, blockedPools: [], expiredPools: [], confidence: 'low', projections: {}, handoutMinutes: config.handoutMinutes, handoutPercent: config.handoutPercent,
   };
   if (model.poolNames.length === 0) return { ...base, usageNote: `no usage window: ${model.billing ?? 'limits not tracked'}` };
   const usage = env.usage[model.agent];
@@ -456,6 +484,7 @@ function evaluate(model: PlacedModel, env: Environment, config: Config, needs: N
   if (!ranked) return { ...base, usageNote: 'usage unknown (no matching usage pool)' };
   base.headroom = ranked.headroom;
   base.rank = ranked.rank;
+  base.strained = !base.blocked && (1 - ranked.headroom) * 100 > config.usageRiskLimit;
   base.tightest = { pool: ranked.pool, elapsed: ranked.elapsed };
   // Confidence describes usage only; quality carries the certainty of the profile.
   base.confidence = lowered ? 'low' : ranked.pool.handouts ? 'medium' : 'high';
@@ -463,7 +492,7 @@ function evaluate(model: PlacedModel, env: Environment, config: Config, needs: N
   const age = usage.updatedAt === undefined ? 0 : env.now - usage.updatedAt;
   const staleMs = config.usageStaleMinutes * 60_000;
   if (age > 4 * staleMs) {
-    return { ...base, headroom: null, rank: null, tightest: undefined, confidence: 'low', usageNote: `usage stale (updated ${duration(age)} ago)` };
+    return { ...base, headroom: null, rank: null, strained: false, tightest: undefined, confidence: 'low', usageNote: `usage stale (updated ${duration(age)} ago)` };
   }
   if (age > staleMs) {
     base.staleNote = `usage ${duration(age)} old`;
@@ -474,16 +503,23 @@ function evaluate(model: PlacedModel, env: Environment, config: Config, needs: N
 
 // --- ranking --------------------------------------------------------------------------------
 
-/** Within a tier: unblocked first, then most headroom, ending in a total order for determinism. */
+/** Within a tier: unblocked first, then known usage, then below the usage risk limit, then most headroom, ending in a total order for determinism. */
 function compareRanked(a: Candidate, b: Candidate): number {
   if (a.blocked !== b.blocked) return a.blocked ? 1 : -1;
   if ((a.rank === null) !== (b.rank === null)) return a.rank === null ? 1 : -1;
+  if (a.strained !== b.strained) return a.strained ? 1 : -1;
   if (a.rank !== null && b.rank !== null && a.rank !== b.rank) return b.rank - a.rank;
   if (!!a.hotSession !== !!b.hotSession) return a.hotSession ? 1 : -1;
   const conf = CONFIDENCE_ORDER.indexOf(a.confidence) - CONFIDENCE_ORDER.indexOf(b.confidence);
   if (conf !== 0) return conf;
   const evidence = EVIDENCE_ORDER.indexOf(a.quality?.evidence ?? 'unranked') - EVIDENCE_ORDER.indexOf(b.quality?.evidence ?? 'unranked');
   if (evidence !== 0) return evidence;
+  // Equal headroom (routes on one agent share its pools): of two models that both cover the job, the cheaper one
+  // does it for less of them. A model that falls short never wins on price.
+  if (a.quality?.covers && b.quality?.covers) {
+    const pa = a.model.profile.cost?.blended ?? null, pb = b.model.profile.cost?.blended ?? null;
+    if (pa !== null && pb !== null && pa !== pb) return pa - pb;
+  }
   if (a.weightedScore !== b.weightedScore) return b.weightedScore - a.weightedScore;
   if (!!a.model.fast !== !!b.model.fast) return a.model.fast ? 1 : -1;
   const da = a.model.meta?.releaseDate ?? '';

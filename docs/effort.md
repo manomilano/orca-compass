@@ -69,8 +69,8 @@ from (`supportSource`), most trusted first:
 
 | `supportSource` | Meaning | Agents |
 | --- | --- | --- |
-| `provider` | The agent CLI's own model list or cache | Claude Code (its cached account catalog), Codex (`models_cache.json`), Cursor (effort variants in `cursor-agent models`), Grok (`models_cache.json`), Antigravity Gemini variants (effort in the id) |
-| `orca` | Orca's effort menu or catalog for that agent | Claude Code and Codex (when Orca's catalog is the source), Grok (from `grok models`, with Orca's ceilings), Antigravity non-Gemini models (`low`/`medium`/`high`), OpenCode (none) |
+| `provider` | The agent CLI's own model list or cache (for Claude Code and Codex, when Orca's catalog lists nothing) | Claude Code (its cached account catalog), Codex (`models_cache.json`), Cursor (effort variants in `cursor-agent models`), Grok (`models_cache.json`), Antigravity Gemini variants (effort in the id) |
+| `orca` | Orca's effort menu or catalog for that agent | Claude Code and Codex (from Orca's model catalog, their first source), Grok (from `grok models`, with Orca's ceilings), Antigravity non-Gemini models (`low`/`medium`/`high`), Muse (`minimal` to `max`; Orca's `ultra` has no rung here), OpenCode (none) |
 | `assumed` | A built-in guess | Claude Code and Codex on the evidence catalog fallback when no efforts are listed: `low`, `medium`, `high`, `xhigh`, `max` |
 
 ### Snapping (automatic targets)
@@ -118,11 +118,12 @@ reports one. The orchestrator must not claim an effort was set in that case.
 
 ### Per-agent details
 
-- **Claude Code**: efforts from its cached account catalog, then Orca's
+- **Claude Code**: efforts from Orca's catalog, then its cached account
   catalog, then assumed
   `low`…`max`. Passed as `--effort`.
-- **Codex**: `supported_reasoning_levels` and `default_reasoning_level` from
-  `~/.codex/models_cache.json`; then Orca's catalog, then assumed `low` to `max` when neither local catalog supplies models.
+- **Codex**: efforts and the default from Orca's catalog; then
+  `supported_reasoning_levels` and `default_reasoning_level` from
+  `~/.codex/models_cache.json`; then assumed `low` to `max` when neither local catalog supplies models.
   Passed as `--effort`. Orca checks effort against its own catalog for models it
   knows (for example `gpt-5.5` up to `xhigh`); whether the two lists always agree
   has not been checked.

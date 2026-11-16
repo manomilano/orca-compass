@@ -87,14 +87,44 @@ Use the commands above to write the config; never edit the file yourself.
 
 Rate each job by the work, not spare capacity. Pass all three axes with `--need`:
 
-| Axis | min | low | mid | high |
-| --- | --- | --- | --- | --- |
-| coding | none | small contained edits | multi-file changes with tests | design-level or tricky code |
-| agentic | a single edit | run the tests | iterate with tools until green | long unsupervised runs or orchestration |
-| reasoning | mechanical | routine judgement | real analysis | open-ended design or hard debugging |
+### Coding: implementation difficulty
+
+| Level | Definition |
+| --- | --- |
+| `min` | No coding capability required. |
+| `low` | Straightforward code changes using familiar patterns, clear instructions, and limited technical decisions. |
+| `mid` | Non-trivial implementation requiring understanding of existing code, interactions between components, or moderate technical judgment. |
+| `high` | Complex implementation requiring deep code understanding, challenging debugging, intricate logic, or significant architectural decisions. |
+| `top` | Exceptional engineering challenges involving unusually difficult algorithms, subtle system-wide invariants, or highly complex interactions where advanced coding expertise is essential. |
+
+### Agentic: autonomy and adaptive execution
+
+| Level | Definition |
+| --- | --- |
+| `min` | No autonomous execution or tool use required. |
+| `low` | Simple, predictable actions with clear steps and completion criteria. |
+| `mid` | Multi-step work requiring independent tool use, iteration, and adaptation to routine results or failures. |
+| `high` | Complex autonomous workflows requiring investigation, independent planning, coordination, and recovery from unexpected obstacles. |
+| `top` | Exceptional autonomous execution involving deeply interdependent tasks, substantial uncertainty, dynamic replanning, and sophisticated coordination across tools or workers. |
+
+### Reasoning: cognitive problem-solving difficulty
+
+| Level | Definition |
+| --- | --- |
+| `min` | Mechanical or deterministic tasks requiring virtually no judgment. |
+| `low` | Familiar problems with obvious solutions and straightforward decisions. |
+| `mid` | Problems requiring meaningful analysis, comparison of alternatives, or reasoning through multiple constraints. |
+| `high` | Difficult, ambiguous problems requiring deep analysis, non-obvious deductions, or sophisticated multi-step reasoning. |
+| `top` | Exceptional reasoning challenges involving novel problems, highly complex interacting constraints, or solutions that demand unusually deep insight beyond established approaches. |
+
+Use `top` only when `high` is not enough: a `high` route already failed at the
+job, or a mistake would be expensive. Most hard jobs are `high`; `top` leaves
+only the strongest models, for example
+`--need coding=top,agentic=high,reasoning=top`.
 
 Use `--tier` for the rare job that is the same on all axes: light, daily,
-advanced and frontier map to min, low, mid and high respectively. Supply a
+advanced and frontier map to min, low, mid and high respectively. There is no
+tier for `top`; pass it with `--need`. Supply a
 short explanation with `--tier-reason`; explain it in chat when asked.
 
 ## Rate the effort demand separately
@@ -136,8 +166,8 @@ route without `--effort`.
    for an effort the user asked for; `--no-downgrade` prevents capability
    shortfalls and Cursor auto fallback. A cheaper cost tier that covers the
    needs is still allowed. Agent ids are `claude`, `codex`, `cursor`,
-   `grok`, `antigravity`, `opencode`, and `muse` (detected only, never routed: Orca has no
-   Muse model list). An unknown id adds a warning with a likely match
+   `grok`, `antigravity`, `opencode`, and `muse` (routed from a built-in model list, since
+   neither Muse nor Orca lists Muse models). An unknown id adds a warning with a likely match
    (`did you mean cursor?`); fix the id and route again.
    OpenCode is a last resort by default (API keys cost per token; local models
    take this machine): it is routed only when no other agent can take the job.
@@ -148,8 +178,11 @@ route without `--effort`.
    has no model selection flag.
 
 3. Routing chooses the cheapest cost tier whose evidence covers the job, then
-   the most headroom. Price determines cost only; scores and need cuts use raw
-   evidence. Parse JSON and inspect `status`, `reasons`, `warnings`, `confidence`,
+   the most headroom. When every covering route in that tier is blocked or
+   expected to end its usage window above `usageRiskLimit` (90%), the cheapest
+   pricier tier with a route in good standing is used instead, and a warning
+   names the tier passed over; relay it. Price determines cost only; scores
+   and need cuts use raw evidence. Parse JSON and inspect `status`, `reasons`, `warnings`, `confidence`,
    `downgraded`, and `upgraded`. Exit code 0 alone does not mean a route exists.
 4. For `status: "ok"`, append the returned `launchArgs` array to:
 
@@ -187,6 +220,9 @@ route without `--effort`.
      `worker-start --task <taskId> --retry-of <dispatchId>`, the same
      placement and the new `launchArgs`. Tell the user which model was refused
      and what replaced it.
+   - `unknown` with `unsent: true`: the agent is idle and the task never
+     reached its terminal. Do not reroute; read the terminal, keep waiting,
+     and run `verify` again once it is working.
    - `stalled`: the agent ended its turn without `worker_done` and no known
      refusal; read `tail`. If it is an error about its model, account or
      limits, stop it and route again with `--exclude-agent <agent>`; if it
@@ -215,8 +251,12 @@ route without `--effort`.
   money per token or runs on this machine; tell the user before launching
   several workers on it.
 - `upgraded: true`: surface the warning. The covering pick's cost tier is
-  higher than the requested tier because no cheaper route covers the job;
-  routing never promotes to bypass blocked usage.
+  higher than the requested tier because no cheaper route covers the job.
+- A warning `cheaper <tier> cost tier passed over …`: every covering route in
+  the cheaper tier is blocked or expected to end above `usageRiskLimit`, so a
+  pricier tier was used. A warning `every unblocked route that covers the job
+  is expected to end above …`: no route is in good standing and the pick is
+  the cheapest with the most room. Relay either warning to the user.
 - `status: "wait"`: inspect `waitUntil` (epoch milliseconds); wait until reset
   or retry without `--no-downgrade` if user constraints permit a downgrade.
 - `status: "none"`: launch using Orca's normal default without `--model`

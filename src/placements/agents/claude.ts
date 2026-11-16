@@ -4,7 +4,7 @@ import { parseEffort } from '../../routing/effort.js';
 import type { AgentDiscovery, Effort, EffortSource, LaunchModel } from '../../types.js';
 import { homeDir } from '../../paths.js';
 import type { AgentDeps, Locator } from './deps.js';
-import { description, fromOrcaCatalog, orcaCatalogPath, parseJson, type RawModel } from './orca-catalog.js';
+import { description, orcaModels, parseJson, withSkipped, type RawModel } from './orca-catalog.js';
 
 const DEFAULT_EFFORTS: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
@@ -34,36 +34,39 @@ function fromClaudeCache(deps: AgentDeps, dir: string): { path: string; models: 
   return { path: newest.path, models };
 }
 
-function toLaunch({ id, efforts, description: lineup }: RawModel, deps: AgentDeps, effortSource: EffortSource): LaunchModel {
+function toLaunch({ id, efforts, defaultEffort, description: lineup }: RawModel, deps: AgentDeps, effortSource: EffortSource): LaunchModel {
   const meta = deps.index[id] ?? deps.index[normalizeModelId(id)];
+  const native = defaultEffort === undefined ? undefined : parseEffort(defaultEffort);
   return {
     agent: 'claude',
     modelId: id,
     ...(meta ? { meta } : {}),
     efforts: [...new Set(efforts.map(parseEffort).filter((e): e is Effort => e !== undefined))],
     effortSource,
+    ...(native ? { defaultEffort: native } : {}),
     launch: { kind: 'flag', model: id },
     poolNames: poolNames(id),
     ...(lineup ? { lineup } : {}),
   };
 }
 
-/** Claude Code has no model list command: its account catalog, then Orca's probe, then the evidence catalog. */
+/** Claude Code has no model list command: Orca's catalog, then Claude Code's account catalog, then the evidence catalog. */
 export const locateClaude = (deps: Locator): string | undefined => deps.find('claude');
 
 export async function discoverClaude(deps: AgentDeps): Promise<AgentDiscovery> {
   if (!locateClaude(deps)) return { agent: 'claude', installed: false, models: [], note: 'claude not found on PATH' };
   const configDir = deps.env.CLAUDE_CONFIG_DIR || join(homeDir(deps.env), '.claude');
+  const orca = await orcaModels(deps, 'claude');
   const cache = fromClaudeCache(deps, join(configDir, 'cache', 'model-catalog'));
-  const orcaPath = orcaCatalogPath(deps.env);
-  const sources: [string, RawModel[], EffortSource][] = [
+  const sources: [string | undefined, RawModel[], EffortSource][] = [
+    [orca.path, orca.models, 'orca'],
     ...(cache ? [[cache.path, cache.models, 'provider'] as [string, RawModel[], EffortSource]] : []),
-    [orcaPath, fromOrcaCatalog(deps.readFile(orcaPath), 'claude'), 'orca'],
   ];
   for (const [path, raw, effortSource] of sources) {
     const unique = new Map(raw.filter((m) => isClaude(m.id)).map((m) => [m.id, m]));
     if (unique.size === 0) continue;
-    return { agent: 'claude', installed: true, models: [...unique.values()].map((m) => toLaunch(m, deps, effortSource)), note: `models from ${path}` };
+    const models = [...unique.values()].map((m) => toLaunch(m, deps, effortSource));
+    return { agent: 'claude', installed: true, models, note: withSkipped(`models from ${path}`, orca) };
   }
   const models: LaunchModel[] = [...new Map(Object.values(deps.index).map((m) => [m.id, m])).values()]
     .filter((m) => m.provider === 'anthropic' && m.family?.startsWith('claude-'))
@@ -76,5 +79,5 @@ export async function discoverClaude(deps: AgentDeps): Promise<AgentDiscovery> {
       launch: { kind: 'flag', model: meta.id },
       poolNames: poolNames(meta.id),
     }));
-  return { agent: 'claude', installed: true, models };
+  return { agent: 'claude', installed: true, models, ...(orca.skipped ? { note: orca.skipped } : {}) };
 }

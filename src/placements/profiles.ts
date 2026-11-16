@@ -113,11 +113,13 @@ export function buildProfile(modelId: string, meta: ModelMeta | undefined, lineu
     const inherited = !direct && hint ? inherit(axis, family, vendor, hint, snapshot, config) : undefined;
     const evidence: SnapshotScore | undefined = direct ?? inherited?.scores[axis];
     const score = evidence?.score ?? null;
+    // A score copied from a curated fallback model is another model's evidence, like an inherited one.
+    const borrowedFrom = inherited?.id ?? direct?.from;
     profile.axes[axis] = {
       score, evidence: evidence?.score ?? null, benchmarks: evidence?.benchmarks ?? 0,
-      label: inherited ? 'assumed' : !evidence ? 'unranked' : evidence.kind === 'estimated' ? 'estimated' : evidence.benchmarks >= 3 ? 'measured' : 'partial',
+      label: borrowedFrom ? 'assumed' : !evidence ? 'unranked' : evidence.kind === 'estimated' ? 'estimated' : evidence.benchmarks >= 3 ? 'measured' : 'partial',
       band: score === null ? null : bandOf(score, snapshot.bands[axis]),
-      ...(inherited ? { inheritedFrom: inherited.id } : {}),
+      ...(borrowedFrom ? { inheritedFrom: borrowedFrom } : {}),
     };
   }
   profile.class = [...TIERS].reverse().find((tier) => AXES.some((axis) => profile.axes[axis].band === tier)) ?? null;

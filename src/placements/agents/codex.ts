@@ -7,7 +7,7 @@ import type { AgentDiscovery, Effort, EffortSource, LaunchModel } from '../../ty
 const DEFAULT_EFFORTS: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 import { homeDir } from '../../paths.js';
 import type { AgentDeps, Locator } from './deps.js';
-import { description, fromOrcaCatalog, orcaCatalogPath, parseJson, type RawModel } from './orca-catalog.js';
+import { description, orcaModels, parseJson, withSkipped, type RawModel } from './orca-catalog.js';
 
 /** Codex CLI's own cache: models[] with visibility and supported_reasoning_levels. */
 function fromCodexCache(text: string | undefined): RawModel[] {
@@ -27,14 +27,18 @@ export const locateCodex = (deps: Locator): string | undefined => deps.find('cod
 
 export async function discoverCodex(deps: AgentDeps): Promise<AgentDiscovery> {
   if (!locateCodex(deps)) return { agent: 'codex', installed: false, models: [], note: 'codex not found on PATH' };
-  const sources: [string, (text: string | undefined) => RawModel[], EffortSource][] = [
-    [join(deps.env.CODEX_HOME || join(homeDir(deps.env), '.codex'), 'models_cache.json'), fromCodexCache, 'provider'],
-    [orcaCatalogPath(deps.env), (text) => fromOrcaCatalog(text, 'codex'), 'orca'],
+  const orca = await orcaModels(deps, 'codex');
+  const cachePath = join(deps.env.CODEX_HOME || join(homeDir(deps.env), '.codex'), 'models_cache.json');
+  const cache = fromCodexCache(deps.readFile(cachePath));
+  // Orca does not always record the effort Codex uses when none is passed; Codex's own cache does.
+  const cachedDefault = new Map(cache.map((m) => [m.id, m.defaultEffort]));
+  const sources: [string | undefined, RawModel[], EffortSource][] = [
+    [orca.path, orca.models, 'orca'],
+    [cachePath, cache, 'provider'],
   ];
-  for (const [path, parse, effortSource] of sources) {
-    const raw = parse(deps.readFile(path));
+  for (const [path, raw, effortSource] of sources) {
     if (raw.length === 0) continue;
-    const models: LaunchModel[] = raw.map(({ id, efforts, defaultEffort, description: lineup }) => {
+    const models: LaunchModel[] = raw.map(({ id, efforts, defaultEffort = cachedDefault.get(id), description: lineup }) => {
       const native = defaultEffort === undefined ? undefined : parseEffort(defaultEffort);
       const meta = deps.index[id] ?? deps.index[normalizeModelId(id)];
       return {
@@ -49,7 +53,7 @@ export async function discoverCodex(deps: AgentDeps): Promise<AgentDiscovery> {
         ...(lineup ? { lineup } : {}),
       };
     });
-    return { agent: 'codex', installed: true, models, note: `models from ${path}` };
+    return { agent: 'codex', installed: true, models, note: withSkipped(`models from ${path}`, orca) };
   }
   // The evidence catalog lists every OpenAI model; only the Codex lineup families are launchable here, and
   // "-latest" ids are moving aliases.
@@ -65,6 +69,6 @@ export async function discoverCodex(deps: AgentDeps): Promise<AgentDiscovery> {
       launch: { kind: 'flag', model: meta.id },
       poolNames: ['session', 'weekly'],
     }));
-  if (models.length > 0) return { agent: 'codex', installed: true, models, note: 'models from the evidence catalog (Codex has not cached its model list yet)' };
+  if (models.length > 0) return { agent: 'codex', installed: true, models, note: withSkipped('models from the evidence catalog (Codex has not cached its model list yet)', orca) };
   return { agent: 'codex', installed: true, models: [], note: 'no Codex model list found' };
 }
