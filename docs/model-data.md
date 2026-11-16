@@ -20,9 +20,11 @@ evidence class; user cost-tier overrides take precedence over price.
 The raw [LLMBenchmark.ai](https://llmbenchmark.ai) dataset is committed unchanged
 at `data/llmbenchmark/dataset.json` (about 22 MB, updated by the owner's
 automation). `npm run refresh-evidence` reads it, rebuilds the snapshot and
-manifest, and refuses to write when a calibration check fails. When the
-rebuilt evidence matches the committed snapshot, it keeps the files as they
-are, so a new build time alone is not a change. The workflow runs it when the
+manifest, and refuses to write when a calibration check fails; calibration
+runs on every refresh, changed or not. When the rebuilt evidence matches the
+committed snapshot, it keeps the snapshot as it is, so a new build time or
+dataset date alone is not a change, and rewrites the manifest only if it no
+longer matches the snapshot's hash, size or date. The workflow runs it when the
 dataset changes and opens a pull request with the profile diff when the
 evidence changed. Only the trimmed snapshot ships in the npm package. Both files are
 licensed CC BY 4.0; see the repository NOTICE and `data/llmbenchmark/README.md`.
