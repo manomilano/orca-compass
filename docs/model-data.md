@@ -24,10 +24,12 @@ manifest, and refuses to write when a calibration check fails; calibration
 runs on every refresh, changed or not. When the rebuilt evidence matches the
 committed snapshot, it keeps the snapshot as it is, so a new build time or
 dataset date alone is not a change, and rewrites the manifest only if it no
-longer matches the snapshot's hash, size or date. The workflow runs it when the
-dataset changes and opens a pull request with the profile diff when the
-evidence changed. Only the trimmed snapshot ships in the npm package. Both files are
-licensed CC BY 4.0; see the repository NOTICE and `data/llmbenchmark/README.md`.
+longer matches the snapshot's hash, size or date. A dataset update ships with
+its rebuilt snapshot in the same pull request; the refresh workflow runs on
+such pull requests and on `main`, and fails with the profile diff when the
+committed snapshot does not match the dataset. Only the trimmed snapshot ships
+in the npm package. Both files are licensed CC BY 4.0; see the repository
+NOTICE and `data/llmbenchmark/README.md`.
 
 Clients check `data/evidence-manifest.json` on the repository's public `main`
 at most once per `evidenceTtlHours` (24 by default). A changed manifest causes
