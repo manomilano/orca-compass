@@ -1,15 +1,27 @@
+---
+description: Verify that a worker accepted its model, recognize launch refusals and replace a rejected worker.
+---
+
 # Verify and rejections
 
-Discovery is an estimate. A model an agent *lists* can still be one this account
-cannot use (a cached Claude catalog can be stale, or discovery may fall back to
-the evidence snapshot; a Codex model may be enterprise-only; a Cursor model may be off in
-the account).
-Orca does not check: `orca orchestration worker-start` reports the requested
-model as effective even when the agent cannot use it. `orcacompass verify`
-closes that gap. Code: `src/verify.ts`, `src/routing/rejection.ts`,
+Run `orcacompass verify` right after starting a worker to learn whether its
+agent accepted the model and how to recover if it did not. OrcaCompass saves
+recognized refusals so later routes skip that agent and model temporarily.
+
+Discovery is an estimate: a listed model may be unavailable to your account.
+For example, Claude's cached catalog may be stale or discovery may fall back
+to the evidence snapshot. A Codex model may be enterprise-only, or a Cursor
+model may be disabled in the account.
+
+`orca orchestration worker-start` reports the requested model as effective
+without checking whether the agent can use it. `orcacompass verify` checks
+the worker's output after launch. Code: `src/verify.ts`, `src/routing/rejection.ts`,
 `src/routing/rejections.ts`.
 
 ## What goes wrong without it
+
+These are observed agent behaviors; OrcaCompass's code does not verify the
+behavior of the agents themselves:
 
 | Agent | When launched with a model it cannot use |
 | --- | --- |
@@ -35,23 +47,35 @@ orcacompass verify --dispatch <dispatchId> [--wait 60] --json
 
 | Verdict | Rule |
 | --- | --- |
-| `rejected` | A terminal line **names the model** and matches one of the known refusal phrases (below). Soft warnings that still run the model do not count |
+| `rejected` | A terminal line **names the model** Orca reports as effective and matches one of the known refusal phrases (below). Soft warnings that still run the model do not count |
 | `reported` | Orca's outcome is `succeeded`: the worker already sent `worker_done` |
 | `failed` | The terminal exited or the outcome is `failed`, with no recognized refusal |
 | `started` | Activity has been `working` for 8 s (`workingMs`) with no refusal |
 | `stalled` | The task header is in the terminal and activity is `done` while the outcome is still `in_progress` for 3 s: the agent ended its turn without `worker_done` (an unrecognized refusal, another error, or a question in its own prompt) |
-| `unknown` | No verdict within `--wait` seconds (default and maximum 60), or Orca's commands kept failing. With `unsent: true`: the agent sat idle the whole time and Orca's `=== TASK ===` header never appeared in its terminal, so the prompt was probably not sent yet |
+| `unknown` | No verdict within `--wait` seconds (default and maximum 60), `worker-show` failed, or the last `worker-read` failed. With `unsent: true`: at the deadline the agent was idle and Orca's `=== TASK ===` header had never appeared in its terminal, so the prompt was probably not sent yet |
+
+The rules are checked in the order of the table on every poll, so a refusal
+wins over every other verdict.
 
 The total timeout includes `worker-show`, reads, and polling delays. Each
 command uses at most 20 s and is shortened to the time remaining. Verification
 returns immediately when a verdict is available. `--wait` accepts 0–60 s;
-0 returns `unknown` immediately. After a timeout, report it and continue normal
-Orca supervision instead of repeating startup verification.
+0 returns `unknown` immediately, without calling Orca. After a timeout, report
+it and continue normal Orca supervision instead of repeating startup
+verification.
 
-`verify` reads worker state and records detected refusals in its local cache.
-It returns the
-`cleanup` argv lists for the orchestrator to run: `worker-stop` then
-`worker-release`, or `worker-release` alone when the worker already exited.
+`verify` reads worker state and writes only detected refusals to its local
+cache. It returns `cleanup` argument arrays for the orchestrator (the agent
+coordinating workers) to run:
+
+| Verdict | `cleanup` |
+| --- | --- |
+| `rejected`, worker still running | `worker-stop`, then `worker-release` |
+| `rejected` after the worker exited or failed, or `failed` | `worker-release` |
+| `started`, `reported`, `stalled`, `unknown` | none |
+
+`verify` exits 0 for every verdict. A missing `--dispatch` or a `--wait`
+outside 0–60 is a usage error (exit 1).
 
 ## Refusal phrases recognized
 
@@ -82,8 +106,8 @@ tail instead of `rejected`.
 
 ## What a rejection does
 
-A `rejected` verdict is saved to `rejected-models.json` in the cache: agent,
-model (the launch id), the agent's words, and when. For `rejectionTtlHours`
+OrcaCompass saves each `rejected` verdict to `rejected-models.json` in the
+cache: the agent, model (the launch id), refusal text and time. For `rejectionTtlHours`
 (168 hours, a week, by default):
 
 - every `route` skips that agent and model, in any tier, listing it under
@@ -93,12 +117,16 @@ model (the launch id), the agent's words, and when. For `rejectionTtlHours`
 - a rejection matches any of the model's launch ids, so Cursor's
   `claude-opus-5-5-high` and `claude-opus-5-5-low` are both skipped after one
   of them was refused;
-- a new refusal of the same agent and model replaces the older entry.
+- a new refusal of the same agent and model replaces the older entry, and
+  entries older than `rejectionTtlHours` are dropped when the file is written.
 
 ```sh
 orcacompass rejected           # what is skipped, with the agent's words and age
 orcacompass rejected --clear   # forget everything (for example after upgrading a plan)
 ```
+
+`rejected --json` returns `{ rejectionTtlHours, cleared, rejections }`, where
+`cleared` is the number of entries `--clear` removed.
 
 ## The replacement flow
 
@@ -112,20 +140,36 @@ After `rejected`, the orchestrator:
    with the same placement and the new `launchArgs`;
 4. tells the user which model was refused and what replaced it.
 
-For `failed`, the same, with `--exclude-agent <agent>` on the new route for
-this job. For `stalled`, read `tail` first: a model, account or limit error is
-treated like `failed`; a question is answered in the worker's terminal.
+For `failed`, run the cleanup; if the tail shows the agent failing to start,
+route again with `--exclude-agent <agent>` for this job, start the replacement
+the same way, and tell the user which agent failed to start, why, and how they
+can fix it.
+
+For `stalled`, read `tail` first. If it reports an error (model, account,
+limits), stop the worker with `orca orchestration worker-stop --dispatch <id>
+--json`, route again with `--exclude-agent <agent>` and start the replacement
+with `--retry-of <dispatchId>`. If it asks a question, answer it in its
+terminal; otherwise keep waiting.
+
+For `unknown` with `unsent: true`, do not reroute: the model was not refused
+and the agent has not started the task. Read the terminal and run `verify`
+again once the agent is working.
+
+The `next` list in the output spells out these steps for the verdict at hand.
 
 ## Example
+
+Illustrative output for a Codex worker that refused its model and is still
+running:
 
 ```sh
 $ orcacompass verify --dispatch d-7f3a --json
 {
-  "status": "rejected",
   "dispatchId": "d-7f3a",
   "taskId": "t-19",
   "agent": "codex",
   "model": "claude-opus-5-5",
+  "status": "rejected",
   "message": "The 'claude-opus-5-5' model is not supported when using Codex with a ChatGPT account.",
   "detail": "codex refused claude-opus-5-5",
   "cleanup": [
@@ -141,5 +185,7 @@ $ orcacompass verify --dispatch d-7f3a --json
 }
 ```
 
-Text output has the same content: the verdict line, `agent said: …`, the
-terminal tail prefixed with `|`, then a numbered `next:` list.
+Text output has the same content: the verdict line
+(`<status>: <agent> · <model> — <detail>`), `agent said: …` for a rejection,
+the last terminal lines prefixed with `|` (for `stalled`, `failed` and
+`unknown`), then a numbered `next:` list.

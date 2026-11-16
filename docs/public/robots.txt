@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /orca-compass/
+Sitemap: https://manomilano.github.io/orca-compass/sitemap.xml

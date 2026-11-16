@@ -1,10 +1,12 @@
+---
+description: Review existing areas for future work and the limits of discovery, routing, and Orca integration.
+---
+
 # Roadmap and limitations
 
-OrcaCompass discovers available models, builds evidence profiles, and recommends a
-route using current usage and configuration. The coordinator classifies the
-work and launches the worker. See [How it works](how-it-works.md),
-[Tiers and routing](tiers-and-routing.md), and [Orca agents](orca-agents.md)
-for current behavior and supported agents.
+Review known limitations and areas for future work before relying on a route.
+For current routing behavior and supported agents, see [How it works](how-it-works.md),
+[Tiers and routing](tiers-and-routing.md), and [Orca agents](orca-agents.md).
 
 ## Areas for future work
 
@@ -31,7 +33,8 @@ for current behavior and supported agents.
 - **Orca integration has limits.** Agent switches come from an internal store;
   unexpected formats leave them unknown. Reading the database needs
   `node:sqlite`; use Node.js 24 or Node.js 22.13+ without extra flags.
-  OrcaCompass calls the literal `orca` command.
+  OrcaCompass calls the literal `orca` command for usage and verification;
+  it does not select `orca-dev` or honor `ORCA_CLI_COMMAND`.
 - **Folder trust is not checked.** Grok can stop at a trust prompt; OpenCode
   has no auto-trust in Orca, and whether it prompts is unchecked.
 - **Privacy filtering is partial.** `excludeNoZdr` relies on Cursor's `NO ZDR`

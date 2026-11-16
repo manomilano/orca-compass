@@ -27,4 +27,6 @@ The GitHub workflow `refresh-evidence.yml` runs step 2 on pull requests that
 change this file and on `main`, and fails with the profile diff when the
 committed snapshot does not match this dataset.
 
-This file is not part of the npm package; only the snapshot ships.
+The raw dataset and this README are not part of the npm package. The package
+ships `data/evidence-snapshot.json`, `data/evidence-manifest.json` and
+`data/evidence-curated.json`.

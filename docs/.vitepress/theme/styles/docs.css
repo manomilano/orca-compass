@@ -1,0 +1,364 @@
+/* Documentation reading experience: long-form typography, tables, code, containers,
+   sidebar, outline, search. Rules here must not leak into `.landing-section` content. */
+/* The chart room. Article rules belong to VPDoc, never landing sections.
+ * Keep the default theme's structure, navigation and keyboard behavior intact. */
+.VPDoc {
+  --vp-code-font-size: 0.875em;
+  --vp-code-line-height: 1.75;
+  --vp-code-block-bg: var(--oc-color-bg-alt);
+  --vp-code-line-highlight-color: var(--oc-color-bg-soft);
+  --vp-code-line-number-color: var(--oc-color-text-subtle);
+  --vp-code-copy-code-bg: var(--oc-color-bg);
+  --vp-code-copy-code-hover-bg: var(--oc-color-bg-soft);
+  --vp-code-copy-code-border-color: var(--vp-c-border);
+  --vp-code-copy-code-hover-border-color: var(--oc-color-line);
+  --vp-code-copy-code-active-text: var(--oc-color-text);
+  --vp-code-copy-code-active-bg: var(--oc-color-bg-soft);
+}
+
+.VPDoc .container > .content,
+.VPDoc .content-container,
+.VPDoc .vp-doc {
+  min-width: 0;
+  max-width: 100%;
+}
+.VPDoc .content-container { max-width: var(--oc-measure); }
+.VPDoc .vp-doc { overflow-wrap: anywhere; }
+.VPDoc .vp-doc :is(p, li, dd) { line-height: var(--oc-leading-body); }
+.VPDoc .vp-doc p { margin-block: var(--oc-space-4); }
+.VPDoc .vp-doc :is(p, li, dd) { text-wrap: pretty; }
+/* A narrow-letter reference paragraph can exceed 80 characters inside 68ch. */
+.VPDoc .vp-doc :is(p, ul, ol, blockquote) { max-width: 52ch; }
+.VPDoc .vp-doc :is(h1, h2, h3, h4, h5, h6) {
+  color: var(--oc-color-text);
+  text-wrap: balance;
+  scroll-margin-top: calc(var(--vp-nav-height) + 64px);
+}
+.VPDoc .vp-doc h2 { font-size: var(--oc-text-xl); line-height: var(--oc-leading-snug); }
+.VPDoc .vp-doc h3 { font-size: var(--oc-text-lg); line-height: 1.4; }
+.VPDoc .vp-doc h4 { font-size: var(--oc-text-md); line-height: 1.4; }
+.VPDoc .vp-doc :is(h5, h6) { font-size: var(--oc-text-base); line-height: 1.5; }
+.VPDoc .vp-doc .header-anchor {
+  color: var(--oc-color-link);
+  opacity: 0;
+  border-radius: var(--oc-radius-sm);
+}
+.VPDoc .vp-doc :is(h1, h2, h3, h4, h5, h6):hover .header-anchor,
+.VPDoc .vp-doc .header-anchor:focus-visible { opacity: 1; }
+.VPDoc .vp-doc a { text-underline-offset: 0.2em; text-decoration-thickness: 1px; }
+.VPDoc .vp-doc a:hover { text-decoration-thickness: 2px; }
+.VPDoc .vp-doc li + li { margin-top: var(--oc-space-2); }
+.VPDoc .vp-doc li::marker { color: var(--oc-color-text-subtle); font-weight: 600; }
+.VPDoc .vp-doc :is(ul, ol) { padding-inline-start: var(--oc-space-5); }
+.VPDoc .vp-doc dt { margin-top: var(--oc-space-4); font-weight: 700; }
+.VPDoc .vp-doc dd { margin-inline-start: var(--oc-space-5); }
+.VPDoc .vp-doc blockquote {
+  border-inline-start: 3px solid var(--oc-color-line);
+  color: var(--oc-color-text-muted);
+}
+.VPNavBarTitle .logo { width: var(--vp-nav-logo-height); }
+
+/* Native scrollbars remain visible; the hint does not depend on scrollbar settings.
+ * Before hydration (or without JS) VitePress's block table still scrolls locally. */
+.VPDoc .vp-doc table {
+  max-width: 100%;
+  overscroll-behavior-inline: contain;
+  scrollbar-color: var(--oc-color-text-subtle) var(--oc-color-bg-alt);
+}
+.VPDoc .oc-table-frame {
+  min-width: 0;
+  margin-block: var(--oc-space-5);
+  border: 1px solid var(--vp-c-border);
+  border-radius: var(--oc-radius-sm);
+}
+.VPDoc .oc-table-hint {
+  display: none;
+  padding: var(--oc-space-2) var(--oc-space-3);
+  color: var(--oc-color-text-muted);
+  background: var(--oc-color-bg-alt);
+  border-bottom: 1px solid var(--vp-c-border);
+  font-size: var(--oc-text-xs);
+  font-family: var(--oc-font-mono);
+  line-height: 1.5;
+}
+.VPDoc .has-overflow .oc-table-hint { display: block; }
+.VPDoc .oc-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-color: var(--oc-color-text-subtle) var(--oc-color-bg-alt);
+  scrollbar-width: auto;
+}
+.VPDoc .oc-table-scroll table {
+  display: table;
+  width: 100%;
+  min-width: 36rem;
+  max-width: none;
+  margin: 0;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: visible;
+}
+.VPDoc .vp-doc :is(th, td) {
+  padding: var(--oc-space-3) var(--oc-space-4);
+  border: 0;
+  border-bottom: 1px solid var(--oc-color-rule);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.VPDoc .vp-doc th {
+  color: var(--oc-color-text);
+  background: var(--oc-color-bg-soft);
+  border-bottom: 2px solid var(--vp-c-border);
+  font-weight: 700;
+}
+.VPDoc .vp-doc td { min-width: 8rem; }
+.VPDoc .vp-doc td:first-child { font-weight: 500; }
+.VPDoc .vp-doc tr { background: var(--oc-color-bg); }
+.VPDoc .vp-doc tr:nth-child(2n) { background: var(--oc-color-bg-alt); }
+.VPDoc .vp-doc tr:last-child td { border-bottom: 0; }
+
+/* Keep identifiers wrappable in prose, preserving exact whitespace in examples. */
+.VPDoc .vp-doc :not(pre) > code {
+  padding: 0.12em 0.3em;
+  border-radius: var(--oc-radius-sm);
+  font-size: 0.875em;
+  overflow-wrap: anywhere;
+}
+.VPDoc .vp-doc div[class*='language-'] {
+  max-width: 100%;
+  margin-inline: 0;
+  /* Keep the copy target and language above every line, even while code scrolls. */
+  padding-top: 64px;
+  border: 1px solid var(--vp-c-border);
+  border-radius: var(--oc-radius-sm);
+}
+.VPDoc .vp-doc div[class*='language-'] pre {
+  max-width: 100%;
+  padding-block: var(--oc-space-5);
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-color: var(--oc-color-text-subtle) var(--oc-color-bg-alt);
+}
+.VPDoc .vp-doc div[class*='language-'] code {
+  font-size: var(--oc-text-sm);
+  line-height: 1.75;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+.VPDoc .vp-doc div[class*='language-'] pre:focus-visible {
+  outline-offset: -4px;
+}
+.VPDoc .vp-doc div[class*='language-'] > button.copy {
+  top: 10px;
+  width: 44px;
+  height: 44px;
+  opacity: 1;
+  border-color: var(--vp-c-border);
+  border-radius: var(--oc-radius-sm);
+}
+.VPDoc .vp-doc div[class*='language-'] > button.copy:focus-visible {
+  outline: 3px solid var(--oc-color-focus);
+  outline-offset: 2px;
+}
+.VPDoc .vp-doc div[class*='language-'] > span.lang {
+  top: 22px;
+  left: 24px;
+  right: 64px;
+  opacity: 1;
+  color: var(--oc-color-text-subtle);
+}
+.VPDoc .vp-doc div[class*='language-'] > .line-numbers-wrapper {
+  top: 64px;
+  padding-top: var(--oc-space-5);
+}
+.VPDoc .vp-doc .line.highlighted {
+  border-inline-start: 3px solid var(--oc-color-link);
+}
+/* Default Shiki comments on dark and red keywords on foam fall below AA.
+ * Retain syntax colours elsewhere, correcting just those token pairs. */
+.VPDoc .vp-code span[style*='--shiki-dark:#6A737D'] { --shiki-dark: var(--oc-steel) !important; }
+.VPDoc .vp-code span[style*='--shiki-light:#6A737D'] { --shiki-light: var(--oc-slate-light) !important; }
+.VPDoc .vp-code span[style*='--shiki-light:#D73A49'] { --shiki-light: var(--oc-open-water-deep) !important; }
+.VPDoc .vp-code-group { min-width: 0; max-width: 100%; }
+.VPDoc .vp-code-group .tabs {
+  margin-inline: 0;
+  border: 1px solid var(--vp-c-border);
+  border-bottom: 0;
+  border-radius: var(--oc-radius-sm) var(--oc-radius-sm) 0 0;
+  background: var(--oc-color-bg-soft);
+  overflow-x: auto;
+}
+.VPDoc .vp-code-group .tabs label { color: var(--oc-color-text-muted); min-height: 44px; }
+.VPDoc .vp-code-group .tabs input:focus-visible + label {
+  outline: 3px solid var(--oc-color-focus);
+  outline-offset: -4px;
+}
+
+/* Caption relatives: words and border patterns identify the type without colour. */
+.VPDoc .vp-doc .custom-block {
+  padding: var(--oc-space-4) var(--oc-space-5);
+  border: 1px solid var(--oc-color-line);
+  border-inline-start-width: 4px;
+  border-radius: var(--oc-radius-sm);
+  color: var(--oc-color-text);
+  background: var(--oc-color-bg-alt);
+  font-size: var(--oc-text-base);
+}
+.VPDoc .vp-doc .custom-block.info { border-inline-start-style: dotted; }
+.VPDoc .vp-doc .custom-block.warning { border-inline-start-style: dashed; }
+.VPDoc .vp-doc .custom-block.danger { border-inline-start: 6px double var(--oc-color-line); }
+.VPDoc .vp-doc .custom-block.tip { border-inline-start-color: var(--oc-color-link); }
+.VPDoc .vp-doc .custom-block :is(.custom-block-title, summary) {
+  font-family: var(--oc-font-caption);
+  font-size: var(--oc-text-sm);
+  letter-spacing: var(--oc-tracking-caption);
+  text-transform: uppercase;
+  color: var(--oc-color-text);
+}
+.VPDoc .vp-doc .custom-block p { line-height: var(--oc-leading-body); }
+.VPDoc .vp-doc .custom-block a { color: var(--oc-color-link); }
+.VPDoc .vp-doc .custom-block code { color: var(--vp-code-color); background: var(--vp-code-bg); }
+.VPDoc .vp-doc .custom-block summary { cursor: pointer; min-height: 28px; }
+.VPDoc .vp-doc .custom-block.details[open] summary { padding-bottom: var(--oc-space-3); border-bottom: 1px solid var(--oc-color-rule); }
+
+/* Quiet, well-separated reference navigation. These are default-theme chrome only. */
+.VPSidebar .group + .group { padding-top: var(--oc-space-5); }
+.VPSidebarItem .text { line-height: 1.5; }
+.VPSidebarItem.level-0 > .item > .text {
+  font-family: var(--oc-font-caption);
+  font-size: var(--oc-text-xs);
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+.VPSidebarItem .link { border-radius: var(--oc-radius-sm); }
+.VPSidebarItem.is-active > .item > .link {
+  background: var(--oc-color-bg-soft);
+  box-shadow: inset 3px 0 var(--oc-color-link);
+  padding-inline: var(--oc-space-3);
+}
+.VPDocAsideOutline .outline-title { font-family: var(--oc-font-caption); font-size: var(--oc-text-xs); text-transform: uppercase; }
+.VPDocAsideOutline .outline-link { color: var(--oc-color-text-muted); line-height: 1.5; padding-block: 6px; }
+.VPDocAsideOutline .outline-link.active { color: var(--oc-color-link); font-weight: 700; }
+.VPDocFooter .edit-link { text-decoration: underline; text-underline-offset: 3px; }
+.VPDocFooter .last-updated { color: var(--oc-color-text-subtle); font-size: var(--oc-text-sm); }
+.VPDocFooter .pager-link {
+  min-height: 88px;
+  border-color: var(--vp-c-border);
+  border-radius: var(--oc-radius-sm);
+  background: var(--oc-color-bg-alt);
+}
+.VPDocFooter .pager-link:hover { border-color: var(--oc-color-link); background: var(--oc-color-bg-soft); }
+.VPDocFooter .pager-link .desc { color: var(--oc-color-text-muted); }
+.VPLocalNav { background: var(--oc-color-bg); border-bottom-color: var(--vp-c-border); }
+.VPLocalNav :is(.menu, .return-to-top) { min-height: 44px; color: var(--oc-color-text-muted); }
+.VPSidebar.open { border-inline-end: 1px solid var(--vp-c-border); }
+.VPSidebar:not(.open) { visibility: hidden; }
+.oc-sidebar-close {
+  display: block;
+  min-height: 44px;
+  margin-bottom: var(--oc-space-4);
+  padding-inline: var(--oc-space-3);
+  border: 1px solid var(--vp-c-border);
+  border-radius: var(--oc-radius-sm);
+  color: var(--oc-color-link);
+  background: var(--oc-color-bg-soft);
+  font: inherit;
+}
+@media (min-width: 960px) {
+  .VPSidebar:not(.open) { visibility: visible; }
+  .oc-sidebar-close { display: none; }
+}
+@media (pointer: coarse) {
+  .VPSidebarItem .link { display: flex; align-items: center; min-height: 44px; }
+}
+
+/* The local search is teleported outside the article. */
+.VPLocalSearchBox {
+  --vp-local-search-bg: var(--oc-color-bg);
+  --vp-local-search-result-bg: var(--oc-color-bg-alt);
+  --vp-local-search-result-border: var(--vp-c-border);
+  --vp-local-search-result-selected-bg: var(--oc-color-bg-soft);
+  --vp-local-search-result-selected-border: var(--oc-color-link);
+  --vp-local-search-highlight-bg: var(--oc-color-bg-soft);
+  --vp-local-search-highlight-text: var(--oc-color-link);
+}
+.VPLocalSearchBox .shell { border: 2px solid var(--oc-color-line); border-radius: var(--oc-radius-sm); box-shadow: var(--oc-shadow-panel); }
+.VPLocalSearchBox .search-bar { border-color: var(--vp-c-border); border-radius: var(--oc-radius-sm); }
+.VPLocalSearchBox .search-input { font-size: var(--oc-text-base); }
+.VPLocalSearchBox .search-actions { flex-shrink: 0; }
+.VPLocalSearchBox .search-input { min-width: 0; caret-color: var(--oc-color-link); }
+.VPLocalSearchBox .result { border-radius: var(--oc-radius-sm); }
+.VPLocalSearchBox .result.selected { border-inline-start-width: 5px; }
+.VPLocalSearchBox :is(.title, .search-keyboard-shortcuts) { color: var(--oc-color-text-muted); }
+.VPLocalSearchBox mark { text-decoration: underline; text-underline-offset: 3px; font-weight: 700; }
+.VPLocalSearchBox .excerpt, .VPLocalSearchBox .search-keyboard-shortcuts { opacity: 1; }
+.VPLocalSearchBox :is(.clear-button, .toggle-layout-button, .back-button) { min-width: 44px; min-height: 44px; }
+.VPLocalSearchBox .search-keyboard-shortcuts kbd { color: var(--oc-color-text); background: var(--oc-color-bg-soft); border-color: var(--vp-c-border); }
+
+:is(.VPDoc, .VPSidebar, .VPDocAsideOutline, .VPLocalNav, .VPLocalSearchBox) :focus-visible {
+  outline: 3px solid var(--oc-color-focus);
+  outline-offset: 2px;
+}
+.VPDoc .oc-table-scroll:focus-visible { outline-offset: -3px; }
+.VPSkipLink:focus-visible {
+  color: var(--oc-color-text);
+  background: var(--oc-color-bg);
+  outline: 3px solid var(--oc-color-focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .VPNav .VPSwitch.VPSwitchAppearance,
+  .VPNav .VPSwitch.VPSwitchAppearance .check,
+  .VPNav .VPSwitch.VPSwitchAppearance .icon [class^='vpi-'] {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+@media (max-width: 639px) {
+  .VPDoc { padding-inline: var(--oc-space-4) !important; }
+  .VPDoc .vp-doc .header-anchor { position: static; margin-inline: 0 0.25em; font-size: 0.8em; }
+  .VPDoc .vp-doc h2 .header-anchor { top: auto; }
+  .VPDoc .vp-doc .custom-block { padding-inline: var(--oc-space-4); }
+  .VPDoc .vp-doc :is(th, td) { padding: var(--oc-space-3); }
+  .VPDoc .vp-doc div[class*='language-'] code { padding-inline: var(--oc-space-4); }
+  .VPDoc .vp-doc div[class*='language-'].line-numbers-mode code { padding-inline-start: 44px; }
+}
+
+@media print {
+  :root, :root.dark {
+    color-scheme: light;
+    --vp-c-bg: #fff;
+    --vp-c-text-1: var(--oc-ink);
+    --vp-c-brand-1: var(--oc-open-water-deep);
+    --vp-c-brand-2: var(--oc-open-water-deep);
+  }
+  .VPNav, .VPSidebar, .VPLocalNav, .VPDoc .aside, .VPDocFooter .prev-next,
+  .VPSkipLink, .VPFooter, .VPBackdrop, .VPLocalSearchBox { display: none !important; }
+  .oc-sidebar-close { display: none !important; }
+  .VPContent, .VPDoc, .VPDoc .content { margin: 0 !important; padding: 0 !important; }
+  .VPDoc .container, .VPDoc .content, .VPDoc .content-container { display: block !important; width: 100% !important; max-width: none !important; }
+  .VPDoc { --oc-color-text: #0a0e13; --oc-color-text-muted: #34414e; --oc-color-text-subtle: #56646f; --oc-color-bg: #fff; --oc-color-bg-alt: #f3f8fb; --oc-color-bg-soft: #e6eef4; --oc-color-line: #0a0e13; --oc-color-rule: #c9d5df; --oc-color-link: #155d93; --vp-code-color: #155d93; --vp-code-bg: #e6eef4; --vp-c-border: #808f9c; color: #0a0e13; background: #fff; }
+  .VPDoc .vp-doc { font-size: 10pt; }
+  .VPDoc .vp-doc :is(h1, h2, h3, h4) { break-after: avoid; background: none; }
+  .VPDoc .vp-doc .header-anchor, .VPDoc .oc-table-hint,
+  .VPDoc .vp-doc button.copy, .VPDoc .vp-doc span.lang { display: none !important; }
+  .VPDoc .oc-table-scroll, .VPDoc .vp-doc table { max-height: none; overflow: visible; }
+  .VPDoc .oc-table-scroll table { min-width: 0; table-layout: fixed; }
+  .VPDoc .vp-doc :is(th, td) { min-width: 0; padding: 5pt; font-size: 8pt; }
+  .VPDoc .vp-doc th { position: static; }
+  .VPDoc .vp-doc tr { break-inside: avoid; }
+  .VPDoc .vp-doc div[class*='language-'] pre { white-space: pre-wrap; overflow: visible; }
+  .VPDoc .vp-doc div[class*='language-'] { padding-top: 0; }
+  .VPDoc .vp-doc div[class*='language-'] > .line-numbers-wrapper { top: 0; }
+  .VPDoc .vp-doc div[class*='language-'] :is(code, .line) { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .VPDoc .vp-doc div[class*='language-'] code { font-size: 8pt; }
+  html .VPDoc .vp-doc .shiki span { color: #0a0e13 !important; }
+  .VPDoc .vp-doc .custom-block { break-inside: avoid; }
+  .VPDocFooter { margin-top: 16pt; }
+  .VPDoc .vp-doc a[href^='http']::after { content: ' (' attr(href) ')'; font-size: 8pt; overflow-wrap: anywhere; }
+}

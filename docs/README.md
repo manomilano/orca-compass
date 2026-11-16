@@ -2,6 +2,8 @@
 
 This guide describes the code in this checkout. Installed releases may differ;
 use `orcacompass --help` to see the commands your version supports.
+The website's [home page](index.md) introduces OrcaCompass; this page is the
+user guide overview.
 
 OrcaCompass helps an Orca orchestrator choose the **agent**, **model** and
 **reasoning effort** for each job it hands to a worker. It ships as an Agent
@@ -25,6 +27,10 @@ Skill (`skills/orcacompass/SKILL.md`) backed by a small TypeScript CLI
 | [Model data](model-data.md) | Data sources, cache timing, snapshot dates, and maintaining shared scores |
 | [Orca agents](orca-agents.md) | Every agent id Orca can launch and what OrcaCompass does with each one |
 | [Roadmap](roadmap.md) | What is done, what is next, known limitations, decisions taken |
+| [Examples](examples.md) | Worked examples of routing and verification |
+| [Contributing](contributing.md) | Development setup, checks, and contribution guidelines |
+| [Changelog](changelog.md) | Changes by release |
+| [Community and support](community.md) | Where to ask questions, report bugs, and get help |
 
 To build, test or change OrcaCompass itself, see
 [CONTRIBUTING.md](https://github.com/manomilano/orca-compass/blob/main/CONTRIBUTING.md).

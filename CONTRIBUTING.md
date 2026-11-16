@@ -51,6 +51,7 @@ npm run build
 npm run test:package
 npm run test:install
 npm run docs:build
+npm run site:check
 ```
 
 `npm test` runs the Vitest suite once (`vitest run`); use `npx vitest` to
@@ -122,12 +123,14 @@ snapshot reaches users with the next npm release; normal catalog refreshes
 fetch Models.dev directly.
 
 Edit the Markdown pages in `docs/`. `docs/README.md` is the guide's overview on
-GitHub and is included by `docs/index.md` for the website, so its content has
-one source. Add new pages to the sidebar in `docs/.vitepress/config.mts`.
+GitHub and is included by `docs/guide.md` for the website, so its content has
+one source. `docs/index.md` is the landing page. Add new pages to the sidebar
+in `docs/.vitepress/config.mts`.
 
 ```sh
 npm run docs:dev       # edit and preview locally
 npm run docs:build     # production build, including internal link checks
+npm run site:check     # built site: links, fragments, assets, search index, and served pages
 npm run docs:preview   # inspect the production build
 ```
 
@@ -237,6 +240,7 @@ include a concrete before/after example for routing changes.
 - [ ] `npm run test:package` passes after the build.
 - [ ] `npm run test:install` passes after the build for installer changes.
 - [ ] `npm run docs:build` passes for guide changes.
+- [ ] `npm run site:check` passes for guide changes.
 - [ ] README, configuration example, and Skill match any public behavior changes.
 - [ ] Fixtures and diagnostics contain no credentials or personal/account data.
 - [ ] Metadata attribution and the existing license are preserved.

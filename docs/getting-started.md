@@ -1,7 +1,11 @@
+---
+description: Install OrcaCompass, complete setup, and understand what routing reads and caches.
+---
+
 # Getting started
 
-This page covers installing OrcaCompass, what happens the first time it runs
-(setup), and what every later call does under the hood.
+Install OrcaCompass, choose your setup preferences, and check your first route.
+The final sections explain what later calls read and cache.
 
 ## Requirements
 
@@ -16,7 +20,7 @@ This page covers installing OrcaCompass, what happens the first time it runs
   (`orca account list --json`). Without Orca, routing still works with usage
   unknown and low confidence.
 - The agent CLIs you want to route to, installed and signed in: `claude`,
-  `codex`, `cursor-agent`, `grok`, `agy` (Antigravity), `opencode`. An agent
+  `codex`, `cursor-agent`, `grok`, `agy` (Antigravity), `opencode`, and `muse`. An agent
   that is not installed is simply skipped.
 
 ## Install
@@ -33,6 +37,7 @@ The installer checks npm's global installation and installs or updates the
 shared CLI to its own version first. It then installs that version's Skill
 for the current project through [`skills`](https://github.com/vercel-labs/skills).
 It needs network access and asks which agents should receive the Skill.
+
 The CLI goes to npm's global folder in either scope; that prefix must be writable.
 Without `--global`, the interactive Skill installer can ask Project or Global;
 Project is preselected. Keep Project for a local installation. `--local` is an
@@ -117,9 +122,8 @@ the Skill from the checkout and leaves the CLI you just installed alone.
 
 ## First-time setup
 
-No config file is required. Setup exists so you can say which agents to use,
-pick favorite routes and ban models once, instead of repeating it per job.
-There are three ways to run it.
+No config file is required. Setup saves your agent choices, favorite routes
+and model bans for later jobs. Choose one of the three setup methods below.
 
 ### In a terminal
 
@@ -127,8 +131,10 @@ There are three ways to run it.
 orcacompass setup
 ```
 
-The wizard asks three questions, then shows a summary and saves on
-confirmation. Press Enter to keep the answer shown in brackets; running it
+The wizard asks about agents, favorites and bans, then shows a summary.
+It asks to save when settings changed or the config does not exist; if an
+existing config is unchanged, it exits without another confirmation.
+Press Enter to keep the answer shown in brackets; running it
 again starts from your current settings. Ctrl+C saves nothing.
 
 1. **Agents.** Every known agent is listed with: installed, enabled in Orca
@@ -143,10 +149,10 @@ again starts from your current settings. Ctrl+C saves nothing.
    If none exists, the favorite is retained with a warning. The
    wizard asks for that limit when you set at least one favorite. Written as `pins` and `preferRiskLimit`.
 3. **Bans (optional).** The model families found (and their models) are listed;
-   name families or model ids never to use. Written as `banModels`. An agent id
+   name families or model ids never to use. Written as `banModels`. An agent id that is not also a discovered model family
    is refused here: to stop using a whole agent, leave it out in question 1.
 4. **Summary.** The settings in plain words, one example route per tier (with
-   any warning), the config file path, and a yes/no to save. Only what an
+   any warning), the config file path, and a yes/no to save when needed. Only what an
    answer changed is written; every other key keeps its value and position.
 
 Without a terminal (stdin or stdout is not a TTY) `setup` exits 1 and points to
@@ -154,21 +160,26 @@ the chat setup and the individual commands.
 
 ### In chat, through the orchestrator
 
-With the Skill installed you can ask your orchestrator to "set up OrcaCompass".
+With the Skill installed, ask your orchestrator (the agent coordinating your
+workers) to "set up OrcaCompass".
 It runs `orcacompass setup --json`, which prints everything the questions need
 (`configPath`, `configExists`, `orcaAgents`, the current `config`, `agents` with
 `preselected`, `tiers` with `pick`/`preferred`/`options`, `families`), asks the
 same three questions in plain words, and applies the answers with
 `orcacompass agents`, `orcacompass prefer` and `orcacompass ban`. It never edits
-the file by hand. It finishes with `orcacompass setup --complete --json`,
+the file by hand.
+
+It finishes with `orcacompass setup --complete --json`,
 including when every answer kept its default. The command creates an empty
 config if needed. The presence of that file marks setup complete, so later
 conversations do not offer setup again. Existing settings are preserved.
 
 The Skill also offers setup once, before the first route in a conversation,
 when `setup --json` reports `configExists: false`. If you decline, the
-orchestrator runs `orcacompass setup --skip`, which writes an empty config file
-so the offer is not repeated; routing then follows Orca's own agent switches.
+orchestrator runs `orcacompass setup --skip`. This creates an empty config file
+if none exists, so the Skill does not repeat the offer. The orchestrator reports
+which agents it will use; routing still checks installation, model availability,
+and Orca's agent switches.
 
 ### Command by command
 
@@ -187,42 +198,56 @@ See [Commands](commands.md).
 
 `route`, `status`, the `agents` listing, `setup`, setting a `prefer` entry,
 `ban` (including its listing) and `unban` gather the same picture of your
-machine (`src/routing/environment.ts`); `tiers` reads only the table. The work is in two
-parts: the **placement table** (every model's tiers, built from every source
-and kept for `placementsTtlHours`, 5 hours by default) and the **route**
-(the table plus live usage). The optional `--tier-reason` is the
+machine (`src/routing/environment.ts`). `tiers` and `ranking` load the
+placement table without live usage; both can rebuild it when stale.
+
+The **placement table** holds every model's tiers, built from every source
+and kept for `placementsTtlHours` (5 hours by default). A **route** is the
+recommended agent, model and effort, chosen using that table and live usage.
+The optional `--tier-reason` is the
 coordinator's short explanation, returned with the decision. The coordinator
 classifies the task using the Skill's rubric. OrcaCompass does not call a
 model for classification.
 
 1. **Load config** from the platform path (see [Configuration](configuration.md));
    a missing file means defaults, an invalid one is exit code 2.
-2. **Read the placement table** from the cache. When it is missing, older
+2. **Gather in parallel:** load the placement table, read usage, and read
+   Orca's agent switches. The following entries describe those branches, not
+   a sequential series of waits.
+
+   **Read the placement table** from the cache. When it is missing, older
    than `placementsTtlHours`, from another OrcaCompass version, built with
    other `tierOverrides` or `costBands`, an older placement schema, a changed
-   snapshot, or a newly detected agent, it is rebuilt. The manifest checks the repository evidence
+   evidence generation recorded in `evidence-check.json`, a future build time,
+   or a newly detected agent, it is rebuilt. The manifest checks the repository evidence
    snapshot with cached and bundled fallbacks (24 hours by default).
-   2b. **Discover agents** in parallel. For each one: find the executable,
+
+   **Discover agents** in parallel. For each one: find the executable,
    read its model list, note its effort levels and which usage pools it draws
    on. Live listings (`cursor-agent models`, `agy models`, `opencode models`,
    and `grok models` when `~/.grok/models_cache.json` is empty) run with a
-   30 s timeout; a good listing is saved and reused only if the command later
-   fails. A listing that asks you to sign in marks the agent `not signed in`.
+   30 s timeout; a nonempty successful listing is saved and reused if a later command fails
+   or produces no parsed models. If no models were parsed and the output
+   asks you to sign in, the agent is marked `not signed in` instead.
    `agy models` runs with its background auto-updater off, so listing models
    never updates Antigravity; `agy` still updates itself when you or Orca run it.
-   2c. **Profile every model** with raw evidence scores and a separate cost tier
-   from snapshot prices (3:1 input/output blend, `costBands` default `[1, 5, 12]`),
+
+   **Profile every model** with raw evidence scores and a separate cost tier
+   from user `tierOverrides`, then snapshot prices (3:1 input/output blend, `costBands` default `[1, 5, 12]`),
    falling back to hints and evidence class without a price. `orcacompass ranking`
    is the evidence view; `orcacompass tiers` groups by cost tier and
    `orcacompass tiers --axis coding` shows evidence bands.
-3. **Read usage** with `orca account list --json` (20 s timeout). Each agent gets
-   a status (`ok`, `unavailable`, `unknown`) and its usage pools. A pool with a
-   missing number is skipped, never read as 0%. This is the only command a
-   route runs when the table is fresh.
+3. **Read usage** with `orca account list --json` (20 s timeout). The usage reader covers all supported agents except OpenCode,
+   which has no usage entry. Each covered agent gets a status (`ok`, `unavailable`, `unknown`) and its usage pools. A pool with a
+   missing number is skipped, never read as 0%. This is the only child command a
+   route runs when the table is fresh; local files and executable locations
+   are still checked.
 4. **Read Orca's agent switches**, read-only, from the active profile's
    `profile-state.db` (or `orca-data.json`). Anything unexpected is `unknown`
    and excludes nobody.
-5. **Load rejections**: models an agent refused at launch, saved by `verify`,
+5. **Apply recent [hand-outs](tiers-and-routing.md#usage-headroom-and-pace)**
+   to known usage pools, then **load rejections**:
+   models an agent refused at launch, saved by `verify`,
    still younger than `rejectionTtlHours`.
 
 Then the pure routing core (`src/routing/router.ts`, no I/O) turns that
@@ -232,10 +257,11 @@ pick is accepted in setup and status with a label such as `(daily cost tier)`
 for Advanced needs; it is not a downgrade. See
 [Tiers and routing](tiers-and-routing.md).
 
-A run that builds the table checks the evidence manifest before discovery, so it can
-take longer than any single timeout (10 s metadata, 20 s usage, 30 s
-listings). A fresh-table run skips discovery, but still waits for Orca's usage
-response, which can take up to its 20-second timeout.
+Each evidence HTTP request has a 10 s timeout (manifest, then snapshot when
+needed); live model listings have 30 s each and usage has 20 s. These limits
+apply to individual operations, not the total call. See
+[The first call is slow](troubleshooting.md#the-first-call-is-slow) for how
+the concurrent operations affect waiting time.
 
 ## Check that it works
 
@@ -245,7 +271,8 @@ orcacompass status          # usage pools, the pick per tier, metadata age
 orcacompass route --tier daily
 ```
 
-A healthy `route` prints a line like:
+Illustrative output, shortened (models, percentages and prices depend on
+your environment):
 
 ```text
 daily → claude · claude-sonnet-5-5 · medium (high confidence)
@@ -255,7 +282,7 @@ daily → claude · claude-sonnet-5-5 · medium (high confidence)
 orca orchestration worker-start --spec "<task>" --agent claude --model claude-sonnet-5-5 --effort medium
 ```
 
-If `status` says the catalog source is `snapshot`, run `orcacompass refresh`
+If `status` says `evidence: snapshot`, run `orcacompass refresh`
 when online. If an agent you expect is `not used`, the verdict says why
 (`not installed`, `not enabled in Orca`, `excluded by config`, `not signed in`,
 `no models`). [Troubleshooting](troubleshooting.md) covers what to do for each.

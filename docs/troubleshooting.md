@@ -1,7 +1,12 @@
+---
+description: Diagnose installation, agent discovery, usage, routing, and configuration problems.
+---
+
 # Troubleshooting
 
-Start with these three commands. They inspect availability and routing and
-may update local metadata and model-list caches:
+Use this page to diagnose installation problems, missing agents, unknown usage and
+unexpected routes. Start with these commands; they can update local metadata
+and model-list caches, and `route` also records a recent hand-out:
 
 ```sh
 orcacompass agents          # which agents are used, and why not
@@ -59,7 +64,8 @@ Ask your orchestrator to "set up OrcaCompass" in chat instead (it reads
 
 ## An agent is not used
 
-`orcacompass agents` gives the reason in the `verdict` column.
+Find the reason in the `verdict` column of `orcacompass agents`, then follow
+the matching action below.
 
 | Verdict | What to do |
 | --- | --- |
@@ -71,7 +77,8 @@ Ask your orchestrator to "set up OrcaCompass" in chat instead (it reads
 | `no models` | The agent was found but listed no models; `status` shows the listing's error |
 | `used as last resort` | OpenCode is used only when no other agent can take the job. Change `lastResortAgents` to make it ordinary; see [Configuration](configuration.md#which-agents-and-models) |
 
-OrcaCompass looks for agent executables on the PATH of the shell that runs it.
+OrcaCompass checks adapter-specific install folders first, then the PATH of
+the shell that runs it.
 On macOS and Linux it then tries the folders Orca adds to its own PATH, so a
 launcher or non-login shell that leaves them out does not hide an agent:
 Homebrew, `/usr/local/bin`, `~/bin`, `~/.local/bin`, Nix, Snap, MacPorts and a
@@ -84,16 +91,19 @@ Orca if the orchestrator runs in an Orca terminal that started earlier.
 
 Orca's agent switches and its model catalog are read from Orca's databases
 using `node:sqlite`. Use Node.js 24, or Node.js 22.13+ where SQLite works
-without extra flags. Without it, Claude Code's and Codex's models come from
-their own caches and their notes say `Orca's model catalog skipped`.
+without extra flags. Without SQLite, the legacy `agent-model-catalog.json` is tried before
+Claude Code's and Codex's own caches and the evidence fallback. When the
+database read fails and no legacy list is used, discovery notes include
+`Orca's model catalog skipped`.
 When SQLite is unavailable, or when the file cannot be read,
 the switches are `unknown` and exclude nobody. The first line of
 `orcacompass agents` says which one applies.
 
 ## Usage is unknown and confidence is low
 
-`status` shows `usage unknown: Orca not reachable: …` for every agent when
-`orca account list --json` fails or takes longer than 20 seconds. Start Orca,
+`status` shows `usage unknown: Orca not reachable: …` for agents covered by
+its usage reader (all supported agents except OpenCode) when
+`orca account list --json` fails or reaches its 20-second command timeout. Start Orca,
 make sure `orca` is on your PATH (on macOS and Linux, `/usr/local/bin`
 and `~/.local/bin` are also tried), and run `orca account list --json` yourself
 to see the error. Routing still works without usage, but every route has low
@@ -110,21 +120,23 @@ pool's reset time has already passed. See
 
 - `none` with `no usable agent`: no agent passed the checks above. Run
   `orcacompass agents`.
-- `none` with `all <tier> candidates blocked`: every model of that tier is at
-  or above its usage limit, and neither a pricier nor a lower tier can take the job.
+- `none` with `all <tier> candidates blocked`: no usable pick or known future
+  reset was found after the allowed covering, downgrade and fallback choices.
 - A pricier model than expected, with the warning `cheaper <tier> cost tier
   passed over`: every route in the cheaper tier that covers the job is blocked
   or expected to end above `usageRiskLimit` (90% by default). Raise the limit
   in the config to stay in the cheaper tier longer.
-- `wait`: you passed `--no-downgrade` and every route that covers the job is
-  blocked.
-  `waitUntil` says when the first candidate resets.
+- `wait`: no allowed unblocked pick was found, but a candidate has a known
+  future unblock time. This can happen with or without `--no-downgrade`.
+  `waitUntil` is the earliest candidate unblock time; a candidate with several
+  blocking pools must wait for its latest blocking reset.
 - `none` with `--effort`: no candidate can apply that exact effort; the
   reasons list what each one offers. Use `--demand` instead to let OrcaCompass
   pick a supported effort.
 
-`skipped` lists excluded agents and banned/refused models in the requested
-tier. Superseded releases and no-ZDR exclusions are omitted. Preference
+`skipped` lists operational exclusions and models that fall below the
+requested needs or have no usable evidence. JSON keeps the full list; text
+groups and limits the profile diagnostics. Superseded releases and no-ZDR exclusions are omitted. Preference
 exclusions appear in `warnings`.
 See [Fallbacks](tiers-and-routing.md#fallbacks-downgrade-upgrade-wait-none).
 
@@ -181,7 +193,8 @@ command that reads the config exits 2 until it is valid. When a value has the
 wrong type the message names the key, such as `usageStaleMinutes must be a
 non-negative number`.
 
-Unknown keys are ignored without a warning, so a setting that has no effect is
+Unknown keys are ignored without a warning (retired `scoreWeight`, `classWeight` and
+`modelsDevTtlHours` have specific migration warnings), so a setting that has no effect is
 often a typo, such as `denyAgent` for `denyAgents`. Check the spelling against
 [Configuration](configuration.md#keys-and-defaults).
 
@@ -191,17 +204,22 @@ OrcaCompass runs its background commands with a hidden console. It also starts
 `agy models` with Antigravity's auto-updater off, because that detached updater
 opens a brief terminal window on Windows, at most once every 15 minutes.
 
-A window that still flashes comes from another program, for example a console
-tool started by a process with no console of its own. An agent launched through
-Orca also opens its own terminal tab, which is expected.
+If a window still flashes, inspect the program that opened it. Hiding
+OrcaCompass's child console does not control windows opened by every program
+it starts indirectly. An agent launched through Orca also opens its own
+terminal tab, which is expected.
 
 ## The first call is slow
 
-A call that builds the placement table checks the evidence manifest and then runs
-every agent's model listing, so it can take longer than any single timeout:
-10 s for metadata, 30 s for each live listing, 20 s for Orca usage. That
+A table build loads evidence and then discovers agents in parallel; only
+adapters with live listings run model-list commands. Usage and agent-switch
+reads run alongside table loading. Each evidence HTTP request has a 10 s
+timeout (manifest, then snapshot when needed); each live listing has 30 s and
+Orca usage has 20 s. These are individual limits, not a total call budget. That
 happens on the first call, during `orcacompass refresh`, and when the table
 becomes stale. A routing request with a fresh table only runs `orca account list`
-for live usage. `status` and `tiers` say when the table was built. The cache
-holds observed state only and is safe to delete; see
+for live usage. `status` and `tiers` say when the table was built.
+
+Deleting the cache also forgets recent hand-outs and saved model refusals,
+as well as discovery and evidence data. See
 [Where things live](configuration.md#where-things-live).
