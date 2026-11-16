@@ -8,6 +8,7 @@
 <img src="docs/assets/orca-comic-strip.jpg" width="100%" alt="Three-panel orca comic. 1: the pod trusts its leader to match each job to its best model. 2: the leader is unsure which model fits each job and how to share the load, thinking of Anthropic, OpenAI, and + more. 3: holding a glowing compass, the leader sends each worker along a route to Anthropic, OpenAI, or + more." />
 </p>
 
+[![npm version](https://img.shields.io/npm/v/orcacompass?logo=npm&label=npm)](https://www.npmjs.com/package/orcacompass)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node.js: 20+](https://img.shields.io/badge/Node.js-%3E%3D20-339933?logo=nodedotjs&logoColor=white)](package.json)
 [![Platforms: Windows, macOS, Linux](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-64748b)](#install)
