@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { DEFAULT_CONFIG } from '../config.js';
 import { buildProfile, hintFor, type Profile } from '../placements/profiles.js';
 import { knownModelVersion } from '../placements/tiers.js';
@@ -351,4 +352,82 @@ function crossAxisFindings(snapshot: EvidenceSnapshot, hinted: boolean): string[
     }
   }
   return findings;
+}
+
+/** One model per line, so a refresh diff shows which models changed. */
+export function serializeSnapshot(snapshot: EvidenceSnapshot): string {
+  const { models, ...header } = snapshot;
+  const start = JSON.stringify(header, null, 2).slice(0, -2);
+  return `${start},\n  "models": [\n${models.map((model) => `    ${JSON.stringify(model)}`).join(',\n')}\n  ]\n}\n`;
+}
+
+export interface EvidenceManifest { generatedAt: string; schemaVersion: number; sha256: string; bytes: number }
+
+export function manifestFor(snapshot: EvidenceSnapshot, text: string): EvidenceManifest {
+  const bytes = Buffer.from(text);
+  return { generatedAt: snapshot.generatedAt, schemaVersion: snapshot.schemaVersion, sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length };
+}
+
+export const serializeManifest = (manifest: EvidenceManifest): string => JSON.stringify(manifest, null, 2) + '\n';
+
+export interface RefreshInput {
+  dataset: unknown;
+  now: string;
+  /** The committed snapshot and manifest, as read from disk; undefined when absent. */
+  previous?: EvidenceSnapshot;
+  previousText?: string;
+  previousManifestText?: string;
+  curated?: unknown;
+}
+
+export interface RefreshPlan {
+  snapshot: EvidenceSnapshot;
+  text: string;
+  manifest: EvidenceManifest;
+  /** Calibration runs on every refresh; any failure means nothing is written. */
+  failures: string[];
+  warnings: string[];
+  /** The evidence differs from the committed snapshot (build and source timestamps aside). */
+  changed: boolean;
+  writeSnapshot: boolean;
+  /** The committed manifest is missing or does not describe the snapshot. */
+  writeManifest: boolean;
+  diff: string[];
+}
+
+/**
+ * Rebuilds the snapshot and decides what to write. When only the build time, fetch time or the dataset's
+ * own date would change, the committed snapshot is kept byte for byte, so clients download nothing and the
+ * refresh workflow sees no change; its manifest is still checked against it and rewritten if stale.
+ */
+const lf = (text: string): string => text.replace(/\r\n/g, '\n');
+
+export function planRefresh(input: RefreshInput): RefreshPlan {
+  const { previous } = input;
+  const build = (now: string, fetchedAt: string): EvidenceSnapshot => buildSnapshot(input.dataset, {
+    now, sourceFetchedAt: fetchedAt, bands: previous?.bands ?? DEFAULT_BANDS, topBands: previous?.topBands ?? DEFAULT_TOP_BANDS, curated: input.curated,
+  });
+  const fresh = build(input.now, input.now);
+  const failures = calibrationChecks(fresh);
+  const warnings = calibrationWarnings(fresh);
+  let kept: EvidenceSnapshot | undefined;
+  if (previous && input.previousText !== undefined) {
+    const source = previous.sources[0];
+    const candidate = build(previous.generatedAt, source?.fetchedAt ?? previous.generatedAt);
+    if (candidate.sources[0]) {
+      const { dataDate: _ignored, ...rest } = candidate.sources[0];
+      candidate.sources[0] = source?.dataDate === undefined ? rest : { ...rest, dataDate: source.dataDate };
+    }
+    if (serializeSnapshot(candidate) === lf(input.previousText)) kept = candidate;
+  }
+  const snapshot = kept ?? fresh;
+  const text = serializeSnapshot(snapshot);
+  const manifest = manifestFor(snapshot, text);
+  return {
+    snapshot, text, manifest, failures, warnings,
+    changed: !kept,
+    writeSnapshot: !kept,
+    writeManifest: !kept || input.previousManifestText === undefined || lf(input.previousManifestText) !== serializeManifest(manifest),
+    diff: kept ? [] : diffSnapshots(previous, snapshot),
+  };
 }

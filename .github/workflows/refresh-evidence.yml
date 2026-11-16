@@ -1,14 +1,18 @@
 name: Refresh evidence snapshot
 
+# Checks that the committed snapshot matches the committed LLMBenchmark dataset. A change to the
+# dataset must ship with its rebuilt snapshot in the same pull request (npm run refresh-evidence);
+# this fails the pull request when it does not, before the stale snapshot reaches users from main.
 on:
   workflow_dispatch:
+  pull_request:
+    paths: [data/llmbenchmark/dataset.json, data/evidence-curated.json, data/evidence-snapshot.json, src/evidence/**, scripts/refresh-evidence.mjs, .github/workflows/refresh-evidence.yml]
   push:
     branches: [main]
-    paths: [data/llmbenchmark/dataset.json]
+    paths: [data/llmbenchmark/dataset.json, data/evidence-curated.json]
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   refresh:
@@ -23,17 +27,13 @@ jobs:
       - run: npm run build
       # Reads the committed data/llmbenchmark/dataset.json; nothing is downloaded here.
       - run: node scripts/refresh-evidence.mjs --diff /tmp/evidence-diff.md --check-methodology
-      - name: Open a refresh pull request when data changes
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Fail when the snapshot is out of date
         run: |
           if [ -z "$(git status --porcelain data/)" ]; then
+            echo "Evidence snapshot matches the dataset."
             exit 0
           fi
-          git switch -c "evidence/refresh-$(date -u +%F)"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/evidence-snapshot.json data/evidence-manifest.json
-          git commit -m "chore(data): refresh evidence snapshot"
-          git push --set-upstream origin HEAD
-          gh pr create --fill --body-file /tmp/evidence-diff.md
+          cat /tmp/evidence-diff.md >> "$GITHUB_STEP_SUMMARY"
+          git status --short data/
+          echo "::error::The evidence snapshot does not match the dataset. Run npm run build && npm run refresh-evidence, then commit data/evidence-snapshot.json and data/evidence-manifest.json."
+          exit 1
