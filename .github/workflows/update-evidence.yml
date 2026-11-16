@@ -1,0 +1,66 @@
+name: Update evidence data
+
+# Every morning, download LLMBenchmark's dataset and rebuild the evidence snapshot. When the scores
+# changed, open one pull request for the maintainer to merge; when nothing changed, do nothing.
+# Pull requests opened by this workflow get no CI run of their own, so the tests run here first.
+# Needs the repository setting "Allow GitHub Actions to create and approve pull requests".
+on:
+  schedule:
+    - cron: '0 5 * * *' # 05:00 UTC, 07:00 in Israel (08:00 in summer); GitHub may start it later
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-evidence
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      # Downloads the dataset; refuses to write when calibration fails. Unchanged scores write nothing.
+      - run: node scripts/refresh-evidence.mjs --fetch --diff /tmp/evidence-diff.md --check-methodology
+      - name: Check for changed scores
+        id: changes
+        run: |
+          if [ -z "$(git status --porcelain data/evidence-snapshot.json data/evidence-manifest.json)" ]; then
+            echo "No score changes; nothing to do."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.changes.outputs.changed == 'true'
+        run: npm test
+      - name: Open the update pull request
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Keep one open update: an older one is replaced by today's, which includes its changes.
+          for pr in $(gh pr list --state open --json number,headRefName --jq '.[] | select(.headRefName | startswith("evidence/update-")) | .number'); do
+            gh pr close "$pr" --delete-branch --comment "Replaced by a newer evidence update."
+          done
+          branch="evidence/update-$(date -u +%F-%H%M)"
+          git switch -c "$branch"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/llmbenchmark/dataset.json data/evidence-snapshot.json data/evidence-manifest.json
+          git commit -m "chore(data): update evidence from LLMBenchmark ($(date -u +%F))"
+          git push --set-upstream origin "$branch"
+          {
+            cat /tmp/evidence-diff.md
+            echo
+            echo "Downloaded from https://llmbenchmark.ai/data/dataset.json. Calibration and \`npm test\` passed in the [update run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."
+            echo "Merging changes routing for every user on their next refresh; no release is needed."
+          } > /tmp/pr-body.md
+          gh pr create --title "chore(data): update evidence from LLMBenchmark ($(date -u +%F))" --body-file /tmp/pr-body.md

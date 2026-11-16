@@ -10,6 +10,10 @@ URL and date. See the repository NOTICE.
 
 ## Updating
 
+The `update-evidence.yml` workflow runs these steps every morning and opens a
+pull request when the scores changed; nothing happens when they did not. By
+hand:
+
 1. Replace `dataset.json` with the current download.
    `node scripts/refresh-evidence.mjs --fetch` downloads it here.
 2. Run `npm run build && npm run refresh-evidence`. The script reads this file,
