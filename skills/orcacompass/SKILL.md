@@ -87,11 +87,35 @@ Use the commands above to write the config; never edit the file yourself.
 
 Rate each job by the work, not spare capacity. Pass all three axes with `--need`:
 
-| Axis | min | low | mid | high | top |
-| --- | --- | --- | --- | --- | --- |
-| coding | none | small contained edits | multi-file changes with tests | design-level or tricky code | architecture across a large codebase, or code where a subtle bug is costly (security, concurrency, data loss) |
-| agentic | a single edit | run the tests | iterate with tools until green | long unsupervised runs or orchestration | multi-hour autonomous work coordinating many steps or workers |
-| reasoning | mechanical | routine judgement | real analysis | open-ended design or hard debugging | novel problems with no known approach, or correctness that must hold under scrutiny |
+### Coding: implementation difficulty
+
+| Level | Definition |
+| --- | --- |
+| `min` | No coding capability required. |
+| `low` | Straightforward code changes using familiar patterns, clear instructions, and limited technical decisions. |
+| `mid` | Non-trivial implementation requiring understanding of existing code, interactions between components, or moderate technical judgment. |
+| `high` | Complex implementation requiring deep code understanding, challenging debugging, intricate logic, or significant architectural decisions. |
+| `top` | Exceptional engineering challenges involving unusually difficult algorithms, subtle system-wide invariants, or highly complex interactions where advanced coding expertise is essential. |
+
+### Agentic: autonomy and adaptive execution
+
+| Level | Definition |
+| --- | --- |
+| `min` | No autonomous execution or tool use required. |
+| `low` | Simple, predictable actions with clear steps and completion criteria. |
+| `mid` | Multi-step work requiring independent tool use, iteration, and adaptation to routine results or failures. |
+| `high` | Complex autonomous workflows requiring investigation, independent planning, coordination, and recovery from unexpected obstacles. |
+| `top` | Exceptional autonomous execution involving deeply interdependent tasks, substantial uncertainty, dynamic replanning, and sophisticated coordination across tools or workers. |
+
+### Reasoning: cognitive problem-solving difficulty
+
+| Level | Definition |
+| --- | --- |
+| `min` | Mechanical or deterministic tasks requiring virtually no judgment. |
+| `low` | Familiar problems with obvious solutions and straightforward decisions. |
+| `mid` | Problems requiring meaningful analysis, comparison of alternatives, or reasoning through multiple constraints. |
+| `high` | Difficult, ambiguous problems requiring deep analysis, non-obvious deductions, or sophisticated multi-step reasoning. |
+| `top` | Exceptional reasoning challenges involving novel problems, highly complex interacting constraints, or solutions that demand unusually deep insight beyond established approaches. |
 
 Use `top` only when `high` is not enough: a `high` route already failed at the
 job, or a mistake would be expensive. Most hard jobs are `high`; `top` leaves

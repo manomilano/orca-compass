@@ -24,6 +24,10 @@
   `high` is not enough; the Skill says when. Its cuts are a separate
   `topBands` field in the evidence snapshot, so 0.2.2 keeps reading the
   snapshot.
+- The Skill defines every level of each skill (coding: implementation
+  difficulty; agentic: autonomy and adaptive execution; reasoning: cognitive
+  problem-solving difficulty), so the orchestrator rates jobs more
+  consistently.
 - Of two routes with the same headroom that both cover the job, the cheaper
   model now wins before the higher score. Routes on one agent share its usage
   pools, so a covering GPT-6.1 Terra is chosen before GPT-6.1 Sol. A model that
