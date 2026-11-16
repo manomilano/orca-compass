@@ -102,9 +102,6 @@ export async function loadEvidence(opts: {
   if (!cacheCurrent && !bundled) bundledAt = undefined;
   // The newest snapshot already on disk.
   const local = bundled ? { snapshot: bundled.snapshot, text: bundled.text } : cached && { snapshot: cached, text: undefined };
-  const fromLocal = (): Evidence => bundled
-    ? { snapshot: bundled.snapshot, source: 'snapshot', fetchedAt: Date.parse(bundled.snapshot.generatedAt) }
-    : { snapshot: cached!, source: 'cache', fetchedAt: fetchedAt ?? 0 };
 
   try {
     const fetchImpl = opts.fetchImpl ?? fetch;
@@ -118,7 +115,6 @@ export async function loadEvidence(opts: {
     let snapshot = local?.snapshot;
     // Bundled bytes are copied into the cache, so the next call finds them fresh and skips this check.
     let bytes: Buffer | string | undefined = local?.text;
-    let downloaded = false;
     // The repository can lag the release (a release built before its evidence reached main): never step below the bundled snapshot.
     if (!snapshot || (snapshot.generatedAt !== manifest.generatedAt && !olderThanBundled(manifest.generatedAt))) {
       bytes = Buffer.from(await (await get(EVIDENCE_SNAPSHOT_URL)).arrayBuffer());
@@ -127,18 +123,17 @@ export async function loadEvidence(opts: {
       }
       snapshot = parseSnapshot(bytes.toString('utf8'));
       if (!snapshot || snapshot.generatedAt !== manifest.generatedAt) throw new Error('repository evidence: invalid snapshot');
-      downloaded = true;
     }
     try {
       await mkdir(directory, { recursive: true });
       if (bytes !== undefined) await writeFile(snapshotFile, bytes);
       await writeFile(checkFile, JSON.stringify({ checkedAt: now, generatedAt: snapshot.generatedAt }));
     } catch { /* An unwritable cache only costs another manifest check next time. */ }
-    if (downloaded || snapshot.generatedAt === manifest.generatedAt) return { snapshot, source: 'network', fetchedAt: now };
-    // The repository is behind what is on disk; it was checked now, but the data is local.
-    return bundled ? fromLocal() : { snapshot, source: 'cache', fetchedAt: now };
+    // 'network' means the repository was checked now, also when it had nothing newer than what is on disk.
+    return { snapshot, source: 'network', fetchedAt: now };
   } catch {
-    if (local) return fromLocal();
+    if (bundled) return { snapshot: bundled.snapshot, source: 'snapshot', fetchedAt: Date.parse(bundled.snapshot.generatedAt) };
+    if (cached) return { snapshot: cached, source: 'cache', fetchedAt: fetchedAt ?? 0 };
   }
   throw new Error('bundled evidence snapshot unreadable');
 }

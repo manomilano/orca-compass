@@ -346,6 +346,16 @@ describe('refresh', () => {
     expect(err()).toBe('');
   });
 
+  it('keeps the bundled snapshot without reporting the repository as unreachable when the repository lags it', async () => {
+    // The mini snapshot (2026-11-10) is older than the bundled fixture (2026-11-12).
+    const snapshot = fixture('evidence-mini.json');
+    const manifest = { schemaVersion: 1, generatedAt: JSON.parse(snapshot).generatedAt, bytes: Buffer.byteLength(snapshot), sha256: createHash('sha256').update(snapshot).digest('hex') };
+    const fetchImpl = async (url: string | URL | Request) => new Response(String(url) === EVIDENCE_MANIFEST_URL ? JSON.stringify(manifest) : snapshot);
+    expect(await main(['refresh', '--json'], io, { ...deps, fetchImpl: fetchImpl as typeof fetch })).toBe(0);
+    expect(JSON.parse(out()).evidence).toMatchObject({ source: 'network', generatedAt: '2026-11-12T18:30:45.747Z' });
+    expect(err()).toBe('');
+  });
+
   it('reports when the network is unavailable', async () => {
     expect(await main(['refresh'], io, deps)).toBe(0);
     expect(out()).toMatch(/snapshot/);

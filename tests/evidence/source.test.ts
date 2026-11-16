@@ -182,7 +182,7 @@ describe('loadEvidence after an upgrade', () => {
   it('never steps below the bundled snapshot when the repository lags the release', async () => {
     const lagging = JSON.stringify(mini);
     const repo = repository(lagging, manifestFor(lagging, mini.generatedAt));
-    expect(await loadEvidence({ ttlHours: 24, now: NOW, bundled, fetchImpl: repo.fetchImpl })).toEqual({ snapshot: shipped, source: 'snapshot', fetchedAt: Date.parse(shipped.generatedAt) });
+    expect(await loadEvidence({ ttlHours: 24, now: NOW, bundled, fetchImpl: repo.fetchImpl })).toEqual({ snapshot: shipped, source: 'network', fetchedAt: NOW });
     expect(repo.urls).toEqual([EVIDENCE_MANIFEST_URL]);
     // Cached with a fresh check, so the lagging repository is not asked again on every command.
     expect(check()).toEqual({ checkedAt: NOW, generatedAt: shipped.generatedAt });
@@ -194,7 +194,7 @@ describe('loadEvidence after an upgrade', () => {
     seedCache(NOW - 48 * HOUR, current);
     const lagging = JSON.stringify(mini);
     const repo = repository(lagging, manifestFor(lagging, mini.generatedAt));
-    expect(await loadEvidence({ ttlHours: 24, now: NOW, bundled, fetchImpl: repo.fetchImpl })).toEqual({ snapshot: current, source: 'cache', fetchedAt: NOW });
+    expect(await loadEvidence({ ttlHours: 24, now: NOW, bundled, fetchImpl: repo.fetchImpl })).toEqual({ snapshot: current, source: 'network', fetchedAt: NOW });
     expect(repo.urls).toEqual([EVIDENCE_MANIFEST_URL]);
     expect(check()).toEqual({ checkedAt: NOW, generatedAt: current.generatedAt });
   });

@@ -535,7 +535,8 @@ async function statusCommand(args: string[], io: IO, deps: MainDeps): Promise<nu
 
 /**
  * Set when the evidence in use is older than the snapshot shipped with this release. The loader never picks such
- * evidence while the bundled snapshot is readable, so this flags a damaged install.
+ * evidence while the bundled snapshot is readable, so this flags a placement table built before the installed data
+ * changed without a version change, or a damaged install.
  */
 function evidenceBehindWarning(generatedAt: string, deps: MainDeps): string | undefined {
   // A test that supplies its own bundled snapshot has no manifest unless it passes one.
