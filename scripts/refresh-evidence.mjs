@@ -81,8 +81,19 @@ async function main() {
   const datasetText = await optionalText(from);
   if (datasetText === undefined) throw new Error(`dataset not found: ${from} (commit it there, pass --from <file>, or use --fetch)`);
   const dataset = JSON.parse(datasetText);
+  const build = (now, sourceFetchedAt) => buildSnapshot(dataset, { now, sourceFetchedAt, bands: previous?.bands ?? DEFAULT_BANDS, topBands: previous?.topBands ?? DEFAULT_TOP_BANDS, curated });
+  // Same evidence as the previous snapshot: keep its files, so clients download nothing new and the
+  // workflow sees no change. Only the build time would differ.
+  if (previous) {
+    const same = build(previous.generatedAt, previous.sources?.[0]?.fetchedAt ?? previous.generatedAt);
+    if (serializeSnapshot(same) === previousText.replace(/\r\n/g, '\n')) {
+      console.log(`Evidence unchanged (${same.models.length} models); kept ${snapshotPath}`);
+      if (values.diff) await writeFile(values.diff, '# Evidence snapshot refresh\n\nNo changes.\n');
+      return;
+    }
+  }
   const now = new Date().toISOString();
-  const snapshot = buildSnapshot(dataset, { now, sourceFetchedAt: now, bands: previous?.bands ?? DEFAULT_BANDS, topBands: previous?.topBands ?? DEFAULT_TOP_BANDS, curated });
+  const snapshot = build(now, now);
   const failures = calibrationChecks(snapshot);
   for (const warning of calibrationWarnings(snapshot)) console.error(`WARNING: ${warning}`);
   if (failures.length) {
