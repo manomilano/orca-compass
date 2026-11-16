@@ -196,6 +196,19 @@ once, including users who have not updated:
 | `data/evidence-manifest.json`, `data/evidence-snapshot.json` | 0.2.2 and later |
 | `data/modelindex-snapshot.json` (frozen) | 0.2.0 and 0.2.1 |
 
+The **Update evidence data** workflow does this every morning: it downloads
+LLMBenchmark's dataset, rebuilds the snapshot, and when the scores changed runs
+the tests and opens one pull request for the maintainer to merge (a newer one
+replaces an older open one). When nothing changed it does nothing. It needs the
+repository setting "Allow GitHub Actions to create and approve pull requests".
+
+To update the benchmark data by hand, run `npm run build` and then
+`npm run refresh-evidence -- --fetch` (it downloads the dataset to
+`data/llmbenchmark/dataset.json`, rebuilds the snapshot and manifest, and
+refuses to write if calibration fails). Commit the dataset, snapshot and
+manifest together in one pull request. The **Refresh evidence snapshot**
+workflow fails a pull request whose snapshot does not match its dataset.
+
 Do not delete, rename or change the format of these files. A new format gets a
 new file name and a new release that reads it; keep the old file until old
 releases have mostly gone. `tests/served-files.test.ts` fails when one is

@@ -4,12 +4,11 @@
 // there first) and rebuilds data/evidence-snapshot.json and its manifest. Existing
 // snapshot bands are retained; to change the cuts, edit the previous snapshot's
 // bands before running this script.
-import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { buildSnapshot, calibrationChecks, calibrationWarnings, DEFAULT_BANDS, DEFAULT_TOP_BANDS, diffSnapshots } from '../dist/evidence/refresh.js';
+import { planRefresh, serializeManifest } from '../dist/evidence/refresh.js';
 import { AXIS_WEIGHTS, BENCHMARKS } from '../dist/evidence/scoring.js';
 import { parseSnapshot } from '../dist/evidence/snapshot.js';
 
@@ -50,12 +49,6 @@ async function checkMethodology() {
   }
 }
 
-function serializeSnapshot(snapshot) {
-  const { models, ...header } = snapshot;
-  const start = JSON.stringify(header, null, 2).slice(0, -2);
-  return `${start},\n  "models": [\n${models.map((model) => `    ${JSON.stringify(model)}`).join(',\n')}\n  ]\n}\n`;
-}
-
 async function main() {
   const { values } = parseArgs({ options: {
     from: { type: 'string' }, out: { type: 'string' }, diff: { type: 'string' },
@@ -81,26 +74,23 @@ async function main() {
   const datasetText = await optionalText(from);
   if (datasetText === undefined) throw new Error(`dataset not found: ${from} (commit it there, pass --from <file>, or use --fetch)`);
   const dataset = JSON.parse(datasetText);
-  const now = new Date().toISOString();
-  const snapshot = buildSnapshot(dataset, { now, sourceFetchedAt: now, bands: previous?.bands ?? DEFAULT_BANDS, topBands: previous?.topBands ?? DEFAULT_TOP_BANDS, curated });
-  const failures = calibrationChecks(snapshot);
-  for (const warning of calibrationWarnings(snapshot)) console.error(`WARNING: ${warning}`);
-  if (failures.length) {
-    for (const failure of failures) console.error(`Calibration failed: ${failure}`);
+  const manifestPath = join(out, 'evidence-manifest.json');
+  const plan = planRefresh({ dataset, now: new Date().toISOString(), previous, previousText,
+    previousManifestText: await optionalText(manifestPath), curated });
+  for (const warning of plan.warnings) console.error(`WARNING: ${warning}`);
+  if (plan.failures.length) {
+    for (const failure of plan.failures) console.error(`Calibration failed: ${failure}`);
     process.exitCode = 1;
     return;
   }
   console.log('Calibration checks passed');
-  const bytes = Buffer.from(serializeSnapshot(snapshot));
-  const manifest = { generatedAt: snapshot.generatedAt, schemaVersion: snapshot.schemaVersion,
-    sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length };
-  const lines = diffSnapshots(previous, snapshot);
-  const diff = ['# Evidence snapshot refresh', '', ...(lines.length ? lines : ['No model profile changes.']), ''].join('\n');
+  const diff = ['# Evidence snapshot refresh', '', ...(plan.changed ? (plan.diff.length ? plan.diff : ['No model profile changes.']) : ['No changes.']), ''].join('\n');
   await mkdir(out, { recursive: true });
-  await writeFile(snapshotPath, bytes);
-  await writeFile(join(out, 'evidence-manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
+  if (plan.writeSnapshot) await writeFile(snapshotPath, plan.text);
+  if (plan.writeManifest) await writeFile(manifestPath, serializeManifest(plan.manifest));
   if (values.diff) await writeFile(values.diff, diff);
-  console.log(`Wrote ${snapshot.models.length} models (${bytes.length} bytes) to ${snapshotPath}`);
+  if (plan.changed) console.log(`Wrote ${plan.snapshot.models.length} models (${plan.manifest.bytes} bytes) to ${snapshotPath}`);
+  else console.log(`Evidence unchanged (${plan.snapshot.models.length} models); kept ${snapshotPath}${plan.writeManifest ? ' and rewrote its stale manifest' : ''}`);
   console.log(diff);
 }
 

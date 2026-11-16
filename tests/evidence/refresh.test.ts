@@ -1,6 +1,7 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { applyFallbacks, buildSnapshot, calibrationChecks, calibrationWarnings, DEFAULT_BANDS, diffSnapshots, displayName, estimateScores, familyOfSlug, mergeCurated } from '../../src/evidence/refresh.js';
+import { applyFallbacks, buildSnapshot, calibrationChecks, calibrationWarnings, DEFAULT_BANDS, diffSnapshots, displayName, estimateScores, familyOfSlug, mergeCurated, planRefresh, serializeManifest } from '../../src/evidence/refresh.js';
 import { BENCHMARKS } from '../../src/evidence/scoring.js';
 import { parseSnapshot, type SnapshotModel, type SnapshotResult } from '../../src/evidence/snapshot.js';
 
@@ -378,4 +379,60 @@ it('keeps valid curated pricing for new and existing rows', () => {
   expect(mergeCurated([entry('composer-2-5', [])], curated)[0].pricing).toEqual({ inputPerM: 1.25, outputPerM: 6 });
   curated.models[0].pricing.inputPerM = -1;
   expect(mergeCurated([], curated)[0].pricing).toBeUndefined();
+});
+
+describe('refresh plan', () => {
+  const first = planRefresh({ dataset, now: '2026-11-10T05:00:00.000Z' });
+  const committed = { previous: first.snapshot, previousText: first.text, previousManifestText: serializeManifest(first.manifest) };
+  const later = '2026-11-16T01:00:00.000Z';
+  const hash = (text: string) => createHash('sha256').update(Buffer.from(text)).digest('hex');
+
+  it('writes a first snapshot and a manifest that describes it', () => {
+    expect(first).toMatchObject({ changed: true, writeSnapshot: true, writeManifest: true, failures: [] });
+    expect(first.manifest).toEqual({ generatedAt: '2026-11-10T05:00:00.000Z', schemaVersion: 1, sha256: hash(first.text), bytes: Buffer.byteLength(first.text) });
+    expect(parseSnapshot(first.text)).toEqual(first.snapshot);
+  });
+
+  it('keeps the committed files when only the build time would change', () => {
+    const plan = planRefresh({ dataset, now: later, ...committed });
+    expect(plan).toMatchObject({ changed: false, writeSnapshot: false, writeManifest: false, diff: [], failures: [] });
+    expect(plan.text).toBe(first.text);
+    expect(plan.manifest).toEqual(first.manifest);
+    // Line endings from a Windows checkout are not a change either.
+    const crlf = { ...committed, previousText: first.text.replace(/\n/g, '\r\n'), previousManifestText: committed.previousManifestText.replace(/\n/g, '\r\n') };
+    expect(planRefresh({ dataset, now: later, ...crlf })).toMatchObject({ changed: false, writeManifest: false });
+  });
+
+  it("keeps the committed files when only the dataset's own date changes", () => {
+    const plan = planRefresh({ dataset: { ...dataset, generatedAt: '2026-11-15T04:19:42.260Z' }, now: later, ...committed });
+    expect(plan).toMatchObject({ changed: false, writeSnapshot: false, writeManifest: false });
+    expect(plan.snapshot.sources[0].dataDate).toBe(dataset.generatedAt);
+  });
+
+  it('rewrites only a stale or missing manifest when the evidence is unchanged', () => {
+    const stale = serializeManifest({ ...first.manifest, sha256: '0'.repeat(64) });
+    for (const previousManifestText of [stale, undefined, serializeManifest({ ...first.manifest, generatedAt: later })]) {
+      const plan = planRefresh({ dataset, now: later, ...committed, previousManifestText });
+      expect(plan).toMatchObject({ changed: false, writeSnapshot: false, writeManifest: true });
+      expect(plan.manifest).toEqual(first.manifest);
+    }
+  });
+
+  it('writes a new snapshot, manifest and diff when the evidence changes', () => {
+    const scores = dataset.scores.map((row: { modelId: string; metric: string; value: number }, i: number) =>
+      i === dataset.scores.findIndex((r: { modelId: string }) => r.modelId === 'anthropic/claude-opus-5.5') ? { ...row, value: row.value - 0.2 } : row);
+    const plan = planRefresh({ dataset: { ...dataset, scores }, now: later, ...committed });
+    expect(plan).toMatchObject({ changed: true, writeSnapshot: true, writeManifest: true });
+    expect(plan.snapshot.generatedAt).toBe(later);
+    expect(plan.text).not.toBe(first.text);
+    expect(plan.manifest).toEqual({ generatedAt: later, schemaVersion: 1, sha256: hash(plan.text), bytes: Buffer.byteLength(plan.text) });
+    expect(plan.diff.join('\n')).toContain('claude-opus-5-5');
+  });
+
+  it('runs calibration even when the evidence is unchanged', () => {
+    const odd = planRefresh({ dataset, now: '2026-11-10T05:00:00.000Z', previous: { ...first.snapshot, bands: { ...first.snapshot.bands, coding: [10, 20, 30] } } });
+    const plan = planRefresh({ dataset, now: later, previous: odd.snapshot, previousText: odd.text, previousManifestText: serializeManifest(odd.manifest) });
+    expect(plan.changed).toBe(false);
+    expect(plan.failures.join('\n')).toContain('gpt-6-luna coding: expected light');
+  });
 });

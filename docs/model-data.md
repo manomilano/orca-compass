@@ -18,12 +18,19 @@ need cuts. Models without a price fall back to family/lineup hints and then
 evidence class; user cost-tier overrides take precedence over price.
 
 The raw [LLMBenchmark.ai](https://llmbenchmark.ai) dataset is committed unchanged
-at `data/llmbenchmark/dataset.json` (about 22 MB, updated by the owner's
-automation). `npm run refresh-evidence` reads it, rebuilds the snapshot and
-manifest, and refuses to write when a calibration check fails; the workflow
-runs it when the dataset changes and opens a pull request with the profile
-diff. Only the trimmed snapshot ships in the npm package. Both files are
-licensed CC BY 4.0; see the repository NOTICE and `data/llmbenchmark/README.md`.
+at `data/llmbenchmark/dataset.json` (about 22 MB). Every morning a workflow
+downloads it and, when the scores changed, opens a pull request for the
+maintainer. `npm run refresh-evidence` reads it, rebuilds the snapshot and
+manifest, and refuses to write when a calibration check fails; calibration
+runs on every refresh, changed or not. When the rebuilt evidence matches the
+committed snapshot, it keeps the snapshot as it is, so a new build time or
+dataset date alone is not a change, and rewrites the manifest only if it no
+longer matches the snapshot's hash, size or date. A dataset update ships with
+its rebuilt snapshot in the same pull request; the refresh workflow runs on
+such pull requests and on `main`, and fails with the profile diff when the
+committed snapshot does not match the dataset. Only the trimmed snapshot ships
+in the npm package. Both files are licensed CC BY 4.0; see the repository
+NOTICE and `data/llmbenchmark/README.md`.
 
 Clients check `data/evidence-manifest.json` on the repository's public `main`
 at most once per `evidenceTtlHours` (24 by default). A changed manifest causes

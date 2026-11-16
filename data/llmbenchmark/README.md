@@ -10,8 +10,12 @@ URL and date. See the repository NOTICE.
 
 ## Updating
 
-1. Replace `dataset.json` with the current download (an automation may do this
-   daily). `node scripts/refresh-evidence.mjs --fetch` downloads it here.
+The `update-evidence.yml` workflow runs these steps every morning and opens a
+pull request when the scores changed; nothing happens when they did not. By
+hand:
+
+1. Replace `dataset.json` with the current download.
+   `node scripts/refresh-evidence.mjs --fetch` downloads it here.
 2. Run `npm run build && npm run refresh-evidence`. The script reads this file,
    rebuilds the snapshot and manifest, prints the profile diff, and exits 1
    without writing when a calibration check fails.
@@ -19,7 +23,8 @@ URL and date. See the repository NOTICE.
    `data/evidence-manifest.json` together, so the snapshot always matches the
    dataset it was built from.
 
-The GitHub workflow `refresh-evidence.yml` runs step 2 whenever this file
-changes on `main` (or on manual dispatch) and opens a pull request with the diff.
+The GitHub workflow `refresh-evidence.yml` runs step 2 on pull requests that
+change this file and on `main`, and fails with the profile diff when the
+committed snapshot does not match this dataset.
 
 This file is not part of the npm package; only the snapshot ships.
