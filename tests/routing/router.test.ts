@@ -103,10 +103,16 @@ describe('per-axis routing', () => {
     const d = route({ tier: 'daily' }, tight, DEFAULT_CONFIG);
     expect(d).toMatchObject({ status: 'ok', tier: 'daily', downgraded: false });
     expect(d.warnings).toEqual([`every unblocked route that covers the job is expected to end above 90% of its usage window (usageRiskLimit); ${d.route!.agent} ${d.route!.model} is the cheapest with the most room`]);
-    // Blocked cheapest group and only strained pricier routes: the old fallbacks apply, never a wait for nothing.
+    // Blocked cheapest group and only strained pricier routes: the job keeps its level on the roomiest
+    // strained route that covers it, instead of a downgrade (or a wait with --no-downgrade).
     const blocked = withPool(withPool(withPool(e, 'codex', 'weekly', { usedPercent: 96 }), 'cursor', 'bucket:Other Models', { usedPercent: 96 }), 'claude', 'weekly', { usedPercent: 93 });
-    expect(route({ tier: 'daily' }, blocked, DEFAULT_CONFIG)).toMatchObject({ downgraded: true, route: { agent: 'claude', model: 'claude-haiku-5-5' }, quality: { shortfall: 1 } });
-    expect(route({ tier: 'daily', noDowngrade: true }, blocked, DEFAULT_CONFIG).status).toBe('wait');
+    const kept = route({ tier: 'daily' }, blocked, DEFAULT_CONFIG);
+    expect(kept).toMatchObject({ status: 'ok', tier: 'advanced', downgraded: false, route: { agent: 'claude', model: 'claude-opus-5-5' }, quality: { covers: true } });
+    expect(kept.warnings).toContain('every unblocked route that covers the job is expected to end above 90% of its usage window (usageRiskLimit); claude claude-opus-5-5 is the cheapest with the most room');
+    expect(route({ tier: 'daily', noDowngrade: true }, blocked, DEFAULT_CONFIG)).toMatchObject({ status: 'ok', route: { model: 'claude-opus-5-5' } });
+    // With every route blocked, it waits for the earliest reset.
+    const allBlocked = withPool(blocked, 'claude', 'weekly', { usedPercent: 96 });
+    expect(route({ tier: 'daily' }, allBlocked, DEFAULT_CONFIG).status).toBe('wait');
   });
   it('does not pass a group over for a pricier route whose usage is unknown', () => {
     const e = onlyModels(env, 'claude', ['claude-haiku-5-5', 'claude-opus-5-5']);

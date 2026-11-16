@@ -11,8 +11,11 @@
 - A route expected to end its usage window above the new `usageRiskLimit`
   (default 90%) is strained. When every covering route in the cheapest cost
   tier is blocked or strained, routing moves to the cheapest pricier tier that
-  has a route with known usage below the limit, and warns. Before, the cheapest
-  tier was kept until it was fully blocked, and then the job was downgraded.
+  has a route with known usage below the limit, and warns. When every covering
+  route is strained, the one with the most room in the cheapest tier that is
+  not fully blocked is used, with a warning, so the job keeps its level. Before,
+  the cheapest tier was kept until it was fully blocked, and then the job was
+  downgraded even if a pricier covering route still had room.
 - Evidence refreshed from LLMBenchmark's 2026-11-15 dataset: Gemini 4 Hydrogen
   and four other models added, Muse Wonder now has agentic and reasoning
   scores, and about 900 more benchmark results.

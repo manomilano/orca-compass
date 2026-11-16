@@ -67,9 +67,10 @@ is strained. When every covering route in the cheapest cost tier is blocked or
 strained, the fit group is the cheapest pricier tier that has an unblocked
 route with known usage below the limit; the decision then carries a warning
 starting `cheaper <tier> cost tier passed over`. When no pricier
-tier has such a route, the cheapest tier stays the fit group: its unblocked
-route with the most room is used, with a warning, and when it is fully blocked
-routing tries non-covering groups in increasing shortfall, or waits with
+tier has such a route, the fit group is the cheapest tier with an unblocked
+covering route: its route with the most room is used, with a warning, so the
+job keeps its level. Only when every covering route is blocked does routing
+try non-covering groups in increasing shortfall, or wait with
 `--no-downgrade`. A route with unknown usage never pulls the fit group up.
 `quality` reports evidence class, cost (`tier`, `blended`, `source`), coverage,
 shortfall, overshoot and per-axis scores, needs and evidence. Estimated and

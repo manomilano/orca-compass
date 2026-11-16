@@ -144,12 +144,18 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
   const coveringOf = (candidates: Candidate[]): Candidate[] => candidates.filter((c) => c.quality?.covers && c.tier !== null);
   // The cheapest cost tier that covers the job. One exception: when no route there is sound (unblocked
   // and below the usage risk limit), the cheapest pricier tier with a sound route of known usage takes over.
+  // When every tier is strained, the cheapest one with an unblocked route of known usage keeps the job at its
+  // level (its roomiest route wins) rather than downgrading it.
   const sound = (c: Candidate): boolean => !c.blocked && !c.strained;
   const fitOf = (candidates: Candidate[]): Candidate[] => {
     const covering = coveringOf(candidates);
     const cheapest = TIERS.find((tier) => covering.some((c) => c.tier === tier));
+    const from = (test: (c: Candidate) => boolean): Tier | undefined =>
+      TIERS.slice(TIERS.indexOf(cheapest!)).find((tier) => covering.some((c) => c.tier === tier && test(c)));
     const lowest = cheapest === undefined || covering.some((c) => c.tier === cheapest && sound(c)) ? cheapest
-      : TIERS.slice(TIERS.indexOf(cheapest) + 1).find((tier) => covering.some((c) => c.tier === tier && sound(c) && c.rank !== null)) ?? cheapest;
+      : from((c) => sound(c) && c.rank !== null)
+        ?? (covering.some((c) => c.tier === cheapest && !c.blocked) ? cheapest : from((c) => !c.blocked && c.rank !== null))
+        ?? cheapest;
     return covering.filter((c) => c.tier === lowest).sort(compareRanked);
   };
   const covering = coveringOf(named.filter(honors));

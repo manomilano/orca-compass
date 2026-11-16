@@ -115,7 +115,10 @@ A route at or over a limit is blocked and skipped. A route expected to end
 its usage window above `usageRiskLimit` (90%) is strained: it ranks after the
 others. When every route in the fit group is blocked or strained, the
 cheapest pricier tier with a route in good standing takes over, and the route
-carries a warning that names the tier it passed over. In the example the
+carries a warning that names the tier it passed over. When every covering
+route is strained, the job keeps its level on the cheapest tier's route with
+the most room, with a warning; it is downgraded only when every covering route
+is blocked. In the example the
 Cursor routes are strained, but Codex and Claude Code are not, so the fit
 group stays Daily. Routes handed out in the
 last `handoutMinutes` (10) count as `handoutPercent` (5%) more usage, so
