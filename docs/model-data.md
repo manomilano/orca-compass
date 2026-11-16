@@ -18,8 +18,9 @@ need cuts. Models without a price fall back to family/lineup hints and then
 evidence class; user cost-tier overrides take precedence over price.
 
 The raw [LLMBenchmark.ai](https://llmbenchmark.ai) dataset is committed unchanged
-at `data/llmbenchmark/dataset.json` (about 22 MB, updated by the owner's
-automation). `npm run refresh-evidence` reads it, rebuilds the snapshot and
+at `data/llmbenchmark/dataset.json` (about 22 MB). Every morning a workflow
+downloads it and, when the scores changed, opens a pull request for the
+maintainer. `npm run refresh-evidence` reads it, rebuilds the snapshot and
 manifest, and refuses to write when a calibration check fails; calibration
 runs on every refresh, changed or not. When the rebuilt evidence matches the
 committed snapshot, it keeps the snapshot as it is, so a new build time or
