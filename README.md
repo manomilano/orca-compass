@@ -22,9 +22,10 @@ worker has to pick an agent, a model and a reasoning effort. On its own it
 cannot tell which of your installed models suits the job, or how much of each
 plan's usage is left before the limits reset. OrcaCompass makes that choice:
 the orchestrator rates how hard the job is, and OrcaCompass compares the
-installed Claude Code, Codex, Cursor, Grok Build, Antigravity, OpenCode and
-Muse routes using model metadata and current usage limits, explains its choice, and
-returns launch arguments. The orchestrator still launches the worker. It ships
+installed Claude Code, Codex, Cursor, Grok Build, Antigravity and OpenCode
+routes using model metadata and current usage limits, explains its choice, and
+returns launch arguments. Muse has basic support: a built-in model list and no
+usage data. The orchestrator still launches the worker. It ships
 as an Agent Skill backed by a small TypeScript CLI.
 
 ## How it works
