@@ -255,6 +255,24 @@ describe('route', () => {
 });
 
 describe('status', () => {
+  it('warns in status and route when the evidence is older than the bundled snapshot', async () => {
+    // A manifest that dates the bundled snapshot after its contents stands in for a damaged install.
+    const bundledManifest = join(process.env.ORCACOMPASS_HOME!, 'bundled-manifest.json');
+    writeFileSync(bundledManifest, JSON.stringify({ schemaVersion: 1, generatedAt: '2099-01-01T00:00:00Z', sha256: '0'.repeat(64), bytes: 1 }));
+    const behind = { ...deps, bundled: new URL('./fixtures/evidence-mini.json', import.meta.url), bundledManifest };
+    const warning = 'evidence of 2026-11-10 is older than the snapshot bundled with this release (2099-01-01); run orcacompass refresh';
+    expect(await main(['status'], io, behind)).toBe(0);
+    expect(out().split('\n')[1]).toBe(`  warning: ${warning}`);
+    stdout = [];
+    expect(await main(['status', '--json'], io, behind)).toBe(0);
+    expect(JSON.parse(out()).evidenceWarning).toBe(warning);
+    stdout = [];
+    expect(await main(['route', '--tier', 'light', '--json'], io, behind)).toBe(0);
+    expect(JSON.parse(out()).warnings).toContain(warning);
+    stdout = [];
+    expect(await main(['status', '--json'], io, deps)).toBe(0);
+    expect(JSON.parse(out()).evidenceWarning).toBeNull();
+  });
   it('reports evidence and hand-outs without legacy score metadata', async () => {
     expect(await main(['status', '--json'], io, deps)).toBe(0);
     const s = JSON.parse(out());
@@ -318,7 +336,8 @@ describe('status', () => {
 
 describe('refresh', () => {
   it('reloads evidence and reports source and model counts', async () => {
-    const snapshot = fixture('evidence-mini.json');
+    // Newer than the bundled fixture: an older repository snapshot would not replace it.
+    const snapshot = JSON.stringify({ ...JSON.parse(fixture('evidence-mini.json')), generatedAt: '2026-11-13T04:00:00Z' });
     const manifest = { schemaVersion: 1, generatedAt: JSON.parse(snapshot).generatedAt, bytes: Buffer.byteLength(snapshot), sha256: createHash('sha256').update(snapshot).digest('hex') };
     const fetchImpl = async (url: string | URL | Request) => new Response(String(url) === EVIDENCE_MANIFEST_URL ? JSON.stringify(manifest) : snapshot);
     const code = await main(['refresh'], io, { ...deps, fetchImpl: fetchImpl as typeof fetch });
@@ -412,7 +431,7 @@ describe('placement table in the CLI', () => {
 
   it('uses cached snapshot provenance and data date after refresh', async () => {
     const snapshot = JSON.parse(fixture('evidence-mini.json'));
-    snapshot.generatedAt = '2026-11-11T04:00:00Z';
+    snapshot.generatedAt = '2026-11-13T04:00:00Z';
     snapshot.sources[0].dataDate = '2026-11-09';
     const text = JSON.stringify(snapshot);
     const manifest = { schemaVersion: 1, generatedAt: snapshot.generatedAt, bytes: Buffer.byteLength(text), sha256: createHash('sha256').update(text).digest('hex') };

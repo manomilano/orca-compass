@@ -102,10 +102,12 @@ describe('buildPlacements', () => {
       urls.push(String(input));
       return fakeDeps.fetchImpl!(input);
     };
-    const plain = await buildPlacements(DEFAULT_CONFIG, { ...fakeDeps, fetchImpl });
+    // The cache is the bundled snapshot too, so it is not outranked by a newer bundled one.
+    const bundled = new URL('../fixtures/evidence-mini.json', import.meta.url);
+    const plain = await buildPlacements(DEFAULT_CONFIG, { ...fakeDeps, fetchImpl, bundled });
     expect(plain.table.sources.evidence.source).toBe('cache');
     expect(urls).toEqual([]);
-    await buildPlacements(DEFAULT_CONFIG, { ...fakeDeps, fetchImpl, refresh: true });
+    await buildPlacements(DEFAULT_CONFIG, { ...fakeDeps, fetchImpl, bundled, refresh: true });
     expect(urls).toEqual([EVIDENCE_MANIFEST_URL]);
   });
 });

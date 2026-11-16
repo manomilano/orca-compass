@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Upgrading no longer keeps older evidence (and its need cuts) for up to
+  `evidenceTtlHours`. The evidence loader never uses a snapshot older than the
+  one bundled with the installed release: a fresh cache older than it is
+  checked against the repository at once, and the bundled snapshot wins when
+  the repository is unreachable or lags the release. The bundled snapshot is
+  dated from its small manifest, so a fresh cache costs no extra parse.
+  `status` and `route` warn if the evidence in use is still older than the
+  bundled snapshot.
+
 ## 0.2.3
 
 - Lowered the `low` need cuts to coding 60, agentic 35 and reasoning 70 (from

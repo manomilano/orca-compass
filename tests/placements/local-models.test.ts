@@ -38,7 +38,8 @@ it('discovers a new local Fable after five hours while reusing 24-hour metadata 
       : fakeDeps.readFile!(path),
     fetchImpl: async (input: string | URL | Request) => {
       requests++;
-      const snapshot = fixture('evidence-mini.json');
+      // Newer than the bundled fixture, so the loader downloads it rather than keeping the bundled one.
+      const snapshot = JSON.stringify({ ...JSON.parse(fixture('evidence-mini.json')), generatedAt: '2026-11-13T04:00:00Z' });
       if (String(input) === EVIDENCE_MANIFEST_URL) return Response.json({ schemaVersion: 1, generatedAt: JSON.parse(snapshot).generatedAt, bytes: Buffer.byteLength(snapshot), sha256: createHash('sha256').update(snapshot).digest('hex') });
       if (String(input) === EVIDENCE_SNAPSHOT_URL) return new Response(snapshot);
       throw new Error('Unexpected source');

@@ -153,7 +153,7 @@ commands do not gather it.
 | --- | --- | --- |
 | `orca account list --json` | Usage and limits per agent | Run whenever the routing environment is gathered, 20 s timeout |
 | Claude and Codex local catalogs, then the evidence snapshot | Models and effort options | Read at table build; fallback effort levels are assumed |
-| Evidence snapshot and manifest | Catalog and benchmark profiles | Cache, repository manifest and snapshot, then bundled fallback |
+| Evidence snapshot and manifest | Catalog and benchmark profiles | Cache, repository manifest and snapshot, then bundled fallback; never older than the bundled snapshot |
 | `cursor-agent models` | Cursor model variants and `NO ZDR` labels | At table build, 30 s, saved copy on failure |
 | `~/.grok/models_cache.json`, then `grok models` | Grok Build models, efforts, default | At table build: file, then live |
 | `agy models` | Antigravity models (`id<TAB>label`) | At table build |

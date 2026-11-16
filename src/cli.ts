@@ -5,7 +5,7 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { AXES, parseSnapshot, type Axis, type SnapshotSource } from './evidence/snapshot.js';
 import { DEFAULT_TOP_BANDS } from './evidence/refresh.js';
-import { BUNDLED_URL } from './evidence/source.js';
+import { BUNDLED_URL, bundledEvidenceTime } from './evidence/source.js';
 import { readTextFile } from './placements/agents/deps.js';
 import { modelFamily } from './placements/tiers.js';
 import type { AxisProfile, Profile } from './placements/profiles.js';
@@ -198,6 +198,8 @@ async function routeCommand(args: string[], io: IO, deps: MainDeps): Promise<num
   const env = await gatherEnvironment(config, deps);
   const d = route(req, env, config);
   d.warnings.push(...unknownAgents);
+  const behind = evidenceBehindWarning(env.evidenceGeneratedAt, deps);
+  if (behind) d.warnings.push(behind);
   if (d.status === 'ok' && d.route) {
     const chosen = d.route;
     const model = env.discoveries.find((a) => a.agent === chosen.agent)?.models.find((m) => launchIds(m).includes(chosen.model));
@@ -520,8 +522,29 @@ async function statusCommand(args: string[], io: IO, deps: MainDeps): Promise<nu
   const config = readConfig(io);
   const gathered = await gather(config, deps);
   const s = buildStatus(gathered, config);
-  io.out(v.json ? JSON.stringify(s, null, 2) : statusText(s, snapshotSources(gathered.table, deps)).join('\n'));
+  const behind = evidenceBehindWarning(s.evidence.generatedAt, deps);
+  if (v.json) {
+    io.out(JSON.stringify({ ...s, evidenceWarning: behind ?? null }, null, 2));
+    return 0;
+  }
+  const lines = statusText(s, snapshotSources(gathered.table, deps));
+  if (behind) lines.splice(1, 0, `  warning: ${behind}`);
+  io.out(lines.join('\n'));
   return 0;
+}
+
+/**
+ * Set when the evidence in use is older than the snapshot shipped with this release. The loader never picks such
+ * evidence while the bundled snapshot is readable, so this flags a damaged install.
+ */
+function evidenceBehindWarning(generatedAt: string, deps: MainDeps): string | undefined {
+  // A test that supplies its own bundled snapshot has no manifest unless it passes one.
+  if (deps.bundled !== undefined && deps.bundledManifest === undefined) return undefined;
+  const bundledAt = bundledEvidenceTime(deps.bundledManifest);
+  const usedAt = Date.parse(generatedAt);
+  if (bundledAt === undefined || !(usedAt < bundledAt)) return undefined;
+  const day = (t: number) => new Date(t).toISOString().slice(0, 10);
+  return `evidence of ${day(usedAt)} is older than the snapshot bundled with this release (${day(bundledAt)}); run orcacompass refresh`;
 }
 
 // --- agents ---------------------------------------------------------------------------------

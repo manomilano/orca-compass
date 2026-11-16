@@ -35,8 +35,11 @@ NOTICE and `data/llmbenchmark/README.md`.
 Clients check `data/evidence-manifest.json` on the repository's public `main`
 at most once per `evidenceTtlHours` (24 by default). A changed manifest causes
 a snapshot download and integrity check. A valid cached copy, then the bundled
-snapshot, supplies offline fallback. `orcacompass refresh` forces a check and
-rebuilds placements. `evidenceSource` reports `network`, `cache` or `snapshot`.
+snapshot, supplies offline fallback. A snapshot older than the one bundled with
+the installed release is never used: after an upgrade, an older cache is
+checked against the repository at once, and the bundled snapshot is kept when
+the repository has nothing newer or cannot be reached. `orcacompass refresh`
+forces a check and rebuilds placements. `evidenceSource` reports `network`, `cache` or `snapshot`.
 No API key is required; clients do not contact LLMBenchmark directly.
 
 See [Tiers and routing](tiers-and-routing.md) for scoring and routing.

@@ -182,7 +182,10 @@ when the cache folder is not writable). `--json` has `now`, `catalog`,
 `unclassified`; metadata summaries carry `source`, `fetchedAt`, `models`. Each `agents` row has
 `agent`, `installed`, `enabledInOrca`, `models` (count), `usage` (`null` or
 `status`, `updatedAt`, `error`, and `pools` with `headroom`, `expired`,
-`blocked`), plus `note` and `skipped` when they apply.
+`blocked`), plus `note` and `skipped` when they apply. `evidenceWarning` is
+`null`, or a warning when the evidence in use is older than the snapshot bundled
+with the installed release (printed under the evidence line, and added to
+`route` warnings); `orcacompass refresh` clears it.
 
 ## `tiers`
 
