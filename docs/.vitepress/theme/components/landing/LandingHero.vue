@@ -3,6 +3,8 @@
  * Landing hero: full-bleed illustration with the headline in a solid panel.
  * Phones: picture on top, panel below (no text over the image).
  * 960 px and up: the picture fills the section and the panel sits on its dark left third.
+ * Past 1920 px the picture stops growing and its side edges fade into the section, so the
+ * artwork keeps the 1920 px crop instead of cropping ever deeper into the 16:9 scene.
  * The hero picture is the page's LCP element: eager, fetchpriority high.
  */
 import { withBase } from 'vitepress'
@@ -12,7 +14,7 @@ const widths = [640, 1280, 1920, 2400]
 const srcset = (format: 'avif' | 'webp') =>
   widths.map((w) => `${withBase(`/art/hero-${w}.${format}`)} ${w}w`).join(', ')
 
-const sizes = '100vw'
+const sizes = '(min-width: 120rem) 120rem, 100vw'
 const fallback = withBase('/art/hero-1280.jpg')
 </script>
 
@@ -122,10 +124,32 @@ const fallback = withBase('/art/hero-1280.jpg')
     border-bottom: 0;
   }
 
+  /*
+   * Capped at 120rem and centred, so the scene keeps its 1920 px composition. The fade grows
+   * from 0 at 1920 px to 10rem, hiding the artwork's side edges on wider screens.
+   */
   .hero__picture {
+    --hero-fade: clamp(0px, 100vw - 120rem, 10rem);
     position: absolute;
     inset: 0;
+    max-width: 120rem;
+    margin-inline: auto;
     border-bottom: 0;
+    background: transparent;
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 var(--hero-fade),
+      #000 calc(100% - var(--hero-fade)),
+      transparent
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 var(--hero-fade),
+      #000 calc(100% - var(--hero-fade)),
+      transparent
+    );
   }
 
   .hero__img {
