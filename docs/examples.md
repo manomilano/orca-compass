@@ -43,15 +43,18 @@ orcacompass route --tier daily --demand moderate --tier-reason "Familiar validat
   "requestedTier": "daily",
   "needs": { "coding": "low", "agentic": "low", "reasoning": "low" },
   "needsSource": "tier",
-  "tier": "daily",
+  "tier": "light",
   "downgraded": false,
   "upgraded": false,
-  "route": { "agent": "codex", "model": "gpt-6.1-sol", "effort": "medium" },
-  "launchArgs": ["--agent", "codex", "--model", "gpt-6.1-sol", "--effort", "medium"],
+  "route": { "agent": "claude", "model": "claude-haiku-5-5", "effort": "medium" },
+  "launchArgs": ["--agent", "claude", "--model", "claude-haiku-5-5", "--effort", "medium"],
   "confidence": "high",
   "warnings": []
 }
 ```
+
+`tier` is the pick's cost tier. It is `light` here because a Light-cost model
+covers the `low` needs; a cheaper covering tier is not a downgrade.
 
 **Next:** append each `launchArgs` element as a separate, properly quoted
 argument to Orca's worker launch, with the actual task and placement. Then verify
@@ -121,7 +124,7 @@ orcacompass route --tier daily --demand moderate --agent claude --agent codex --
 ```json
 {
   "status": "ok",
-  "route": { "agent": "codex", "model": "gpt-6.1-sol", "effort": "medium" },
+  "route": { "agent": "claude", "model": "claude-haiku-5-5", "effort": "medium" },
   "skipped": [{ "agent": "cursor", "reason": "excluded by request" }]
 }
 ```
@@ -369,7 +372,7 @@ constraints. Do not assume `none` satisfies a user's exact effort or model reque
   "status": "ok",
   "confidence": "low",
   "risk": null,
-  "reasons": ["codex gpt-6.1-sol: usage unknown (Orca not reachable)"]
+  "reasons": ["claude claude-haiku-5-5: usage unknown (Orca not reachable)"]
 }
 ```
 
@@ -382,17 +385,18 @@ confidence; read the reason rather than inferring headroom.
 ```json
 {
   "status": "ok",
-  "tier": "advanced",
+  "tier": "daily",
   "downgraded": false,
-  "upgraded": true,
-  "warnings": ["no model in the daily cost tier covers the job; using advanced", "cheaper daily cost tier passed over: every route there that covers the job is blocked or expected to end above 90% of its usage window (usageRiskLimit): claude claude-sonnet-5-5 (weekly 96% used, resets in 14h), codex gpt-6.1-sol (weekly 96% used, resets in 5d)"]
+  "upgraded": false,
+  "warnings": ["cheaper light cost tier passed over: every route there that covers the job is blocked or expected to end above 90% of its usage window (usageRiskLimit): claude claude-haiku-5-5 (weekly 96% used, resets in 14h), cursor claude-haiku-5-5 (monthly 97% used, resets in 9d)"]
 }
 ```
 
-**Next:** relay the warnings: a pricier covering cost tier was used because of
-usage, rather than lowering the job's needs. `upgraded` is `true` whenever the
-pick's cost tier is above the requested one, and its warning keeps the same
-wording when usage, not coverage, moved the pick up. For `wait`, follow
+**Next:** relay the warning: a pricier covering cost tier was used because of
+usage, rather than lowering the job's needs. `upgraded` stays `false` here
+because the pick's cost tier is not above the requested `daily`; when it is,
+`upgraded` is `true` and a second warning reads `no model in the <tier> cost
+tier covers the job; using <tier>`. For `wait`, follow
 [the reset example](#_4-refuse-a-capability-shortfall); there are no launch arguments
 to use. See [troubleshooting](troubleshooting.md#a-route-says-wait-or-none).
 

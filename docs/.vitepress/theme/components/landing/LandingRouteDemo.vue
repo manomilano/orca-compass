@@ -19,9 +19,9 @@ async function navigate(event: KeyboardEvent, index: number) {
   document.getElementById(`demo-tab-${active.value}`)?.focus()
 }
 const daily = `{
-  "status": "ok", "tier": "daily",
-  "route": { "agent": "claude", "model": "claude-sonnet-5-5", "effort": "medium" },
-  "launchArgs": ["--agent", "claude", "--model", "claude-sonnet-5-5", "--effort", "medium"]
+  "status": "ok", "tier": "light",
+  "route": { "agent": "claude", "model": "claude-haiku-5-5", "effort": "medium" },
+  "launchArgs": ["--agent", "claude", "--model", "claude-haiku-5-5", "--effort", "medium"]
 }`
 const needs = `{
   "status": "ok",
@@ -52,7 +52,7 @@ const readable = `daily → claude · claude-sonnet-5-5 · medium (high confiden
           </div>
           <ol class="demo-notes">
             <li><strong>The pick</strong><p>Only <code>status: "ok"</code> carries a route.</p></li>
-            <li><strong>The cost tier</strong><p>The returned <code>tier</code> is the chosen model’s cost tier.</p></li>
+            <li><strong>The cost tier</strong><p>The returned <code>tier</code> is the chosen model’s cost tier: a light-cost model covers this everyday job.</p></li>
             <li><strong>The launch arguments</strong><p>Pass <code>launchArgs</code> to Orca to launch the worker.</p></li>
           </ol>
         </div>

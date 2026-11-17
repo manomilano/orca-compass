@@ -142,13 +142,13 @@ There is no `--model` flag: an exact model the user named is launched directly.
 Text output (illustrative; values vary):
 
 ```text
-daily → claude · claude-sonnet-5-5 · medium (high confidence)
-  claude claude-sonnet-5-5: weekly 20% used, 56% of window elapsed (headroom 60%) → on pace for 36% before reset in 3d
-  needs coding=low agentic=low reasoning=low from tier daily; fit group: daily cost tier (3 models)
-  cost: daily ($4.00/M blended, maker price)
-  coding 84.3 measured, agentic 78.2 measured, reasoning 87.3 measured
+light → claude · claude-haiku-5-5 · medium (high confidence)
+  claude claude-haiku-5-5: weekly 20% used, 56% of window elapsed (headroom 60%) → on pace for 36% before reset in 3d
+  needs coding=low agentic=low reasoning=low from tier daily; fit group: light cost tier (3 models)
+  cost: light ($0.20/M blended, maker price)
+  coding 68.4 measured, agentic 53.5 measured, reasoning 74.6 measured
   effort: medium from tier default, passed as --effort
-  next best: codex gpt-6.1-terra (weekly headroom 41%, resets in 4d)
+  next best: cursor claude-haiku-5-5 (monthly headroom 41%, resets in 12d)
   skipped: grok (not enabled in Orca), opencode (last resort: used only when no other agent can take the job)
 orca orchestration worker-start --spec "<task>" --agent claude --model claude-sonnet-5-5 --effort medium
 ```

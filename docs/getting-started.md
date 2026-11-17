@@ -275,12 +275,16 @@ Illustrative output, shortened (models, percentages and prices depend on
 your environment):
 
 ```text
-daily → claude · claude-sonnet-5-5 · medium (high confidence)
-  claude claude-sonnet-5-5: weekly 20% used, 56% of window elapsed (headroom 60%) → on pace for 36% before reset in 3d
-  cost: daily ($4.00/M blended, maker price)
+light → claude · claude-haiku-5-5 · medium (high confidence)
+  claude claude-haiku-5-5: weekly 20% used, 56% of window elapsed (headroom 60%) → on pace for 36% before reset in 3d
+  cost: light ($0.20/M blended, maker price)
   effort: medium from tier default, passed as --effort
-orca orchestration worker-start --spec "<task>" --agent claude --model claude-sonnet-5-5 --effort medium
+orca orchestration worker-start --spec "<task>" --agent claude --model claude-haiku-5-5 --effort medium
 ```
+
+The first word is the pick's cost tier. It is `light` here because a
+Light-cost model covers an everyday job; a cheaper covering tier is not a
+downgrade.
 
 If `status` says `evidence: snapshot`, run `orcacompass refresh`
 when online. If an agent you expect is `not used`, the verdict says why
