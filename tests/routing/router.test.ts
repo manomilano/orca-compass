@@ -43,7 +43,7 @@ describe('routing by cost tier', () => {
     expect(d.reasons.join('\n')).toContain('covering routes: 11 across all cost tiers');
   });
   it.each([
-    [60, 'cursor'], [74, 'claude'], [69, 'claude'], [68.99, 'cursor'],
+    [60, 'cursor'], [74, 'cursor'], [76, 'cursor'], [77, 'claude'], [79, 'claude'],
   ] as const)('compares a cheaper route at %s%% headroom with a pricier route at 79%%', (cheap, winner) => {
     const e = onlyModels(onlyModels(env, 'claude', ['claude-haiku-5-5']), 'cursor', ['claude-sonnet-5-5']);
     // Halfway through a four-day window expectedUse is 11/6 * used + 1/12.
@@ -59,6 +59,17 @@ describe('routing by cost tier', () => {
     expect(d.upgraded).toBe(false);
     expect(d.alternatives[0]?.agent).toBe(winner === 'claude' ? 'cursor' : 'claude');
     expect(route(req, withUsageStatus(known, 'unknown', ['claude']), DEFAULT_CONFIG).route?.agent).toBe('cursor');
+  });
+
+  it('rejects a nearly exhausted cheap route in favor of a healthy higher-priced model', () => {
+    const pair = onlyModels(onlyModels(env, 'claude', ['claude-haiku-5-5']), 'cursor', ['claude-opus-5-5']);
+    const req = { tier: 'light' as const, agents: ['claude', 'cursor'] };
+    for (const usedPercent of [96, 94]) {
+      const usage = withPool(pair, 'claude', 'weekly', { usedPercent });
+      const decision = route(req, usage, DEFAULT_CONFIG);
+      expect(decision.route?.agent).toBe('cursor');
+      expect(decision.alternatives[0]).toMatchObject({ agent: 'claude', blocked: usedPercent >= 95 });
+    }
   });
 
   it.each([
@@ -108,7 +119,7 @@ describe('per-axis routing', () => {
     const d = route({ tier: 'daily' }, blocked, DEFAULT_CONFIG);
     expect(d).toMatchObject({ status: 'ok', tier: 'advanced', downgraded: false, route: { agent: 'claude', model: 'claude-opus-5-5' } });
     expect(d.upgraded).toBe(false);
-    expect(d.reasons.join(' ')).toContain('within 10 points');
+    expect(d.reasons.join(' ')).toContain('price points =');
     // Strained is enough to pass a group over: Cursor at 93% of a month with 71% of it left, Codex already on pace to run out.
     const strained = withPool(e, 'cursor', 'bucket:Other Models', { usedPercent: 93 });
     expect(route({ tier: 'daily' }, strained, DEFAULT_CONFIG)).toMatchObject({ tier: 'advanced', route: { agent: 'claude', model: 'claude-opus-5-5' } });
@@ -138,7 +149,7 @@ describe('per-axis routing', () => {
     const strained = withUsageStatus(withPool(e, 'cursor', 'bucket:Other Models', { usedPercent: 93 }), 'unknown', ['claude']);
     expect(route({ tier: 'daily' }, strained, DEFAULT_CONFIG).tier).toBe('daily');
   });
-  it('prefers price within the margin before evidence and weighted score', () => {
+  it('ranks equal headroom by price before evidence and weighted score', () => {
     const req = { tier: 'frontier', agents: ['cursor'] } as const;
     // Put two covering models in Advanced cost; Fable 5.2 scores 795.3 vs Opus 780, on identical pools.
     const config: Config = { ...DEFAULT_CONFIG, tierOverrides: { 'claude-fable-5-2': 'advanced' } };
@@ -314,7 +325,8 @@ describe('route with synthetic usage', () => {
     const pair = onlyModels(onlyModels(expiring, 'claude', ['claude-haiku-5-5']), 'cursor', ['grok-4.7']);
     const req = { tier: 'light' as const, agents: ['claude', 'cursor'] };
     expect(route(req, pair, DEFAULT_CONFIG).route?.model).toBe('cursor-grok-4.7-low');
-    expect(route(req, withPool(pair, 'claude', 'weekly', { usedPercent: 20 }), DEFAULT_CONFIG).route?.model).toBe('claude-haiku-5-5');
+    expect(route(req, withPool(pair, 'claude', 'weekly', { usedPercent: 20 }), DEFAULT_CONFIG).route?.model).toBe('cursor-grok-4.7-low');
+    expect(route(req, withPool(pair, 'claude', 'weekly', { usedPercent: 18 }), DEFAULT_CONFIG).route?.model).toBe('claude-haiku-5-5');
     // Only 4.7 competes at Daily cost; its coding 65.8 and agentic 46.8 miss the low cuts 68/60.
     const daily = route({ tier: 'daily' }, e, DEFAULT_CONFIG);
     expect(daily.skipped).toContainEqual({ agent: 'cursor', model: 'grok-4.7', reason: 'below need on coding (65.8 < 68)' });
@@ -523,7 +535,7 @@ describe('ranking by headroom', () => {
     expect(route({ tier: 'advanced' }, tied, DEFAULT_CONFIG).route?.agent).toBe('claude');
     // 72% used, 60% into a 5h session: on pace for 120%, so the session (-19%) ranks Claude, not the weekly (45%).
     const hot = withPool(tied, 'claude', 'session', { usedPercent: 72 });
-    const d = route({ tier: 'advanced' }, hot, DEFAULT_CONFIG);
+    const d = route({ tier: 'advanced', agents: ['claude', 'cursor'] }, hot, DEFAULT_CONFIG);
     expect(d.route?.agent).toBe('cursor');
     const claude = d.alternatives.find((a) => a.agent === 'claude');
     expect(claude).toMatchObject({ blocked: false });
@@ -546,9 +558,9 @@ describe('ranking by headroom', () => {
       'claude', 'weekly', { usedPercent: claude[0], resetsAt: env.now + (1 - claude[1]) * WEEK });
   const advanced = (e: Environment) => route({ tier: 'advanced', excludeAgents: ['cursor'] }, e, DEFAULT_CONFIG).route?.agent;
 
-  it('compares smoothed headroom before choosing by price within the margin', () => {
+  it('balances smoothed headroom against the smaller price adjustment', () => {
     // Codex 20% used, 51% elapsed (on pace for 39%); Claude 6% used, 26% elapsed (on pace for 23%).
-    expect(advanced(weeks([20, 0.51], [6, 0.26]))).toBe('codex');
+    expect(advanced(weeks([20, 0.51], [6, 0.26]))).toBe('claude');
   });
 
   it('prefers an early, barely used window over a late, moderately used one', () => {

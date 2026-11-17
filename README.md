@@ -35,8 +35,8 @@ as an Agent Skill backed by a small TypeScript CLI.
    and separate cost tiers from price (3:1 input/output blend, `costBands`
    default `[1, 5, 12]`; hints are the fallback when price is missing).
 3. **It compares qualifying models across cost tiers.** Among open routes with
-   known, healthy usage, it chooses the lowest cost within 10 percentage
-   points of the best reset-adjusted headroom. Recent hand-outs count toward
+   known, healthy usage, it scores reset-adjusted headroom in percentage points
+   minus a price adjustment capped at five points. Recent hand-outs count toward
    usage. Cursor `auto` is a fallback.
 
 ```sh

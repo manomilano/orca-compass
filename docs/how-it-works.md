@@ -97,7 +97,7 @@ Change the cost thresholds with `costBands` or move a model with
 ## 5. Compare subscription headroom and price
 
 OrcaCompass estimates what will remain at reset. Among healthy measured
-routes within 10 points of the best adjusted headroom, the cheapest wins.
+routes, subtract up to five price points from reset-adjusted headroom. The highest score wins.
 For example, consider these routes when the other qualifying routes have
 less headroom or share the same pools at higher prices.
 
@@ -110,7 +110,7 @@ less headroom or share the same pools at higher prices.
 A route at or over a limit is blocked and skipped. A route expected to end
 its usage window above `usageRiskLimit` (90%) is strained: it ranks after the
 healthy measured routes. If every measured open route is strained, the same
-10-point comparison applies and the decision carries a warning. In this
+weighted score applies and the decision carries a warning. In this
 example Sol and Sonnet qualify for the price comparison; they have the same
 price, so Sol wins on headroom. Routes handed out in the
 last `handoutMinutes` (10) count as `handoutPercent` (5%) more usage, so
@@ -136,7 +136,7 @@ reasons:
   cost: daily ($4.00/M blended, maker price)
   coding 79.8 measured, agentic 75.5 measured, reasoning 88.7 measured
   effort: medium from moderate reasoning demand (balanced policy), passed as --effort
-  selection: lowest cost within 10 points of the best eligible ranked headroom
+  selection: 62.00 ranked headroom points minus 2.50 price points = 59.50
   next best: claude claude-sonnet-5-5 (weekly headroom 55%, resets in 6d, $4.00/M blended)
 ```
 
@@ -154,7 +154,7 @@ next route picks another model. See
 - **The job needs more coding.** At `coding=high` (82 or more), Sol (79.8)
   drops out and Sonnet 5.5 (84.3) still qualifies in the Daily tier.
 - **A pricier route has much more headroom.** If Opus has 79% and the best
-  Daily route has 60%, the Daily routes fall outside the 10-point margin.
+  Daily route has 60%, its 19-point advantage outweighs the maximum five-point price adjustment.
 - **Every qualifying route is close to its limit.** The router compares the
   open strained routes across tiers and warns about projected usage.
 - **Every qualifying route is blocked.** OrcaCompass picks the closest model

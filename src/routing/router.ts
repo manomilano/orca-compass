@@ -142,7 +142,7 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
   const honors = (c: Candidate): boolean => !req.effort || canApplyEffort(c.model, req.effort);
   const named = all.filter((c) => c.tier !== null);
   const covering = named.filter((c) => c.quality?.covers);
-  const fit = rankCovering(covering.filter(honors));
+  const fit = rankCovering(covering.filter(honors), config);
   const requested = req.tier;
   const plan = effortPlan(req, config);
   const target = plan.target;
@@ -196,7 +196,8 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
       warnings.push(`all covering routes with known usage are blocked or expected to end above ${config.usageRiskLimit}% of their usage window`);
     }
     if (automaticPick && cand.rank !== null) {
-      reasons.push(`selection: lowest cost within ${HEADROOM_MARGIN_POINTS} points of the best eligible ranked headroom`);
+      const penalty = pricePenalty(cand, config);
+      reasons.push(`selection: ${(cand.rank * 100).toFixed(2)} ranked headroom points minus ${penalty.toFixed(2)} price points = ${(cand.rank * 100 - penalty).toFixed(2)}`);
     }
     const next = others.find((c) => !c.blocked);
     if (next) {
@@ -230,7 +231,7 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
       warnings.push(`${label} skipped: not available${gone ? ` (${gone.reason})` : ''}`);
     } else if (match.blocked) warnings.push(`${label} skipped: blocked (${blockers(match, env.now)})`);
     else if (match.risk && match.risk.projectedPercent > config.preferRiskLimit) {
-      const safer = rankCovering(fit.filter((c) => !c.blocked && c.rank !== null && c.risk && c.risk.projectedPercent <= config.preferRiskLimit))[0];
+      const safer = rankCovering(fit.filter((c) => !c.blocked && c.rank !== null && c.risk && c.risk.projectedPercent <= config.preferRiskLimit), config)[0];
       if (!safer) {
         warnings.push(`${label} retained: no unblocked alternative with known usage within the ${config.preferRiskLimit}% risk limit`);
         return finish(match, fit, true);
@@ -243,7 +244,7 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
   }
 
   if (req.effort && covering.length && !fit.length) {
-    const unconstrainedFit = rankCovering(covering);
+    const unconstrainedFit = rankCovering(covering, config);
     const offered = unconstrainedFit.slice(0, 6).map((c) => `${c.model.agent} ${c.model.modelId} (${supportedEfforts(c.model)})`).join(', ');
     return { ...base(), alternatives: unconstrainedFit.slice(0, 5).map((c) => alternative(c, target, env.now)), reasons: [`no ${requested} route supports effort ${req.effort}: ${offered}`, 'choose one of these efforts, or route without --effort', needLine, ...skippedLine()] };
   }
@@ -485,38 +486,34 @@ function evaluate(model: PlacedModel, env: Environment, config: Config, needs: N
 
 // --- ranking --------------------------------------------------------------------------------
 
-const HEADROOM_MARGIN_POINTS = 10;
+// In percentage points of reset-adjusted headroom. $4/M costs half the maximum.
+const MAX_PRICE_POINTS = 5;
+const HALF_PENALTY_PRICE = 4;
 
-/** Anchor each price comparison at the best remaining headroom. Comparing pairs
- * by distance alone would allow a chain of close neighbors to reverse the order. */
-function rankCovering(candidates: Candidate[]): Candidate[] {
-  const byUsage = [...candidates].sort(compareRanked);
-  const result: Candidate[] = [];
-  let start = 0;
-  while (start < byUsage.length) {
-    const leader = byUsage[start];
-    let end = start + 1;
-    while (end < byUsage.length) {
-      const c = byUsage[end];
-      if (c.blocked !== leader.blocked || c.strained !== leader.strained || (c.rank === null) !== (leader.rank === null)) break;
-      if (c.rank !== null && leader.rank !== null && leader.rank - c.rank > HEADROOM_MARGIN_POINTS / 100 + Number.EPSILON) break;
-      end++;
+function pricePenalty(c: Candidate, config: Config): number {
+  if (c.model.billing?.startsWith('pay per use through ')) return MAX_PRICE_POINTS;
+  const cost = c.quality!.cost!;
+  const index = TIERS.indexOf(cost.tier);
+  const lower = config.costBands[index - 1] ?? 0;
+  const upper = config.costBands[index] ?? Infinity;
+  // A missing price uses the tier midpoint, or the lower bound in the open-ended tier.
+  // Clamp observed prices to respect an explicit cost-tier override.
+  const estimate = cost.blended ?? (Number.isFinite(upper) ? lower + (upper - lower) / 2 : lower);
+  const price = Math.max(lower, Math.min(upper, estimate));
+  return MAX_PRICE_POINTS * (price / (price + HALF_PENALTY_PRICE));
+}
+
+function rankCovering(candidates: Candidate[], config: Config): Candidate[] {
+  return candidates.map((candidate) => ({
+    candidate,
+    score: (candidate.rank ?? 0) * 100 - pricePenalty(candidate, config),
+  })).sort((left, right) => {
+    const a = left.candidate, b = right.candidate;
+    if (a.blocked !== b.blocked || (a.rank === null) !== (b.rank === null) || a.strained !== b.strained) {
+      return compareRanked(a, b);
     }
-    const band = byUsage.slice(start, end);
-    band.sort((a, b) => {
-      const paidA = a.model.billing?.startsWith('pay per use through ') ?? false;
-      const paidB = b.model.billing?.startsWith('pay per use through ') ?? false;
-      if (paidA !== paidB) return paidA ? 1 : -1;
-      const tier = TIERS.indexOf(a.tier!) - TIERS.indexOf(b.tier!);
-      if (tier !== 0) return tier;
-      const priceA = a.quality!.cost!.blended ?? Infinity;
-      const priceB = b.quality!.cost!.blended ?? Infinity;
-      return priceA !== priceB ? priceA - priceB : compareRanked(a, b);
-    });
-    result.push(...band);
-    start = end;
-  }
-  return result;
+    return right.score - left.score || compareRanked(a, b);
+  }).map(({ candidate }) => candidate);
 }
 
 /** Usage order: unblocked first, then known usage, then below the usage risk limit, then most headroom, ending in a total order for determinism. */

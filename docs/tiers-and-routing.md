@@ -61,18 +61,22 @@ a fallback, and blocked routes cannot win. If all covering routes are
 blocked, routing can downgrade by smallest shortfall or wait with
 `--no-downgrade`.
 
-Within the best available usage group, find the highest reset-adjusted
-headroom. Compare prices among routes within **10 percentage points** of
-that maximum, inclusive. Prefer routes without explicit per-use charges,
-then the lower cost tier (including overrides), then the lower known blended
-maker price. A tier estimate can stand in for a missing price; within the
-same tier a known price takes priority. Equal costs go to the route with more
-headroom, then the usual session, confidence, evidence and capability
-tiebreakers. With no usage measurements the cost comparison applies directly.
+Within the best available usage group, rank by reset-adjusted headroom in
+percentage points minus a bounded price adjustment. For a blended maker
+price of `p` dollars per million tokens the adjustment is `5 * p / (p + 4)`.
+At $1/M it costs one point, at $4/M it costs 2.5 points, and the maximum is
+five points. A five-point headroom advantage therefore outweighs any difference
+between published subscription model prices. With the same pool, lower prices
+earn higher scores.
 
-For example, 79% versus 60% favors the roomier subscription even if its model
-is pricier. At 79% versus 74%, the cheaper model wins. For the alternatives
-list the same grouping repeats from the best remaining headroom.
+The adjustment uses the model's assigned cost band to bound its price. Missing
+prices use the midpoint of that band, or the lower bound of the top band.
+Explicit per-use billing receives the full five-point adjustment. When usage is
+unknown for all open routes, price provides the initial order. Tied scores use
+the existing headroom, session, confidence and evidence tiebreakers.
+
+For example, a $1/M model with 80% headroom scores 79. A $4/M model with 82%
+scores 79.5 and wins. At 81% it scores 78.5 and the cheaper model wins.
 
 `quality` reports evidence class, cost (`tier`, `blended`, `source`), coverage,
 shortfall, overshoot and per-axis scores, needs and evidence. Estimated and

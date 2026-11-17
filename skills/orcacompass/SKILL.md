@@ -179,7 +179,7 @@ route without `--effort`.
 
 3. Compare all qualifying routes across cost tiers. Among unblocked routes,
    known usage takes priority, then standing under `usageRiskLimit` (90%).
-   Choose the lowest cost within 10 points of the best ranked headroom.
+   Choose the highest ranked headroom in points minus a price adjustment of up to five points.
    Parse JSON and inspect `status`, `reasons`, `warnings`, `confidence`,
    `downgraded`, and `upgraded`. Exit code 0 alone does not mean a route exists.
 4. For `status: "ok"`, append the returned `launchArgs` array to:
