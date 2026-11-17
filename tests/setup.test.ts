@@ -134,7 +134,8 @@ describe('setup --json', () => {
       pick: { agent: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' },
       preferred: { agent: 'claude', model: 'claude-sonnet-5-5' },
       // Sonnet covers Advanced needs at Daily cost; older Opus 5 shares Opus 5.5's cost tier and is hidden.
-      options: [{ agent: 'claude', model: 'claude-sonnet-5-5', blocked: false, onPacePercent: 55 }],
+      options: expect.arrayContaining(['claude-sonnet-5-5', 'claude-opus-5-5'].map((model) =>
+        expect.objectContaining({ agent: 'claude', model, blocked: false, onPacePercent: 55 }))),
     });
     expect(j.tiers.light.preferred).toBeNull();
 

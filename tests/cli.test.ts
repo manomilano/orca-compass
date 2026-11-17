@@ -416,7 +416,7 @@ describe('placement table in the CLI', () => {
     const d = JSON.parse(out());
     expect(d.quality.cost).toEqual({ tier: 'daily', blended: 4, source: 'price' });
     expect(d.reasons).toContain('cost: daily ($4.00/M blended, maker price)');
-    expect(d.reasons.some((s: string) => /fit group: daily cost tier \(\d+ models\)$/.test(s))).toBe(true);
+    expect(d.reasons.some((s: string) => /covering routes: \d+ across all cost tiers$/.test(s))).toBe(true);
   });
 
   it('ranks deduplicated profiles and exposes the snapshot sources', async () => {

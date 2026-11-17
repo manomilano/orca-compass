@@ -226,8 +226,8 @@ model for classification.
    still younger than `rejectionTtlHours`.
 
 Then the pure routing core (`src/routing/router.ts`, no I/O) turns that
-environment, your request and your config into a `Decision`: the cheapest cost
-tier whose evidence covers the job, then the most headroom. A cheaper covering
+environment, your request and your config into a `Decision`: all models that cover the job compete; cost decides among routes
+within 10 points of the best eligible ranked headroom. A cheaper covering
 pick is accepted in setup and status with a label such as `(daily cost tier)`
 for Advanced needs; it is not a downgrade. See
 [Tiers and routing](tiers-and-routing.md).

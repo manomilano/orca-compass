@@ -34,7 +34,7 @@ terminal; it asks the same questions.
    ask whether to set a favorite. An available, unblocked favorite is used.
    When it is on pace to exceed `config.preferRiskLimit` percent of a usage
    window (default `defaultPreferRiskLimit`, 100), choose the best unblocked
-   alternative in that tier with known usage within the limit. If none exists,
+   qualifying alternative with known usage within the limit. If none exists,
    retain the favorite and report the risk in the route output. Apply with
    `orcacompass prefer <tier> <agent> <model>` (the option's `model`),
    `orcacompass prefer clear <tier>`, and, if the user wants another limit,
@@ -177,12 +177,10 @@ route without `--effort`.
    If the user specifies an exact model, honor that choice directly; the CLI
    has no model selection flag.
 
-3. Routing chooses the cheapest cost tier whose evidence covers the job, then
-   the most headroom. When every covering route in that tier is blocked or
-   expected to end its usage window above `usageRiskLimit` (90%), the cheapest
-   pricier tier with a route in good standing is used instead, and a warning
-   names the tier passed over; relay it. Price determines cost only; scores
-   and need cuts use raw evidence. Parse JSON and inspect `status`, `reasons`, `warnings`, `confidence`,
+3. Compare all qualifying routes across cost tiers. Among unblocked routes,
+   known usage takes priority, then standing under `usageRiskLimit` (90%).
+   Choose the lowest cost within 10 points of the best ranked headroom.
+   Parse JSON and inspect `status`, `reasons`, `warnings`, `confidence`,
    `downgraded`, and `upgraded`. Exit code 0 alone does not mean a route exists.
 4. For `status: "ok"`, append the returned `launchArgs` array to:
 
@@ -252,11 +250,9 @@ route without `--effort`.
   several workers on it.
 - `upgraded: true`: surface the warning. The covering pick's cost tier is
   higher than the requested tier because no cheaper route covers the job.
-- A warning `cheaper <tier> cost tier passed over …`: every covering route in
-  the cheaper tier is blocked or expected to end above `usageRiskLimit`, so a
-  pricier tier was used. A warning `every unblocked route that covers the job
-  is expected to end above …`: no route is in good standing and the pick is
-  the cheapest with the most room. Relay either warning to the user.
+- A warning that all covering routes with known usage are blocked or
+  expected to exceed the limit means the selected route is strained.
+  Relay the warning to the user.
 - `status: "wait"`: inspect `waitUntil` (epoch milliseconds); wait until reset
   or retry without `--no-downgrade` if user constraints permit a downgrade.
 - `status: "none"`: launch using Orca's normal default without `--model`

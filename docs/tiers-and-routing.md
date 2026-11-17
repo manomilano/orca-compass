@@ -53,25 +53,27 @@ level on every axis (min to high; `top` has no tier); it cannot be combined
 with `--need`. The requested tier
 expresses capability needs, so a covering pick may have a cheaper cost tier.
 
-A model covers a job when every axis meets its cut. Routing chooses the
-cheapest cost tier whose evidence covers the job, then the most headroom.
-Within that fit group, unblocked routes come first, then routes with known
-usage, then routes below `usageRiskLimit`, then pace-scaled headroom,
-hot-session status, usage confidence, evidence strength, the lower blended
-price, need-weighted score,
-non-fast variants, newest release, agent id and model id. Preferences, bans
-and agent constraints still apply.
+A model covers a job when every required axis meets its cut. All covering
+routes that support the requested effort compete across cost tiers. Open
+routes with known usage rank first, with healthy usage ahead of strained
+usage (expected use above `usageRiskLimit`, default 90%). Unknown usage is
+a fallback, and blocked routes cannot win. If all covering routes are
+blocked, routing can downgrade by smallest shortfall or wait with
+`--no-downgrade`.
 
-A route expected to end its usage window above `usageRiskLimit` (default 90%)
-is strained. When every covering route in the cheapest cost tier is blocked or
-strained, the fit group is the cheapest pricier tier that has an unblocked
-route with known usage below the limit; the decision then carries a warning
-starting `cheaper <tier> cost tier passed over`. When no pricier
-tier has such a route, the fit group is the cheapest tier with an unblocked
-covering route: its route with the most room is used, with a warning, so the
-job keeps its level. Only when every covering route is blocked does routing
-try non-covering groups in increasing shortfall, or wait with
-`--no-downgrade`. A route with unknown usage never pulls the fit group up.
+Within the best available usage group, find the highest reset-adjusted
+headroom. Compare prices among routes within **10 percentage points** of
+that maximum, inclusive. Prefer routes without explicit per-use charges,
+then the lower cost tier (including overrides), then the lower known blended
+maker price. A tier estimate can stand in for a missing price; within the
+same tier a known price takes priority. Equal costs go to the route with more
+headroom, then the usual session, confidence, evidence and capability
+tiebreakers. With no usage measurements the cost comparison applies directly.
+
+For example, 79% versus 60% favors the roomier subscription even if its model
+is pricier. At 79% versus 74%, the cheaper model wins. For the alternatives
+list the same grouping repeats from the best remaining headroom.
+
 `quality` reports evidence class, cost (`tier`, `blended`, `source`), coverage,
 shortfall, overshoot and per-axis scores, needs and evidence. Estimated and
 assumed evidence is provisional. `Decision.tier` is the pick's cost tier;
@@ -98,8 +100,9 @@ usage still blocks. Evidence certainty appears in `quality.evidence`.
 ## Fallbacks: downgrade, upgrade, wait, none
 
 A downgrade falls short of the job's needs; narrow the task or add checks. An
-upgrade means no model in the requested tier's cost tier covers the job. A
-pricier fit group chosen for usage (see above) is reported as a warning.
+upgrade means the pick costs more than the requested tier and no model
+at or below that cost tier covers the job at the required effort. A pricier
+route selected for headroom when a cheaper model covers is a normal pick.
 A cheaper cost tier that covers the needs is not a downgrade. Setup and status
 accept it as a pick and label it, for example `(daily cost tier)` for Advanced
 needs. `(upgraded to X)` and `(downgraded to X)` mark actual fallbacks.

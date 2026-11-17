@@ -90,20 +90,16 @@ from cheap to expensive; it is not what your subscription charges.
 | Advanced | 5 to below 12 | Opus 5.5 ($8) |
 | Frontier | 12 or above | Fable 5.2 ($16), Astra ($20) |
 
-The cheapest tier with at least one qualifying model is the fit group: Daily.
-Opus, Fable and Astra could do the job, but they are not used for it. A
-pricier tier is used when no cheaper tier has a qualifying model, or when
-every qualifying route in the cheaper tiers is blocked or close to its usage
-limit (see step 5). Change
-the thresholds with `costBands`, or move a model with `tierOverrides`; see
-[Tiers and routing](tiers-and-routing.md).
+All qualifying models enter the comparison, including Opus, Fable and Astra.
+Change the cost thresholds with `costBands` or move a model with
+`tierOverrides`; see [Tiers and routing](tiers-and-routing.md).
 
-## 5. Subscription headroom picks the winner
+## 5. Compare subscription headroom and price
 
-Inside the fit group, OrcaCompass reads your live usage from Orca and projects
-it: at the current pace, how much of each usage window will be left when it
-resets? The route with the most room wins. Price no longer matters at this
-point.
+OrcaCompass estimates what will remain at reset. Among healthy measured
+routes within 10 points of the best adjusted headroom, the cheapest wins.
+For example, consider these routes when the other qualifying routes have
+less headroom or share the same pools at higher prices.
 
 | Route | Usage | Headroom |
 | --- | --- | --- |
@@ -113,14 +109,10 @@ point.
 
 A route at or over a limit is blocked and skipped. A route expected to end
 its usage window above `usageRiskLimit` (90%) is strained: it ranks after the
-others. When every route in the fit group is blocked or strained, the
-cheapest pricier tier with a route in good standing takes over, and the route
-carries a warning that names the tier it passed over. When every covering
-route is strained, the job keeps its level on the cheapest tier's route with
-the most room, with a warning; it is downgraded only when every covering route
-is blocked. In the example the
-Cursor routes are strained, but Codex and Claude Code are not, so the fit
-group stays Daily. Routes handed out in the
+healthy measured routes. If every measured open route is strained, the same
+10-point comparison applies and the decision carries a warning. In this
+example Sol and Sonnet qualify for the price comparison; they have the same
+price, so Sol wins on headroom. Routes handed out in the
 last `handoutMinutes` (10) count as `handoutPercent` (5%) more usage, so
 workers launched back to back spread across subscriptions. A favorite set
 with `orcacompass prefer` can take the place of this pick; see
@@ -140,11 +132,12 @@ The route comes back with launch arguments and the reasons behind it:
 route: codex gpt-6.1-sol, effort medium, confidence high
 reasons:
   codex gpt-6.1-sol: weekly 8% used, 31% of window elapsed (headroom 62%) → on pace for 26% before reset in 4d
-  needs coding=mid agentic=mid reasoning=low; fit group: daily cost tier (4 models)
+  needs coding=mid agentic=mid reasoning=low; covering routes: 7 across all cost tiers
   cost: daily ($4.00/M blended, maker price)
   coding 79.8 measured, agentic 75.5 measured, reasoning 88.7 measured
   effort: medium from moderate reasoning demand (balanced policy), passed as --effort
-  next best: claude claude-sonnet-5-5 (weekly headroom 55%, resets in 6d)
+  selection: lowest cost within 10 points of the best eligible ranked headroom
+  next best: claude claude-sonnet-5-5 (weekly headroom 55%, resets in 6d, $4.00/M blended)
 ```
 
 The orchestrator appends `launchArgs` to `orca orchestration worker-start`,
@@ -156,18 +149,14 @@ next route picks another model. See
 
 ## What changes the answer
 
-- **Codex is at its limit.** Same fit group, next most room: Sonnet 5.5
+- **Codex is at its limit.** With the example usage, the replacement is Sonnet 5.5
   through Claude Code.
 - **The job needs more coding.** At `coding=high` (82 or more), Sol (79.8)
   drops out and Sonnet 5.5 (84.3) still qualifies in the Daily tier.
-- **No Daily model qualifies.** The fit group moves up to Advanced (Opus 5.5),
-  then Frontier.
-- **Every Daily route is blocked or close to its limit.** The fit group moves
-  up to the cheapest tier with a route below `usageRiskLimit`: Opus 5.5
-  through Claude Code, with a warning.
-- **Every qualifying route is close to its limit.** The job keeps its level:
-  the cheapest tier with an unblocked qualifying route (Daily here) is used,
-  and its route with the most room, with a warning.
+- **A pricier route has much more headroom.** If Opus has 79% and the best
+  Daily route has 60%, the Daily routes fall outside the 10-point margin.
+- **Every qualifying route is close to its limit.** The router compares the
+  open strained routes across tiers and warns about projected usage.
 - **Every qualifying route is blocked.** OrcaCompass picks the closest model
   that falls short and marks the route `downgraded`, or returns `wait` with
   `--no-downgrade`. See

@@ -112,8 +112,8 @@ source fields and `placementsBuiltAt`:
 | `launch` | Readable template with a `<task>` placeholder; not shell-escaped, not for automation |
 | `confidence` | `high`, `medium`, `low` |
 | `risk` | `{ pool, usedPercent, elapsedPercent, projectedPercent, tooEarly, resetsAt }` for the route; `null` when usage is unknown |
-| `reasons` | One line per fact behind the choice; the needs line includes `fit group: daily cost tier (3 models)`, and a route adds `cost: daily ($4.00/M blended, maker price)` (tier, count, price and source vary) |
-| `warnings` | Downgrade, upgrade, skipped preference, last-resort use, a cheaper cost tier passed over for usage, every covering route above `usageRiskLimit` |
+| `reasons` | One line per fact behind the choice; the needs line includes `covering routes: 3 across all cost tiers`, and a route adds `cost: daily ($4.00/M blended, maker price)` (tier, count, price and source vary) |
+| `warnings` | Downgrade, upgrade, skipped preference, last-resort use, every covering route above `usageRiskLimit` |
 | `alternatives` | Up to five other candidates from the chosen tier (requested tier without a pick): `agent`, `model`, `effort`, `tier`, `headroom` (fraction, or `null`), `confidence`, `blocked`, `risk`, `reason` |
 | `skipped` | `{ agent, model?, reason }` for excluded agents and banned/refused models in the requested tier. Superseded releases and no-ZDR exclusions are omitted. Preference exclusions appear in `warnings` |
 | `waitUntil` | Epoch ms when a blocked requested-tier candidate resets; with `wait`, sometimes with `none` |

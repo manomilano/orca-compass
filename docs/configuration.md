@@ -88,7 +88,7 @@ cache; OrcaCompass writes it when it invokes that command during discovery.
 | --- | --- | --- |
 | `thresholds.longPercent` | `95` | A weekly, monthly or bucket pool blocks its models at or above this usage |
 | `thresholds.sessionPercent` | `90` | A session (5-hour) pool blocks at or above this; "hot" from 20 points below |
-| `usageRiskLimit` | `90` | A route expected to end its usage window above this percentage is strained: it is used only when no other covering route is below the limit, in any cost tier. A higher value keeps routing in the cheapest cost tier for longer |
+| `usageRiskLimit` | `90` | A route expected to end its usage window above this percentage is strained: it is used only when no other covering route is below the limit, in any cost tier. A higher value admits more routes to the healthy headroom comparison |
 | `usageStaleMinutes` | `30` | Usage older than this caps confidence at medium; beyond 4x this, headroom becomes unknown and confidence low. Stale usage still blocks |
 
 ### Effort

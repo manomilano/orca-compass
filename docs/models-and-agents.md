@@ -68,8 +68,8 @@ Each model has two separate things. Its capability is the coding, agentic and
 reasoning scores from the benchmark evidence; a new release with no data yet
 inherits the evidence of the release before it. Its cost tier comes from its
 API price, or from a family hint when there is no price. The job's needs pick
-the models that qualify, the cheapest cost tier among them is the fit group,
-and usage headroom picks inside it. `orcacompass ranking` shows the evidence,
+the models that qualify across all cost tiers. The cheapest route within
+10 points of the best eligible ranked headroom wins. `orcacompass ranking` shows the evidence,
 `orcacompass tiers` the cost tiers. Cursor `auto` is only a fallback and has
 no profile. See [How it works](how-it-works.md) for a worked example and
 [Tiers and routing](tiers-and-routing.md#needs-and-ranking) for the full order.
