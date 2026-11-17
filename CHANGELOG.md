@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.4
 
 - Upgrading no longer keeps older evidence (and its need cuts) for up to
   `evidenceTtlHours`. The evidence loader never uses a snapshot older than the
