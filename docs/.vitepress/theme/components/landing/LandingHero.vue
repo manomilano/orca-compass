@@ -1,11 +1,12 @@
 <script setup lang="ts">
 /**
  * Landing hero: full-bleed illustration with the headline in a solid panel.
- * Phones: picture on top, panel below (no text over the image).
+ * Below 960 px the picture is not shown, so the headline, actions and install command lead
+ * the page on their own; a 1x1 transparent source keeps those windows from downloading it.
  * 960 px and up: the picture fills the section and the panel sits on its dark left third.
  * Past 1920 px the picture stops growing and its side edges fade into the section, so the
  * artwork keeps the 1920 px crop instead of cropping ever deeper into the 16:9 scene.
- * The hero picture is the page's LCP element: eager, fetchpriority high.
+ * On desktop the hero picture is the page's LCP element: eager, fetchpriority high.
  */
 import { withBase } from 'vitepress'
 import HeroInstall from './hero/HeroInstall.vue'
@@ -16,13 +17,13 @@ const srcset = (format: 'avif' | 'webp') =>
 
 const sizes = '(min-width: 120rem) 120rem, 100vw'
 const fallback = withBase('/art/hero-1280.jpg')
+const blank = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
 </script>
 
 <template>
   <section id="hero" class="landing-section oc-tone-abyss hero" aria-labelledby="hero-title">
     <picture class="hero__picture">
-      <source media="(max-width: 480px)" type="image/avif" :srcset="withBase('/art/hero-640.avif')" />
-      <source media="(max-width: 480px)" type="image/webp" :srcset="withBase('/art/hero-640.webp')" />
+      <source media="(max-width: 959.98px)" :srcset="blank" />
       <source type="image/avif" :srcset="srcset('avif')" :sizes="sizes" />
       <source type="image/webp" :srcset="srcset('webp')" :sizes="sizes" />
       <img
@@ -65,31 +66,16 @@ const fallback = withBase('/art/hero-1280.jpg')
 </template>
 
 <style scoped>
-/* The picture owns the top of the section on phones, so the section has no top padding. */
+/* Narrow windows: no picture, so the section pads its top like its bottom. */
 .hero {
   --oc-text-display: clamp(2.75rem, 2rem + 2.6vw, 4.25rem);
-  padding-block: 0 var(--oc-section-pad);
+  padding-block: var(--oc-section-pad);
   border-bottom: var(--oc-border-ink) solid var(--oc-color-line);
   overflow: hidden;
 }
 
 .hero__picture {
-  display: block;
-  border-bottom: var(--oc-border-ink) solid var(--oc-color-line);
-  background: var(--oc-abyss-deep);
-}
-
-.hero__img {
-  display: block;
-  width: 100%;
-  height: auto;
-  aspect-ratio: 4 / 3;
-  object-fit: cover;
-  object-position: 72% 50%;
-}
-
-.hero__inner {
-  padding-top: var(--oc-space-6);
+  display: none;
 }
 
 .hero__panel {
@@ -109,12 +95,6 @@ const fallback = withBase('/art/hero-1280.jpg')
   gap: var(--oc-space-3);
 }
 
-@media (min-width: 640px) {
-  .hero__img {
-    aspect-ratio: 16 / 9;
-  }
-}
-
 @media (min-width: 960px) {
   .hero {
     display: grid;
@@ -130,12 +110,11 @@ const fallback = withBase('/art/hero-1280.jpg')
    */
   .hero__picture {
     --hero-fade: clamp(0px, 100vw - 120rem, 10rem);
+    display: block;
     position: absolute;
     inset: 0;
     max-width: 120rem;
     margin-inline: auto;
-    border-bottom: 0;
-    background: transparent;
     -webkit-mask-image: linear-gradient(
       to right,
       transparent,
@@ -153,15 +132,15 @@ const fallback = withBase('/art/hero-1280.jpg')
   }
 
   .hero__img {
+    display: block;
     width: 100%;
     height: 100%;
-    aspect-ratio: auto;
+    object-fit: cover;
     object-position: 80% 50%;
   }
 
   .hero__inner {
     position: relative;
-    padding-top: 0;
   }
 
   /* Solid panel: contrast never depends on the picture behind it. */
