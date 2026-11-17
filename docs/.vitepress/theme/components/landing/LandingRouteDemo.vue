@@ -32,8 +32,8 @@ const needs = `{
   "launchArgs": ["--agent", "claude", "--model", "claude-sonnet-5-5", "--effort", "medium"]
 }`
 const readable = `daily → claude · claude-sonnet-5-5 · medium (high confidence)
-  cost: daily ($4.00/M blended, maker price)
-  claude claude-sonnet-5-5: weekly 40% used, 62% of window elapsed (headroom 34%) → on pace for 65% before reset in 2d`
+  claude claude-sonnet-5-5: weekly 40% used, 62% of window elapsed (headroom 34%) → on pace for 65% before reset in 2d
+  cost: daily ($4.00/M blended, maker price)`
 </script>
 
 <template>

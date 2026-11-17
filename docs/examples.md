@@ -384,12 +384,15 @@ confidence; read the reason rather than inferring headroom.
   "status": "ok",
   "tier": "advanced",
   "downgraded": false,
-  "warnings": ["cheaper daily cost tier passed over: every route there that covers the job is blocked or expected to end above 90% of its usage window (usageRiskLimit): claude claude-sonnet-5-5 (weekly 96% used, resets in 14h), codex gpt-6.1-sol (weekly 96% used, resets in 5d)"]
+  "upgraded": true,
+  "warnings": ["no model in the daily cost tier covers the job; using advanced", "cheaper daily cost tier passed over: every route there that covers the job is blocked or expected to end above 90% of its usage window (usageRiskLimit): claude claude-sonnet-5-5 (weekly 96% used, resets in 14h), codex gpt-6.1-sol (weekly 96% used, resets in 5d)"]
 }
 ```
 
-**Next:** relay the warning: a pricier covering cost tier was used because of
-usage, rather than lowering the job's needs. For `wait`, follow
+**Next:** relay the warnings: a pricier covering cost tier was used because of
+usage, rather than lowering the job's needs. `upgraded` is `true` whenever the
+pick's cost tier is above the requested one, and its warning keeps the same
+wording when usage, not coverage, moved the pick up. For `wait`, follow
 [the reset example](#_4-refuse-a-capability-shortfall); there are no launch arguments
 to use. See [troubleshooting](troubleshooting.md#a-route-says-wait-or-none).
 
@@ -421,7 +424,7 @@ cost: light < $1 ≤ daily < $5 ≤ advanced < $12 ≤ frontier (per million tok
 **Illustrative `ranking --axis coding` text excerpt** (… other model rows):
 
 ```text
-gpt-6.1-sol  daily $4.00/M price  evidence advanced  coding 82.2 A measured(4)  agents: codex
+gpt-6.1-sol  daily $4.00/M price  evidence frontier  coding 79.8 A measured(5)  agents: codex
 ```
 
 **Next:** use `status` for availability and usage, `tiers` for cost grouping,

@@ -72,13 +72,13 @@ three axes. Price plays no part in this step.
 | --- | --- | --- | --- | --- |
 | Haiku 5.5 | 68.4 | 53.5 | 74.6 | out |
 | Composer 2.5 | 67.1 (estimated) | 35.7 (assumed) | 75.0 (estimated) | out |
-| GPT-6.1 Terra | 76.4 | 69.1 | 82.3 | out |
+| GPT-6.1 Terra | 76.5 | 69.1 | 82.3 | out |
 | Grok 4.7 | 64.8 | 43.7 | 75.1 | out |
 | GPT-6.1 Sol | 79.8 | 75.5 | 88.7 | qualifies |
 | Sonnet 5.5 | 84.3 | 78.2 | 87.3 | qualifies |
 | Opus 5.5 | 87.3 | 82.0 | 90.6 | qualifies |
 | GPT-6 Astra | 83.8 | 80.5 | 89.7 | qualifies |
-| Fable 5.2 | 87.8 | 85.4 | 94.7 | qualifies |
+| Fable 5.2 | 87.6 | 85.4 | 94.7 | qualifies |
 | Gemini 4 Carbon | 86.6 | 78.8 | 94.2 | qualifies |
 
 Each model that falls short is listed under `skipped` with the reason, for

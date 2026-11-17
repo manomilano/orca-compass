@@ -140,13 +140,13 @@ Only `status: "ok"` carries a route. Pass `launchArgs` as separate, properly
 quoted arguments together with your usual Orca worktree and lifecycle options.
 OrcaCompass never launches workers itself.
 
-For example, a routing decision can look like this (illustrative numbers):
+For example, a routing decision can look like this (illustrative numbers, shortened):
 
 ```text
 $ orcacompass route --tier advanced
-advanced → claude · claude-sonnet-5-5 · medium (high confidence)
-  cost: daily ($4.00/M blended, maker price)
+daily → claude · claude-sonnet-5-5 · medium (high confidence)
   claude claude-sonnet-5-5: weekly 40% used, 62% of window elapsed (headroom 34%) → on pace for 65% before reset in 2d
+  cost: daily ($4.00/M blended, maker price)
 ```
 
 ## User guide
