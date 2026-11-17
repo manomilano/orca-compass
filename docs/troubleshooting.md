@@ -45,9 +45,26 @@ would downgrade your CLI. Use `npx orcacompass@latest update` with the same scop
 **`Cannot resolve the latest installer …`**: npm could not read its latest
 version tag. Check network access and registry settings, then retry `update`.
 
+**`This installer (…) is newer than the latest published release (…)`**: you
+ran `update` from a version that is not on npm, such as a source checkout or
+an unpublished build. Nothing was changed, and there is nothing to update to.
+
+**`The update did not complete (…)`**: the latest installer, started through
+`npx`, exited with an error; its own output above says why. Fix the cause and
+run the `npx …` command the message prints.
+
+**`Skill removal did not complete (…)`**: the Skill installer failed or was
+cancelled before it removed the Skill. The CLI was left unchanged. Fix the
+reported problem and run the `orcacompass uninstall …` command the message
+prints.
+
 **`Cannot confirm Skill removal …`**: the Skill installer may have been
 cancelled or could not remove every copy. The shared CLI was retained. Fix
 the reported problem and retry `uninstall --global`.
+
+**`The Skill was removed, but CLI removal failed (…)`**: npm could not remove
+the global package; its own output above says why. Run
+`npm uninstall -g orcacompass`. Your config and cache are preserved.
 
 **`Cannot check the installed CLI …`**: npm could not read its global package
 metadata. Run `npm ls --global --depth=0 --json orcacompass` to inspect the
