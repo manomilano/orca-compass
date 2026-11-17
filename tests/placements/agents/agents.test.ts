@@ -769,11 +769,11 @@ describe("Orca's model catalog", () => {
 
   it('is skipped with the reason when this Node.js cannot read it, and the next source is used', async () => {
     const readOrcaCatalog = async (): Promise<string[]> => {
-      throw new Error('this Node.js (v20.19.0) has no node:sqlite; Node 22.5 or later is needed');
+      throw new Error('this Node.js (v20.19.0) has no node:sqlite; Node 22.13 or later is needed');
     };
     const cx = await discoverCodex(deps({ readFile: fixtureFiles({ codexCache }), readOrcaCatalog }));
     expect(cx.models.length).toBeGreaterThan(0);
-    expect(cx.note).toMatch(/models_cache\.json; Orca's model catalog skipped: .*Node 22\.5 or later/);
+    expect(cx.note).toMatch(/models_cache\.json; Orca's model catalog skipped: .*Node 22\.13 or later/);
   });
 
   it('is read only for Claude Code and Codex, the agents whose model lists Orca saves there', async () => {

@@ -5,6 +5,9 @@
 - Added the OrcaCompass website with a landing page, user guide, examples,
   contributing, changelog and community pages, a custom theme, and site
   verification in CI. Publication remains a manual maintainer action.
+- The message shown when this Node.js cannot read Orca's databases now names
+  Node 22.13, the first release where `node:sqlite` works without a flag (it
+  said 22.5).
 
 ## 0.2.4
 

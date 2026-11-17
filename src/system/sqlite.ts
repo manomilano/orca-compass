@@ -1,4 +1,4 @@
-/** node:sqlite (Node 22.5+) without its one-time ExperimentalWarning on stderr. */
+/** node:sqlite (Node 22.13+, where it needs no flag) without its one-time ExperimentalWarning on stderr. */
 export async function importSqlite(): Promise<typeof import('node:sqlite')> {
   const emitWarning = process.emitWarning;
   process.emitWarning = ((warning: string | Error, ...rest: unknown[]) => {
@@ -8,7 +8,7 @@ export async function importSqlite(): Promise<typeof import('node:sqlite')> {
   try {
     return await import('node:sqlite');
   } catch {
-    throw new Error(`this Node.js (${process.version}) has no node:sqlite; Node 22.5 or later is needed`);
+    throw new Error(`this Node.js (${process.version}) has no node:sqlite; Node 22.13 or later is needed`);
   } finally {
     process.emitWarning = emitWarning;
   }
