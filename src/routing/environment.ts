@@ -23,6 +23,8 @@ export type GatherDeps = Partial<AgentDeps & {
   version: string;
   /** Tests point the bundled-snapshot fallback at a fixture. */
   bundled: string | URL;
+  /** The bundled snapshot's manifest; a test that supplies `bundled` has none unless given here. */
+  bundledManifest: string | URL;
 }>;
 
 export interface Gathered {

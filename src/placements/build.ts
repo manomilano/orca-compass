@@ -40,6 +40,8 @@ export type BuildDeps = Partial<AgentDeps> & {
   version?: string;
   /** Tests point the bundled-snapshot fallback at a fixture; production uses the packaged file. */
   bundled?: string | URL;
+  /** The bundled snapshot's manifest, used to date it; a test that supplies `bundled` has none unless given here. */
+  bundledManifest?: string | URL;
 };
 
 export interface Built {
@@ -53,7 +55,7 @@ export async function buildPlacements(config: Config, deps: BuildDeps = {}): Pro
   const now = deps.now ?? Date.now();
   const env = deps.env ?? process.env;
   const directory = deps.cacheDir ?? cacheDir();
-  const evidence = await loadEvidence({ ttlHours: config.evidenceTtlHours, now, fetchImpl: deps.fetchImpl, refresh: deps.refresh, cacheDir: directory, bundled: deps.bundled });
+  const evidence = await loadEvidence({ ttlHours: config.evidenceTtlHours, now, fetchImpl: deps.fetchImpl, refresh: deps.refresh, cacheDir: directory, bundled: deps.bundled, bundledManifest: deps.bundledManifest });
   const { snapshot } = evidence;
   // Every agent reads Orca's catalog; open it once.
   const readCatalog = deps.readOrcaCatalog ?? readOrcaCatalogRows;
