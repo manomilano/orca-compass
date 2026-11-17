@@ -1,10 +1,13 @@
 # Changelog
 
-## 0.2.4
+## Unreleased
 
 - Added the OrcaCompass website with a landing page, user guide, examples,
   contributing, changelog and community pages, a custom theme, and site
   verification in CI. Publication remains a manual maintainer action.
+
+## 0.2.4
+
 - Upgrading no longer keeps older evidence (and its need cuts) for up to
   `evidenceTtlHours`. The evidence loader never uses a snapshot older than the
   one bundled with the installed release: a fresh cache older than it is
