@@ -89,7 +89,8 @@ command, a flag or an output field, change the Skill in the same pull request.
 CI runs the suite, type check, build and package smoke check on Windows, macOS
 and Linux with Node.js 24, and the installer check on the same three systems. A
 separate job checks the compiled package on Node.js 20, the minimum supported
-runtime. The user guide builds on Linux in CI. CI runs on every pull request,
+runtime. The user guide builds on Linux in CI, where the built site is also
+verified. CI runs on every pull request,
 including pull requests from forks, with read-only access and no secrets.
 
 ## Releases
@@ -116,11 +117,11 @@ version tags by hand; the workflow creates them after a successful publish.
 ## User guide
 
 For model-data updates, follow [Model data](docs/model-data.md). Review changes
-to the two snapshots in `data/`, preserve source attribution, and run the tests.
-A score-file update on public `main` reaches installed clients through refresh;
-it does not require publishing a new npm package. The Models.dev fallback
-snapshot reaches users with the next npm release; normal catalog refreshes
-fetch Models.dev directly.
+to the evidence snapshot and its manifest in `data/`, preserve source
+attribution, and run the tests. An evidence update on public `main` reaches
+installed clients through refresh; it does not require publishing a new npm
+package. The bundled copy, used as the offline fallback, reaches users with the
+next npm release.
 
 Edit the Markdown pages in `docs/`. `docs/README.md` is the guide's overview on
 GitHub and is included by `docs/guide.md` for the website, so its content has
@@ -147,7 +148,8 @@ documentation alone does not deploy the website.
 | Path | Responsibility |
 | --- | --- |
 | `src/cli.ts`, `src/setup.ts`, `src/install.ts`, `src/verify.ts` | CLI commands, setup, installation, and launch verification |
-| `src/placements/` | Agent discovery, metadata sources, and cached model tier placement |
+| `src/evidence/` | Evidence snapshot loading, scoring, bands, and refresh |
+| `src/placements/` | Agent discovery, model profiles, and cached model tier placement |
 | `src/routing/` | Usage and Orca settings, routing, effort, and rejection handling |
 | `src/system/`, `src/types.ts`, `src/config.ts`, `src/paths.ts` | Process execution, shared types, configuration, and paths |
 | `tests/` | Tests, synthetic fixtures, and helpers |
