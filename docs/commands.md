@@ -138,6 +138,9 @@ Text output (illustrative; values vary):
 ```text
 daily → claude · claude-sonnet-5-5 · medium (high confidence)
   claude claude-sonnet-5-5: weekly 20% used, 56% of window elapsed (headroom 60%) → on pace for 36% before reset in 3d
+  needs coding=low agentic=low reasoning=low from tier daily; fit group: daily cost tier (3 models)
+  cost: daily ($4.00/M blended, maker price)
+  coding 84.3 measured, agentic 78.2 measured, reasoning 87.3 measured
   effort: medium from tier default, passed as --effort
   next best: codex gpt-6.1-terra (weekly headroom 41%, resets in 4d)
   skipped: grok (not enabled in Orca), opencode (last resort: used only when no other agent can take the job)
@@ -152,20 +155,21 @@ fields (`evidenceSource`, `catalogSource`, `scoreSource`) and `placementsBuiltAt
 | Field | Meaning |
 | --- | --- |
 | `status` | `ok`, `wait`, or `none` |
-| `requestedTier`, `tier` | Requested needs shorthand and the pick's cost tier (absent without a route); a cheaper covering tier is neither a downgrade nor an upgrade |
+| `requestedTier`, `tier` | Requested needs shorthand and the pick's cost tier (absent without a route and for the Cursor `auto` fallback); a cheaper covering tier is neither a downgrade nor an upgrade |
+| `source` | Where the pick's cost tier came from: `override`, `lineup`, `family` or `evidence`; `auto` for the Cursor `auto` fallback |
 | `tierReason` | The coordinator's explanation of the requested tier, when supplied. Also included in `reasons`, even when there is no route |
 | `downgraded`, `upgraded` | Whether fallback changed the tier |
 | `route` | `{ agent, model, effort }`; `effort` is `null` when it is in the model id or not set |
 | `effort` | How the effort was chosen and applied; see [Effort](effort.md#the-effort-object-in-route-json) |
 | `launchArgs` | Array to append to `orca orchestration worker-start --spec "<task>"`, one argument per element |
-| `launch` | Readable template with a `<task>` placeholder; not shell-escaped, not for automation |
+| `launch` | Readable template with a `<task>` placeholder; not shell-escaped, not for automation; `null` without a route |
 | `confidence` | `high`, `medium`, `low` |
 | `risk` | `{ pool, usedPercent, elapsedPercent, projectedPercent, tooEarly, resetsAt }` for the route; `null` when usage is unknown |
 | `reasons` | One line per fact behind the choice; the needs line includes `fit group: daily cost tier (3 models)`, and a route adds `cost: daily ($4.00/M blended, maker price)` (tier, count, price and source vary) |
 | `warnings` | Downgrade, upgrade, skipped preference, last-resort use, a cheaper cost tier passed over for usage, every covering route above `usageRiskLimit` |
-| `alternatives` | Up to five other candidates from the chosen tier (requested tier without a pick): `agent`, `model`, `effort`, `tier`, `headroom` (fraction, or `null`), `confidence`, `blocked`, `risk`, `reason` |
-| `skipped` | `{ agent, model?, reason }` for excluded agents and banned/refused models in the requested tier. Superseded releases and no-ZDR exclusions are omitted. Preference exclusions appear in `warnings` |
-| `waitUntil` | Epoch ms when a blocked requested-tier candidate resets; with `wait`, sometimes with `none` |
+| `alternatives` | Up to five other candidates from the pick's group: the fit group (the cheapest covering cost tier, which can differ from the requested tier), or for a downgrade the models with the same shortfall; without a pick, the fit group: `agent`, `model`, `effort`, `tier`, `headroom` (fraction, or `null`), `confidence`, `blocked`, `risk`, `reason` |
+| `skipped` | `{ agent, model?, reason }` for excluded agents (including an unknown `--agent`), banned and refused models, unranked models and models below the requested needs, in every tier. Superseded releases and no-ZDR exclusions are omitted. Preference exclusions appear in `warnings` |
+| `waitUntil` | Epoch ms of the earliest reset that unblocks a candidate; present with `wait` only |
 | `needs`, `needsSource` | The three requested levels and whether they came from `need` or `tier` |
 | `quality` | Evidence class, cost, coverage, shortfall or overshoot, evidence and per-axis scores, bands, needs and cuts; also on alternatives |
 | `quality.class` | Highest evidence band across the axes; independent of cost |
@@ -212,7 +216,8 @@ Output fields:
 | `skippedForHours` | With `rejected`: how long routes skip this agent and model (`rejectionTtlHours`) |
 | `next` | What the orchestrator does next, in order. For `rejected` and `failed` this includes the `worker-start --task <taskId> --retry-of <dispatchId>` command for a replacement |
 
-OrcaCompass saves a `rejected` verdict to the cache. Every route then skips
+OrcaCompass saves a `rejected` verdict to the cache when Orca reports the
+worker's agent and model (`skippedForHours` is then present). Every route then skips
 that agent and model for `rejectionTtlHours`. See
 [Verify and rejections](verify-and-rejections.md).
 

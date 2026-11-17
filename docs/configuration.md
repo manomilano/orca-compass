@@ -98,7 +98,7 @@ present they produce a warning and are ignored; use `costBands` and
 | `preferRiskLimit` | `100` | Projected usage percentage above which a within-limit alternative replaces the favorite. Retain the favorite when no unblocked alternative has known usage within this limit | `prefer --risk-limit` |
 | `banModels` | `[]` | Model ids or families never routed | `ban`, `unban` |
 | `lastResortAgents` | `["opencode"]` | Agents used only when no other agent can take the job in any allowed tier (or instead of waiting). `--agent <id>` or a preference for the tier lifts it; `[]` makes them ordinary | by hand |
-| `tierOverrides` | `{}` | Model id or family to a tier: `{ "gemma4:12b": "light", "grok": "daily" }`. Sets the cost tier only, leaving evidence bands and coverage unchanged; an `auto` override is ignored with a warning | by hand |
+| `tierOverrides` | `{}` | Model id or family to a tier: `{ "gemma4:12b": "light", "grok": "daily" }`. Sets the cost tier, leaving a model's own evidence bands and coverage unchanged. A model with no scores of its own and a known maker also inherits assumed scores through the override; with no known maker it stays unranked. An `auto` override is ignored with a warning | by hand |
 | `excludeNoZdr` | `false` | Exclude models marked no-ZDR (zero data retention). Relies on Cursor's `NO ZDR` labels only | by hand |
 | `cursorAuto` | `true` | Offer Cursor `auto` as a fallback when no named model can be routed | by hand |
 
@@ -196,6 +196,7 @@ Metadata and model listings are read when the placement table is built (see
 | `$GROK_HOME/models_cache.json` (default `~/.grok`), then `grok models` | Grok Build models, efforts, default | At table build: file, then live (30 s, saved copy on failure) |
 | `agy models` | Antigravity models (`id<TAB>label`) | At table build, 30 s, saved copy on failure |
 | `opencode models` | OpenCode models (`provider/model`) | At table build, 30 s, saved copy on failure |
+| OrcaCompass's built-in Muse list | Muse models (neither Muse nor Orca lists them) | At table build, when `muse` is on PATH |
 | Orca's profile state (`profile-state.db` or `orca-data.json`), read-only | Which agents you enabled in Orca (`settings.disabledTuiAgents`) | Experimental; anything unexpected is `unknown` |
 | `orca orchestration worker-show` / `worker-read` | `verify` only | Read-only |
 

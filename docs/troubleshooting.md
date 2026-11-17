@@ -120,14 +120,16 @@ pool's reset time has already passed. See
 
 - `none` with `no usable agent`: no agent passed the checks above. Run
   `orcacompass agents`.
-- `none` with `all <tier> candidates blocked`: no usable pick or known future
-  reset was found after the allowed covering, downgrade and fallback choices.
+- `none` with `no model covers the job`: agents are usable, but no model meets
+  the needs and no downgrade or fallback route is allowed or available.
 - A pricier model than expected, with the warning `cheaper <tier> cost tier
   passed over`: every route in the cheaper tier that covers the job is blocked
   or expected to end above `usageRiskLimit` (90% by default). Raise the limit
   in the config to stay in the cheaper tier longer.
 - `wait`: no allowed unblocked pick was found, but a candidate has a known
   future unblock time. This can happen with or without `--no-downgrade`.
+  The reason reads `all <tier> candidates blocked` when covering routes exist,
+  or `no model covers the job` when only blocked downgrade routes remain.
   `waitUntil` is the earliest candidate unblock time; a candidate with several
   blocking pools must wait for its latest blocking reset.
 - `none` with `--effort`: no candidate can apply that exact effort; the
@@ -167,8 +169,8 @@ agent changed its wording. Please open an issue with that tail. See
 ## Models are missing or out of date
 
 Every model's tiers come from the placement table, normally reused for
-`placementsTtlHours` (5 hours). A refresh, changed placement settings, a CLI
-update or a newly detected agent can rebuild it earlier. A model you just gained, or an
+`placementsTtlHours` (5 hours). A refresh, changed placement settings, a changed
+evidence snapshot, a CLI update or a newly detected agent can rebuild it earlier. A model you just gained, or an
 agent you just signed in to, shows up at the next build. `orcacompass tiers`
 prints the table with its age. This rebuilds it now and refetches the
 metadata too:
@@ -179,8 +181,10 @@ orcacompass refresh
 
 If `status` says `evidence: snapshot`, the bundled evidence is in use.
 Run `orcacompass refresh` when online to check the repository. Unranked models
-lack evidence or a usable inheritance hint; inspect `orcacompass ranking` and
-use `tierOverrides` if appropriate.
+lack evidence or a usable inheritance hint; inspect `orcacompass ranking`. A
+`tierOverrides` entry ranks such a model only when its maker is known (it then
+inherits assumed scores); a model with no known maker, such as most local
+ones, stays unranked and is routed only as an explicit model preference.
 
 ## Config errors (exit code 2)
 

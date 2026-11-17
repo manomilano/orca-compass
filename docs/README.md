@@ -26,7 +26,7 @@ Skill (`skills/orcacompass/SKILL.md`) backed by a small TypeScript CLI
 | [Models and agents](models-and-agents.md) | The agents OrcaCompass routes to, their model sources, and how to inspect available models |
 | [Model data](model-data.md) | Data sources, cache timing, snapshot dates, and maintaining shared scores |
 | [Orca agents](orca-agents.md) | Every agent id Orca can launch and what OrcaCompass does with each one |
-| [Roadmap](roadmap.md) | What is done, what is next, known limitations, decisions taken |
+| [Roadmap](roadmap.md) | Areas for future work and known limitations |
 | [Examples](examples.md) | Worked examples of routing and verification |
 | [Contributing](contributing.md) | Development setup, checks, and contribution guidelines |
 | [Changelog](changelog.md) | Changes by release |
@@ -55,7 +55,8 @@ model.
 | Term | Meaning |
 | --- | --- |
 | **Agent** | A coding CLI Orca can launch as a worker: `claude`, `codex`, `cursor`, `grok`, `antigravity`, `opencode`, `muse` |
-| **Tier** | How capable a model the job needs: `light`, `daily`, `advanced`, `frontier` |
+| **Need** | How strong a model the job requires on each axis (`coding`, `agentic`, `reasoning`): `min`, `low`, `mid`, `high`, `top` |
+| **Tier** | A model's cost tier: `light`, `daily`, `advanced`, `frontier`. `--tier` is also shorthand for the same need on every axis |
 | **Demand** | How much the job needs to think: `low`, `moderate`, `high`, `exceptional`. Separate from the tier |
 | **Effort** | The reasoning level passed to the agent: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | **Route** | One recommendation: agent, model, effort, plus `launchArgs` for `orca orchestration worker-start` |

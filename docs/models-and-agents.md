@@ -5,7 +5,7 @@ description: Understand supported agents, model discovery, usage pools, preferen
 # Models and agents
 
 Use this page to understand model discovery, usage pools and preferences for
-each supported agent. Run `orcacompass status` for your current discovered
+each supported agent. Run `orcacompass tiers` for your current discovered
 models; availability varies by account and agent version.
 
 ## Agents
@@ -101,8 +101,10 @@ tier's default applies.
 
 ## Inspect available models
 
-Run `orcacompass status` to see the models discovered for your installed agents,
-their tiers, and any exclusions. Availability depends on your account, agent
+Run `orcacompass tiers` to see the models discovered for your installed agents
+with their cost tiers, and `orcacompass ranking` for their evidence.
+`orcacompass status` shows a model count per agent, the pick for each tier, and
+banned, refused and unclassified models. Availability depends on your account, agent
 version, and current provider catalog. Model IDs in this guide are examples,
 not a guarantee of access.
 
