@@ -25,6 +25,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run docs:build
+      # Never publish a site that fails the checks CI runs on pull requests.
+      - run: node scripts/check-site.mjs
       - uses: actions/upload-pages-artifact@v5
         with:
           path: docs/.vitepress/dist
