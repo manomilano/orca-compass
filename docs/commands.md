@@ -85,11 +85,17 @@ stale; see [Tiers and routing](tiers-and-routing.md#when-placement-runs).
 | `install`, `update` | Agents' skills folders; a global npm package |
 | `uninstall` | The selected Skill files; optionally the global npm package |
 
+A command that edits the config creates the file when none exists, even when
+it has nothing to remove (`agents reset`, `prefer clear`, `unban`). The Skill
+offers setup only while there is no config file, so it stops offering it then;
+run `orcacompass setup` yourself if you still want it.
+
 ## Conventions
 
 Agent IDs throughout the CLI are `claude`, `codex`, `cursor`, `grok`, `antigravity`,
 `opencode`, `muse`, in any letter case. Tier and demand names are
-case-insensitive too.
+case-insensitive too. The axes and levels of `--need` and the values of
+`--axis` are case-sensitive: write `coding=high`, not `coding=HIGH`.
 
 Unknown agent ids are handled differently by command:
 
@@ -103,7 +109,7 @@ Unknown agent ids are handled differently by command:
 | Code | Meaning |
 | --- | --- |
 | 0 | Answered. For `route` this covers `ok`, `wait` **and** `none`: check `status` in the output |
-| 1 | Usage error (bad flag, unknown agent, missing argument) or runtime error |
+| 1 | Usage error (bad flag, unknown agent, missing argument) or runtime error; also `setup` canceled with Ctrl+C (answering no to "Save" exits 0) |
 | 2 | Config error: `config error: <path>: <message>` |
 
 ## `route`
@@ -398,7 +404,10 @@ warning. `unban` warns about an entry that was not banned.
 An agent id is refused when it matches no discovered model, because it is not
 a model family: use `agents disable` for a whole agent. `grok` is also a
 catalog model family, so when Grok models are discovered `ban grok` bans the
-family and prints a note about `agents disable`.
+family and prints a note about `agents disable`. The same holds for any agent
+id that is also a catalog family: `claude` is the family of the older Claude
+2 and 3 models, so `ban claude` is accepted when one of those is discovered
+and bans only that family, not the Claude Code agent.
 
 `--json` returns `{ configPath, banModels, matches }`, where `matches` maps each
 entry to the `{ agent, model }` pairs it covers now.

@@ -64,8 +64,9 @@ read failures are included in discovery notes when no legacy catalog is used.
 
 Cursor, Antigravity and OpenCode
 use live commands; Grok first reads its native model cache.
-For live listings, the last good list is used only when the command fails;
-if no models were parsed, a sign-in prompt skips the agent as `not signed in`.
+For live listings, the last good list is used when the command fails or
+succeeds without listing any model; a sign-in prompt instead skips the agent
+as `not signed in`.
 
 After Orca's catalog, Claude's list is the catalog Claude Code caches under
 `$CLAUDE_CONFIG_DIR/cache/model-catalog` (default

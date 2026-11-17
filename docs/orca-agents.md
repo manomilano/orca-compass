@@ -100,8 +100,8 @@ Source: `src/routing/environment.ts` and `src/placements/agents/*.ts`, `src/rout
    read-only once per build, then the `agent-model-catalog.json` older Orca
    versions wrote. OrcaCompass reads that catalog only for Claude Code and Codex. Live model-list commands run through
    `listModels` (`src/placements/agents/list-cache.ts`): a nonempty successful
-   listing is saved to the OrcaCompass cache; if the command later fails, the
-   saved copy is used with its age ("using the list from 3h ago"). If no models were parsed, a sign-in
+   listing is saved to the OrcaCompass cache; if the command later fails or
+   lists no model, the saved copy is used with its age ("using the list from 3h ago"). If no models were parsed, a sign-in
    prompt marks the agent `signedOut` and prevents fallback.
 3. **Build each model's profile**: coding, agentic and reasoning scores from
    the evidence snapshot, and a cost tier from your `tierOverrides`, the

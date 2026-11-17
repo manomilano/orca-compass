@@ -101,8 +101,9 @@ launcher or non-login shell that leaves them out does not hide an agent:
 Homebrew, `/usr/local/bin`, `~/bin`, `~/.local/bin`, Nix, Snap, MacPorts and a
 few agents' own folders. A file only counts if you can execute it.
 It also checks where some installers put them: `%LOCALAPPDATA%\cursor-agent`
-for Cursor, `~/.grok/bin` (or `$GROK_HOME/bin`) for Grok Build, and
-`%LOCALAPPDATA%\agy\bin` or `~/.local/bin` for Antigravity. A terminal opened
+for Cursor, `~/.grok/bin` (or `$GROK_HOME/bin`) for Grok Build,
+`%LOCALAPPDATA%\agy\bin` or `~/.local/bin` for Antigravity, and
+`~/.opencode/bin` for OpenCode. A terminal opened
 before you installed an agent keeps the old PATH: open a new one, and restart
 Orca if the orchestrator runs in an Orca terminal that started earlier.
 

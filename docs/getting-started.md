@@ -139,8 +139,8 @@ again starts from your current settings. Ctrl+C saves nothing.
 
 1. **Agents.** Every known agent is listed with: installed, enabled in Orca
    (`yes`, `no`, `unknown`), Orca usage status and model count. The default is
-   the agents that are installed, have models, are enabled in Orca and are not
-   switched off in your config. Your answer is written as `allowAgents` /
+   the agents that are installed, have models, are not switched off in Orca
+   (`yes` or `unknown`) and are not switched off in your config. Your answer is written as `allowAgents` /
    `denyAgents`, through the same edits as `orcacompass agents`.
 2. **Favorites (optional).** For each tier the current pick and its
    alternatives are shown with their on-pace percentage. Choose one as the

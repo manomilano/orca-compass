@@ -158,7 +158,9 @@ so only 4.7 competes.
    `rejectionTtlHours` (see [Verify and rejections](verify-and-rejections.md)),
    and unranked models unless the requested tier's preference names that exact
    model. Cursor `auto` is set aside as a [fallback](#cursor-auto-fallback).
-   Per agent, family and cost tier only the newest release stays.
+   Per agent, family and cost tier only the newest release stays. Banned,
+   refused and unranked models are listed under `skipped`; NO ZDR models and
+   superseded releases are dropped without an entry.
 3. **Effort.** With `--effort`, routes that cannot apply exactly that effort
    are dropped (see [Effort](effort.md#explicit-effort-is-a-constraint)).
 4. **Fit group.** The covering routes of the cheapest cost tier, moved up only
