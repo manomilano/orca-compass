@@ -70,7 +70,6 @@ const blank = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAA
 .hero {
   --oc-text-display: clamp(2.75rem, 2rem + 2.6vw, 4.25rem);
   padding-block: var(--oc-section-pad);
-  border-bottom: var(--oc-border-ink) solid var(--oc-color-line);
   overflow: hidden;
 }
 
@@ -101,7 +100,6 @@ const blank = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAA
     align-items: center;
     min-height: clamp(38rem, 56vw, 54rem);
     padding-block: var(--oc-space-8);
-    border-bottom: 0;
   }
 
   /*
