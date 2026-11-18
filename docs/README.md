@@ -61,7 +61,7 @@ model.
 | **Effort** | The reasoning level passed to the agent: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | **Route** | One recommendation: agent, model, effort, plus `launchArgs` for `orca orchestration worker-start` |
 | **Usage pool** | A rate-limit window Orca reports for an agent: `session`, `weekly`, `monthly`, `fableWeekly`, or a named bucket |
-| **Headroom** | The share of a usage window expected to be left unused at reset; routes rank by it |
+| **Headroom** | The share of a usage window expected to be left unused at reset; routes are scored by it, minus a small price adjustment |
 | **Risk** | Where a route's usage is heading: `used% / elapsed fraction` of the window, the pool projected to end most used |
 | **Preference (pin)** | Your favorite route for a tier; used when eligible, unblocked and under `preferRiskLimit` |
 | **Ban** | A model id or catalog family that is never routed |

@@ -27,8 +27,8 @@ const waypoints: Waypoint[] = [
   },
   {
     title: 'Choose a route',
-    text: [{ value: 'Usually, choose the cheapest covering tier, then rank by usage headroom.' }],
-    link: { href: '/tiers-and-routing#the-fit-group', label: 'Routing rules' },
+    text: [{ value: 'Compare every route that covers the job: the most usage headroom wins, after a small price adjustment.' }],
+    link: { href: '/tiers-and-routing#ranking-covering-routes', label: 'Routing rules' },
   },
   {
     title: 'Launch',

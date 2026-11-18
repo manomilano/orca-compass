@@ -111,11 +111,11 @@ cannot apply exactly that effort are left out, including a preferred route and
 routes that fall short. Cursor Auto never can, so `--effort` always excludes
 it.
 
-When the fit group (the cheapest cost tier with a covering route, see
-[Tiers and routing](tiers-and-routing.md#the-fit-group)) has routes but none
-can apply the effort, the route is `none` and the reasons list what each one
-offers. A pricier tier is not tried. The first reason names the requested
-tier:
+A covering route from any cost tier that can apply the effort is used (see
+[Tiers and routing](tiers-and-routing.md#order-of-decisions)). When models
+cover the job but none of their routes can apply the effort, the route is
+`none` and the reasons list what each one offers. No downgrade is tried. The
+first reason names the requested tier:
 
 ```text
 no daily route supports effort xhigh: claude claude-sonnet-5-5 (low/medium/high/max), …

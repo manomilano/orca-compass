@@ -380,23 +380,29 @@ constraints. Do not assume `none` satisfies a user's exact effort or model reque
 there is no basis for quoting usage percentages. Very stale usage can also lower
 confidence; read the reason rather than inferring headroom.
 
-**Illustrative passed-over-tier response excerpt** (… other fields):
+**Illustrative near-limit response excerpt** (… other fields):
 
 ```json
 {
   "status": "ok",
-  "tier": "daily",
+  "tier": "light",
   "downgraded": false,
   "upgraded": false,
-  "warnings": ["cheaper light cost tier passed over: every route there that covers the job is blocked or expected to end above 90% of its usage window (usageRiskLimit): claude claude-haiku-5-5 (weekly 96% used, resets in 14h), cursor claude-haiku-5-5 (monthly 97% used, resets in 9d)"]
+  "warnings": [
+    "weekly quota is 96% used; resets in 14h",
+    "selected route is expected to end above 90% of its usage window"
+  ]
 }
 ```
 
-**Next:** relay the warning: a pricier covering cost tier was used because of
-usage, rather than lowering the job's needs. `upgraded` stays `false` here
-because the pick's cost tier is not above the requested `daily`; when it is,
-`upgraded` is `true` and a second warning reads `no model in the <tier> cost
-tier covers the job; using <tier>`. For `wait`, follow
+**Next:** relay the warnings and keep the job small: the pick is close to its
+usage limit, and no route with more room covered the job. A route is left out
+for usage only when Orca reports a window as 100% used. A pick from a pricier
+cost tier than expected needs no warning: it had more room, and `reasons`
+shows its `selection` score and the `next best` route. `upgraded` is `true`
+only when no route at or below the requested tier covers the job; its warning
+reads `no model in the <tier> cost tier covers the job; using <tier>`.
+For `wait`, follow
 [the reset example](#_4-refuse-a-capability-shortfall); there are no launch arguments
 to use. See [troubleshooting](troubleshooting.md#a-route-says-wait-or-none).
 

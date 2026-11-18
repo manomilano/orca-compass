@@ -251,10 +251,12 @@ model for classification.
    still younger than `rejectionTtlHours`.
 
 Then the pure routing core (`src/routing/router.ts`, no I/O) turns that
-environment, your request and your config into a `Decision`: all models that cover the job compete; the ranking score combines reset-adjusted
-headroom with a price adjustment capped at five points. A cheaper covering
-pick is accepted in setup and status with a label such as `(daily cost tier)`
-for Advanced needs; it is not a downgrade. See
+environment, your request and your config into a `Decision`: every model that
+covers the job competes, from all cost tiers, and the score is the route's
+usage headroom minus a price adjustment of at most five points. Setup and
+status show a pick from another cost tier with a label such as
+`(daily cost tier)` for Advanced needs; a cheaper covering pick is not a
+downgrade. See
 [Tiers and routing](tiers-and-routing.md).
 
 Each evidence HTTP request has a 10 s timeout (manifest, then snapshot when
@@ -283,8 +285,8 @@ orca orchestration worker-start --spec "<task>" --agent claude --model claude-ha
 ```
 
 The first word is the pick's cost tier. It is `light` here because a
-Light-cost model covers an everyday job; a cheaper covering tier is not a
-downgrade.
+Light-cost model covers an everyday job and no other route had clearly more
+room; a cheaper covering tier is not a downgrade.
 
 If `status` says `evidence: snapshot`, run `orcacompass refresh`
 when online. If an agent you expect is `not used`, the verdict says why
