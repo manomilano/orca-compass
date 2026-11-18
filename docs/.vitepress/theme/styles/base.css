@@ -198,7 +198,7 @@
 
 /*
  * The landing page (docs/index.md, layout: page) renders LandingPage.vue,
- * which wraps the eight sections in .landing. Every section root is
+ * which wraps the nine sections in .landing. Every section root is
  * <section class="landing-section" id="..."> and owns everything inside it.
  */
 .landing {
