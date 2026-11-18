@@ -102,8 +102,8 @@ export default defineConfig({
     ],
     sidebar: [
       { text: 'Start here', items: [
-        { text: 'User guide', link: '/guide' },
         { text: 'Getting started', link: '/getting-started' },
+        { text: 'User guide', link: '/guide' },
         { text: 'How it works', link: '/how-it-works' },
       ] },
       { text: 'Work with OrcaCompass', items: [
