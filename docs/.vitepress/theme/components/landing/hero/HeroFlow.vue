@@ -32,9 +32,9 @@ const MID = (orchestrator.x + compass.x) / 2
 const BOX = { x: 76, width: 362 }
 
 const workers = [
-  { job: 'Design the sync engine', agent: 'claude', model: 'claude-opus-5-5', effort: 'high' },
-  { job: 'Build live cursors', agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium' },
-  { job: 'Update the docs', agent: 'claude', model: 'claude-haiku-5-5', effort: 'low' },
+  { job: 'Build the physics engine', agent: 'claude', model: 'claude-opus-5-5', effort: 'high' },
+  { job: 'Design the levels', agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium' },
+  { job: 'Add the start screen', agent: 'claude', model: 'claude-haiku-5-5', effort: 'low' },
 ].map((worker, i) => {
   const y = 251 + i * 58
   const pick = `${worker.model} · ${worker.effort}`
@@ -56,8 +56,8 @@ const workers = [
  * `textLength` holds each run to its width so the highlight behind it fits in any fallback font.
  */
 const say = {
-  job: { text: 'Make the editor multiplayer.', x: 14, y: 47, width: 164.8 },
-  split: { text: 'Split it across Orca workers.', x: 187, y: 47, width: 177.7 },
+  job: { text: 'Build a browser game.', x: 14, y: 47, width: 131.3 },
+  split: { text: 'Split it across Orca workers.', x: 153, y: 47, width: 177.7 },
   pick: { text: 'Use OrcaCompass to pick each model.', x: 18, y: 68, width: 244.2 },
 }
 
