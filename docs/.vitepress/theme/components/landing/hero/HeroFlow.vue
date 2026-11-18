@@ -16,8 +16,9 @@
  * worker slots, so each slot shows two jobs in turn.
  *
  * The routes are illustrative, and each is one OrcaCompass can return for that job: the model
- * meets the job's needs in the bundled evidence snapshot, and the two hard jobs go to Sonnet
- * rather than Opus because the cheapest model that covers a job wins on equal headroom.
+ * meets the job's needs in the bundled evidence snapshot. Both hard jobs ask for high effort,
+ * and only the enemy AI gets Opus: it is rated `high` on all three needs, which Sonnet misses
+ * on the agentic axis. The physics engine needs `mid` there, so the cheaper Sonnet covers it.
  * Cursor carries the effort inside the model id, so its routes have no separate effort
  * (docs/effort.md).
  */
@@ -45,7 +46,7 @@ const workers = [
   { job: 'Build the physics engine', agent: 'claude', model: 'claude-sonnet-5-5', effort: 'high' },
   { job: 'Design the levels', agent: 'codex', model: 'gpt-6.2-sol', effort: 'medium' },
   { job: 'Add the start screen', agent: 'cursor', model: 'grok-4.7-low', effort: null },
-  { job: 'Write the enemy AI', agent: 'claude', model: 'claude-sonnet-5-5', effort: 'high' },
+  { job: 'Write the enemy AI', agent: 'claude', model: 'claude-opus-5-5', effort: 'high' },
   { job: 'Add keyboard controls', agent: 'cursor', model: 'grok-4.7-medium', effort: null },
   { job: 'Save the high scores', agent: 'codex', model: 'gpt-6.1-terra', effort: 'low' },
 ].map((worker, i) => {
