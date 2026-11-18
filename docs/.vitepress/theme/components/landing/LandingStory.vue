@@ -27,7 +27,6 @@ import StoryPanel from './story/StoryPanel.vue'
         </StoryPanel>
         <StoryPanel
           name="story-3"
-          raised
           alt="A golden compass lights three sea routes, each followed by an orca toward a separate island."
         >
           With OrcaCompass, every worker had a route.
@@ -77,7 +76,7 @@ import StoryPanel from './story/StoryPanel.vue'
   .story__strip {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     max-width: none;
-    /* Room for the hard offset shadow of the raised panel. */
+    /* Room for the panel shadows at the edge of the grid. */
     padding-right: 5px;
     padding-bottom: 5px;
   }

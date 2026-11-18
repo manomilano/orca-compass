@@ -12,9 +12,8 @@ const props = withDefaults(
     name: string
     alt: string
     captionPlacement?: 'top' | 'bottom'
-    raised?: boolean
   }>(),
-  { captionPlacement: 'top', raised: false },
+  { captionPlacement: 'top' },
 )
 
 const widths = [640, 1280, 1920]
@@ -30,7 +29,7 @@ const fallback = withBase(`/art/${props.name}-1280.jpg`)
   <ComicPanel
     tag="li"
     flush
-    :raised="raised"
+    raised
     :caption-placement="captionPlacement"
     class="story-panel"
   >
