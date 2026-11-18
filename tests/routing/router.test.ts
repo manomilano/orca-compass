@@ -56,19 +56,23 @@ describe('routing by cost tier', () => {
     const known = withPool(cursor, 'claude', 'weekly', poolAt(cheap));
     const d = route(req, known, DEFAULT_CONFIG);
     expect(d.route?.agent).toBe(winner);
+    // 77% headroom crosses the 22% expected-use warning, while 79% does not.
+    const advisory = route(req, known, { ...DEFAULT_CONFIG, usageRiskLimit: 22 });
+    expect(advisory.route).toEqual(d.route);
+    if (cheap === 77) expect(advisory.warnings).toContain('selected route is expected to end above 22% of its usage window');
     expect(d.upgraded).toBe(false);
     expect(d.alternatives[0]?.agent).toBe(winner === 'claude' ? 'cursor' : 'claude');
     expect(route(req, withUsageStatus(known, 'unknown', ['claude']), DEFAULT_CONFIG).route?.agent).toBe('cursor');
   });
 
-  it('rejects a nearly exhausted cheap route in favor of a healthy higher-priced model', () => {
+  it('ranks a nearly exhausted cheap route below a healthy higher-priced model', () => {
     const pair = onlyModels(onlyModels(env, 'claude', ['claude-haiku-5-5']), 'cursor', ['claude-opus-5-5']);
     const req = { tier: 'light' as const, agents: ['claude', 'cursor'] };
     for (const usedPercent of [96, 94]) {
       const usage = withPool(pair, 'claude', 'weekly', { usedPercent });
       const decision = route(req, usage, DEFAULT_CONFIG);
       expect(decision.route?.agent).toBe('cursor');
-      expect(decision.alternatives[0]).toMatchObject({ agent: 'claude', blocked: usedPercent >= 95 });
+      expect(decision.alternatives[0]).toMatchObject({ agent: 'claude', blocked: false });
     }
   });
 
@@ -106,7 +110,7 @@ describe('per-axis routing', () => {
   });
   it('downgrades by shortfall with unchanged effort, or waits when forbidden', () => {
     const config = { ...DEFAULT_CONFIG, banModels: ['claude-opus-5-5'] };
-    const blocked = withPool(env, 'claude', 'fableWeekly', { usedPercent: 96 });
+    const blocked = withPool(env, 'claude', 'fableWeekly', { usedPercent: 100 });
     const d = route({ needs: fableNeeds, agents: ['claude'] }, blocked, config);
     expect(d).toMatchObject({ downgraded: true, tier: 'daily', route: { model: 'claude-sonnet-5-5', effort: 'high' }, quality: { covers: false, shortfall: 1 } });
     expect(d.warnings).toContain("claude-sonnet-5-5 falls short of the job's needs by 1 band step (agentic); effort is not raised to make up for it: split the job or add stronger checks");
@@ -115,7 +119,7 @@ describe('per-axis routing', () => {
   it('picks an open healthy route over blocked or strained routes', () => {
     // Claude offers Light-cost Haiku (short of the job) and Advanced-cost Opus; the Daily-cost group is Codex and Cursor.
     const e = onlyModels(env, 'claude', ['claude-haiku-5-5', 'claude-opus-5-5']);
-    const blocked = withPool(withPool(e, 'codex', 'weekly', { usedPercent: 96 }), 'cursor', 'bucket:Other Models', { usedPercent: 96 });
+    const blocked = withPool(withPool(e, 'codex', 'weekly', { usedPercent: 100 }), 'cursor', 'bucket:Other Models', { usedPercent: 100 });
     const d = route({ tier: 'daily' }, blocked, DEFAULT_CONFIG);
     expect(d).toMatchObject({ status: 'ok', tier: 'advanced', downgraded: false, route: { agent: 'claude', model: 'claude-opus-5-5' } });
     expect(d.upgraded).toBe(false);
@@ -132,16 +136,16 @@ describe('per-axis routing', () => {
     const tight = withPool(withPool(e, 'cursor', 'bucket:Other Models', { usedPercent: 93 }), 'claude', 'weekly', { usedPercent: 93 });
     const d = route({ tier: 'daily' }, tight, DEFAULT_CONFIG);
     expect(d).toMatchObject({ status: 'ok', tier: 'advanced', downgraded: false });
-    expect(d.warnings).toEqual(['all covering routes with known usage are blocked or expected to end above 90% of their usage window']);
+    expect(d.warnings).toEqual(['selected route is expected to end above 90% of its usage window']);
     // Blocked cheapest group and only strained pricier routes: the job keeps its level on the roomiest
     // strained route that covers it, instead of a downgrade (or a wait with --no-downgrade).
-    const blocked = withPool(withPool(withPool(e, 'codex', 'weekly', { usedPercent: 96 }), 'cursor', 'bucket:Other Models', { usedPercent: 96 }), 'claude', 'weekly', { usedPercent: 93 });
+    const blocked = withPool(withPool(withPool(e, 'codex', 'weekly', { usedPercent: 100 }), 'cursor', 'bucket:Other Models', { usedPercent: 100 }), 'claude', 'weekly', { usedPercent: 93 });
     const kept = route({ tier: 'daily' }, blocked, DEFAULT_CONFIG);
     expect(kept).toMatchObject({ status: 'ok', tier: 'advanced', downgraded: false, route: { agent: 'claude', model: 'claude-opus-5-5' }, quality: { covers: true } });
-    expect(kept.warnings).toContain('all covering routes with known usage are blocked or expected to end above 90% of their usage window');
+    expect(kept.warnings).toContain('selected route is expected to end above 90% of its usage window');
     expect(route({ tier: 'daily', noDowngrade: true }, blocked, DEFAULT_CONFIG)).toMatchObject({ status: 'ok', route: { model: 'claude-opus-5-5' } });
     // With every route blocked, it waits for the earliest reset.
-    const allBlocked = withPool(blocked, 'claude', 'weekly', { usedPercent: 96 });
+    const allBlocked = withPool(blocked, 'claude', 'weekly', { usedPercent: 100 });
     expect(route({ tier: 'daily' }, allBlocked, DEFAULT_CONFIG).status).toBe('wait');
   });
   it('does not pass a group over for a pricier route whose usage is unknown', () => {
@@ -168,7 +172,7 @@ describe('per-axis routing', () => {
     expect(run(changed).route?.model).toBe('claude-fable-5-2-high');
   });
   it('uses Cursor auto only as an allowed, unblocked fallback', () => {
-    const auto = withCursorModels(withPool(env, 'cursor', 'bucket:Other Models', { usedPercent: 96 }), [CURSOR_AUTO]);
+    const auto = withCursorModels(withPool(env, 'cursor', 'bucket:Other Models', { usedPercent: 100 }), [CURSOR_AUTO]);
     const req = { tier: 'frontier' as const, agents: ['cursor'] };
     const d = route(req, auto, DEFAULT_CONFIG);
     expect(d).toMatchObject({ status: 'ok', route: { agent: 'cursor', model: 'auto', effort: null }, quality: null, source: 'auto', confidence: 'medium' });
@@ -176,7 +180,7 @@ describe('per-axis routing', () => {
     expect(d.reasons).toContain('cursor auto: fallback, no named model could be routed (Cursor picks the model)');
     expect(route({ ...req, noDowngrade: true }, auto, DEFAULT_CONFIG).status).toBe('wait');
     expect(route(req, auto, { ...DEFAULT_CONFIG, cursorAuto: false }).status).toBe('wait');
-    expect(route(req, withPool(auto, 'cursor', 'bucket:Cursor Models', { usedPercent: 96 }), DEFAULT_CONFIG).status).toBe('wait');
+    expect(route(req, withPool(auto, 'cursor', 'bucket:Cursor Models', { usedPercent: 100 }), DEFAULT_CONFIG).status).toBe('wait');
     expect(route(req, auto, { ...DEFAULT_CONFIG, banModels: ['auto'] }).status).toBe('wait');
     expect(route({ ...req, effort: 'high' }, onlyModels(auto, 'cursor', ['auto']), DEFAULT_CONFIG).route).toBeUndefined();
     expect(route(req, onlyModels(auto, 'cursor', ['auto']), DEFAULT_CONFIG).route?.model).toBe('auto');
@@ -198,7 +202,7 @@ describe('per-axis routing', () => {
     expect(d.reasons.join('\n')).toContain('preferred route does not cover the job: agentic 78.2 < 80');
   });
   it('tries last-resort named routes before auto', () => {
-    const auto = withCursorModels(withPool(env, 'cursor', 'bucket:Other Models', { usedPercent: 96 }), [CURSOR_AUTO]);
+    const auto = withCursorModels(withPool(env, 'cursor', 'bucket:Other Models', { usedPercent: 100 }), [CURSOR_AUTO]);
     const e = placed({ ...auto, discoveries: [...auto.discoveries, { agent: 'opencode', installed: true, models: [{ agent: 'opencode', modelId: 'claude-opus-5-5', efforts: [], poolNames: [], launch: { kind: 'flag', model: 'claude-opus-5-5' } }] }] });
     const d = route({ tier: 'frontier', excludeAgents: ['claude', 'codex'] }, e, DEFAULT_CONFIG);
     expect(d.route?.agent).toBe('opencode');
@@ -352,7 +356,7 @@ describe('route with synthetic usage', () => {
   });
 
   it('downgrades to Sonnet when the Frontier pool is blocked, keeping the effort and warning about capability', () => {
-    const blocked = withPool(onlyModels(env, 'claude', ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1']), 'claude', 'fableWeekly', { usedPercent: 96 });
+    const blocked = withPool(onlyModels(env, 'claude', ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1']), 'claude', 'fableWeekly', { usedPercent: 100 });
     const d = route({ needs: fableNeeds, agents: ['claude'] }, blocked, DEFAULT_CONFIG);
     expect(d).toMatchObject({ status: 'ok', tier: 'daily', downgraded: true, route: { model: 'claude-sonnet-5-5', effort: 'high' } });
     expect(d.reasons.some((s) => /^downgraded from frontier: /.test(s))).toBe(true);
@@ -365,11 +369,26 @@ describe('route with synthetic usage', () => {
   });
 
   it('waits for the earliest unblocking reset when noDowngrade is set', () => {
-    const blocked = withPool(onlyModels(env, 'claude', ['claude-fable-5-1']), 'claude', 'fableWeekly', { usedPercent: 96 });
+    const blocked = withPool(onlyModels(env, 'claude', ['claude-fable-5-1']), 'claude', 'fableWeekly', { usedPercent: 100 });
     const d = route({ needs: fableNeeds, agents: ['claude'], noDowngrade: true }, blocked, DEFAULT_CONFIG);
     expect(d).toMatchObject({ status: 'wait', waitUntil: 1793282400000, downgraded: false, upgraded: false });
     expect(d.route).toBeUndefined();
     expect(d.alternatives).toContainEqual(expect.objectContaining({ agent: 'claude', model: 'claude-fable-5-1', blocked: true }));
+  });
+
+  it('uses the only top/top/top route at 96%, then downgrades or waits at actual exhaustion', () => {
+    const req = { needs: { coding: 'top', agentic: 'top', reasoning: 'top' } as const, agents: ['claude', 'codex'] };
+    const pair = onlyModels(onlyModels(env, 'claude', ['claude-opus-5-5']), 'codex', ['gpt-6-astra']);
+    const nearlyFull = withPool(pair, 'claude', 'weekly', { usedPercent: 96 });
+    const picked = route(req, nearlyFull, DEFAULT_CONFIG);
+    expect(picked).toMatchObject({ status: 'ok', downgraded: false, route: { model: 'claude-opus-5-5' } });
+    expect(picked.warnings).toContainEqual(expect.stringContaining('weekly quota is 96% used'));
+    const exhausted = withPool(nearlyFull, 'claude', 'weekly', { usedPercent: 100 });
+    expect(route(req, exhausted, DEFAULT_CONFIG)).toMatchObject({ downgraded: true, route: { model: 'gpt-6-astra' } });
+    expect(route({ ...req, noDowngrade: true }, exhausted, DEFAULT_CONFIG)).toMatchObject({
+      status: 'wait', waitUntil: exhausted.usage.claude.pools.weekly.resetsAt,
+    });
+    expect(route(req, withPool(exhausted, 'codex', 'weekly', { usedPercent: 100 }), DEFAULT_CONFIG).status).toBe('wait');
   });
 
   it('routes a top need only to models at or above the top cuts, and reports it as frontier', () => {
@@ -420,9 +439,9 @@ describe('route with synthetic usage', () => {
 
   it('falls back to automatic choice when the preferred model is blocked', () => {
     const pinned: Config = { ...DEFAULT_CONFIG, preferRiskLimit: 1000, pins: { daily: { agent: 'codex', model: 'gpt-6.1-terra' } } };
-    const d = route({ tier: 'daily' }, withPool(env, 'codex', 'weekly', { usedPercent: 97 }), pinned);
+    const d = route({ tier: 'daily' }, withPool(env, 'codex', 'weekly', { usedPercent: 100 }), pinned);
     expect(d.route?.agent).toBe('claude');
-    expect(d.warnings).toContain('preferred codex gpt-6.1-terra skipped: blocked (weekly 97% used, resets in 5d)');
+    expect(d.warnings).toContain('preferred codex gpt-6.1-terra skipped: blocked (weekly 100% used, resets in 5d)');
   });
 
   it('applies an explicit effort exactly, through the flag or the Cursor variant', () => {
@@ -522,10 +541,10 @@ describe('ranking by headroom', () => {
     expect(d.alternatives.find((a) => a.agent === 'codex')?.headroom).toBeCloseTo(0.1925, 3);
   });
 
-  it('a session at its threshold still blocks every Claude model', () => {
-    const d = route({ tier: 'advanced', agents: ['claude'] }, withPool(env, 'claude', 'session', { usedPercent: 91 }), DEFAULT_CONFIG);
+  it('an exhausted session blocks every Claude model', () => {
+    const d = route({ tier: 'advanced', agents: ['claude'] }, withPool(env, 'claude', 'session', { usedPercent: 100 }), DEFAULT_CONFIG);
     expect(d.status).toBe('wait');
-    expect(d.reasons[0]).toMatch(/all advanced candidates blocked: claude claude-sonnet-5-5 \(session 91% used/);
+    expect(d.reasons[0]).toMatch(/all advanced candidates blocked: claude claude-sonnet-5-5 \(session 100% used/);
   });
 
   it('a session on pace to hit its threshold before it resets ranks the route by that session', () => {
@@ -578,7 +597,7 @@ describe('ranking by headroom', () => {
 
 describe('stale usage (graduated)', () => {
   it('31-minute-old usage still blocks: Fable at 96% downgrades to Sonnet, not Fable', () => {
-    const stale = withUsageUpdatedAt(withPool(onlyModels(env, 'claude', ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1']), 'claude', 'fableWeekly', { usedPercent: 96 }), env.now - 31 * 60_000, ['claude']);
+    const stale = withUsageUpdatedAt(withPool(onlyModels(env, 'claude', ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1']), 'claude', 'fableWeekly', { usedPercent: 100 }), env.now - 31 * 60_000, ['claude']);
     const d = route({ needs: fableNeeds, agents: ['claude'] }, stale, DEFAULT_CONFIG);
     expect(d).toMatchObject({ status: 'ok', tier: 'daily', downgraded: true, route: { model: 'claude-sonnet-5-5', effort: 'high' } });
   });
@@ -594,14 +613,14 @@ describe('stale usage (graduated)', () => {
   });
 
   it('3-hour-old usage nulls the headroom and lowers confidence, but blocked pools still block', () => {
-    const stale = withUsageUpdatedAt(withPool(onlyModels(env, 'claude', ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1']), 'claude', 'fableWeekly', { usedPercent: 96 }), env.now - 3 * 3_600_000, ['claude']);
+    const stale = withUsageUpdatedAt(withPool(onlyModels(env, 'claude', ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1']), 'claude', 'fableWeekly', { usedPercent: 100 }), env.now - 3 * 3_600_000, ['claude']);
     const d = route({ needs: fableNeeds, agents: ['claude'] }, stale, DEFAULT_CONFIG);
     expect(d).toMatchObject({ status: 'ok', tier: 'daily', downgraded: true, confidence: 'low', route: { model: 'claude-sonnet-5-5' } });
     expect(d.reasons[0]).toBe('claude claude-sonnet-5-5: usage stale (updated 3h ago)');
-    expect(d.reasons.some((s) => s.startsWith('downgraded from frontier: all frontier candidates blocked: claude claude-fable-5-1 (fableWeekly 96% used'))).toBe(true);
+    expect(d.reasons.some((s) => s.startsWith('downgraded from frontier: all frontier candidates blocked: claude claude-fable-5-1 (fableWeekly 100% used'))).toBe(true);
     const wait = route({ needs: fableNeeds, agents: ['claude'], noDowngrade: true }, stale, DEFAULT_CONFIG);
     expect(wait.status).toBe('wait');
-    expect(wait.alternatives[0]).toMatchObject({ blocked: true, headroom: null, reason: 'blocked: fableWeekly 96% used, resets in 14h' });
+    expect(wait.alternatives[0]).toMatchObject({ blocked: true, headroom: null, reason: 'blocked: fableWeekly 100% used, resets in 14h' });
     // routes with known headroom beat stale-unknown ones
     expect(route({ tier: 'advanced' }, withUsageUpdatedAt(env, env.now - 3 * 3_600_000, ['claude']), DEFAULT_CONFIG).route?.agent).toBe('cursor');
   });
@@ -623,7 +642,7 @@ describe('formatLaunch', () => {
   });
 
   it('is undefined when there is no route', () => {
-    const blocked = withPool(onlyModels(env, 'claude', ['claude-fable-5-1']), 'claude', 'fableWeekly', { usedPercent: 96 });
+    const blocked = withPool(onlyModels(env, 'claude', ['claude-fable-5-1']), 'claude', 'fableWeekly', { usedPercent: 100 });
     expect(formatLaunch(route({ tier: 'frontier', agents: ['claude'], noDowngrade: true }, blocked, DEFAULT_CONFIG))).toBeUndefined();
   });
 });
@@ -781,7 +800,7 @@ describe('Grok, Antigravity and Muse', () => {
 
   it('blocks Gemini and Claude routes alike when the Antigravity session is full', () => {
     const pools = ext.usage.antigravity.pools;
-    const full = withUsage('antigravity', { pools: { ...pools, session: { ...pools.session, usedPercent: 92 } } });
+    const full = withUsage('antigravity', { pools: { ...pools, session: { ...pools.session, usedPercent: 100 } } });
     expect(route({ tier: 'light', agents: ['antigravity'], noDowngrade: true }, full, config).status).toBe('wait');
     expect(route({ tier: 'daily', agents: ['antigravity'], noDowngrade: true }, full, config).status).toBe('wait');
   });
@@ -931,7 +950,7 @@ describe('preferences', () => {
 
   it('still excludes a blocked or banned favorite when every alternative is risky', () => {
     const competing = withPool(env, 'claude', 'weekly', { usedPercent: 70, resetsAt: env.now + 0.6 * 10080 * 60_000 });
-    const blocked = withPool(competing, 'codex', 'weekly', { usedPercent: 97 });
+    const blocked = withPool(competing, 'codex', 'weekly', { usedPercent: 100 });
     const request: RouteRequest = { tier: 'advanced', agents: ['codex', 'claude'] };
     const pinned = prefer({ advanced: { agent: 'codex', model: 'gpt-6.1-sol' } });
     expect(route(request, blocked, pinned).route?.agent).toBe('claude');
@@ -1005,7 +1024,7 @@ describe('last-resort agents (OpenCode)', () => {
   });
 
   it('come after a downgrade, but before waiting', () => {
-    const blocked = withPool(onlyModels(withOc, 'claude', ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1']), 'claude', 'fableWeekly', { usedPercent: 96 });
+    const blocked = withPool(onlyModels(withOc, 'claude', ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1']), 'claude', 'fableWeekly', { usedPercent: 100 });
     const req = { needs: fableNeeds, excludeAgents: ['codex', 'cursor'] };
     expect(route(req, blocked, DEFAULT_CONFIG)).toMatchObject({ downgraded: true, route: { agent: 'claude', model: 'claude-sonnet-5-5' } });
     const d = route({ ...req, noDowngrade: true }, blocked, DEFAULT_CONFIG);

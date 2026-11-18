@@ -37,7 +37,7 @@ interface Candidate {
   below: ReturnType<typeof coverage>['below'];
   weightedScore: number;
   /**
-   * Headroom of the ranked pool: the long pool, or session pool on pace to hit its block threshold before
+   * Headroom of the ranked pool: the long pool, or session pool on pace to hit its warning threshold before
    * it resets, with the lowest `rank`; the session pool when there is no long one.
    */
   headroom: number | null;
@@ -45,10 +45,11 @@ interface Candidate {
   rank: number | null;
   /** The ranked pool with the least headroom, i.e. the one that constrains this route. */
   tightest?: { pool: UsagePool; elapsed: number };
-  /** A session pool within 20 points of its block threshold: reported, and a tiebreak after headroom. */
+  /** A session pool within 20 points of its warning threshold: reported, and a tiebreak after headroom. */
   hotSession?: UsagePool;
   blocked: boolean;
-  /** Not blocked, but expected to end its usage window above `usageRiskLimit`: avoided while a route below the limit covers the job. */
+  nearLimitPools: UsagePool[];
+  /** Expected to end above usageRiskLimit. Advisory only. */
   strained: boolean;
   blockedPools: UsagePool[];
   expiredPools: string[];
@@ -192,8 +193,11 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
       reasons.push(`upgraded from ${requested}: no model in the ${requested} cost tier covers the job`);
       warnings.push(`no model in the ${requested} cost tier covers the job; using ${cand.tier}`);
     }
-    if (automaticPick && cand.strained) {
-      warnings.push(`all covering routes with known usage are blocked or expected to end above ${config.usageRiskLimit}% of their usage window`);
+    for (const pool of cand.nearLimitPools) {
+      warnings.push(`${poolLabel(pool.name)} quota is ${percent(pool.reportedUsedPercent ?? pool.usedPercent)} used; resets in ${duration(pool.resetsAt - env.now)}`);
+    }
+    if (cand.strained) {
+      warnings.push(`selected route is expected to end above ${config.usageRiskLimit}% of its usage window`);
     }
     if (automaticPick && cand.rank !== null) {
       const penalty = pricePenalty(cand, config);
@@ -422,7 +426,7 @@ function evaluate(model: PlacedModel, env: Environment, config: Config, needs: N
   };
   const base: Candidate = {
     model, tier: model.profile.cost?.tier ?? null, quality: auto ? null : quality, below: adequacy.below, weightedScore: needWeightedScore(model.profile, needs),
-    headroom: null, rank: null, blocked: false, strained: false, blockedPools: [], expiredPools: [], confidence: 'low', projections: {}, handoutMinutes: config.handoutMinutes, handoutPercent: config.handoutPercent,
+    headroom: null, rank: null, blocked: false, strained: false, nearLimitPools: [], blockedPools: [], expiredPools: [], confidence: 'low', projections: {}, handoutMinutes: config.handoutMinutes, handoutPercent: config.handoutPercent,
   };
   if (model.poolNames.length === 0) return { ...base, usageNote: `no usage window: ${model.billing ?? 'limits not tracked'}` };
   const usage = env.usage[model.agent];
@@ -439,12 +443,15 @@ function evaluate(model: PlacedModel, env: Environment, config: Config, needs: N
   for (const name of model.poolNames) {
     const pool = usage.pools[name];
     if (!pool) continue;
-    const state = poolState(pool, env.now, config.thresholds);
+    const state = poolState(pool, env.now);
     if (state.expired) {
       base.expiredPools.push(name);
       lowered = true;
       continue;
     }
+    const warningThreshold = pool.kind === 'session' ? config.thresholds.sessionPercent : config.thresholds.longPercent;
+    const nearLimit = (pool.reportedUsedPercent ?? pool.usedPercent) >= warningThreshold;
+    if (nearLimit && !state.blocked) base.nearLimitPools.push(pool);
     if (state.blocked) {
       base.blocked = true;
       base.blockedPools.push(pool);
@@ -459,8 +466,8 @@ function evaluate(model: PlacedModel, env: Environment, config: Config, needs: N
       long = lower(long, ranked);
     } else {
       session = lower(session, ranked);
-      // A session counts once its pace would hit the block threshold before it resets.
-      if (!projected.tooEarly && projected.projectedPercent >= config.thresholds.sessionPercent) bindingSession = lower(bindingSession, ranked);
+      // A session counts once its pace would hit the warning threshold before it resets.
+      if (nearLimit || (!projected.tooEarly && projected.projectedPercent >= config.thresholds.sessionPercent)) bindingSession = lower(bindingSession, ranked);
     }
   }
   const ranked = long ? (bindingSession ? lower(long, bindingSession) : long) : session;
@@ -509,18 +516,17 @@ function rankCovering(candidates: Candidate[], config: Config): Candidate[] {
     score: (candidate.rank ?? 0) * 100 - pricePenalty(candidate, config),
   })).sort((left, right) => {
     const a = left.candidate, b = right.candidate;
-    if (a.blocked !== b.blocked || (a.rank === null) !== (b.rank === null) || a.strained !== b.strained) {
+    if (a.blocked !== b.blocked || (a.rank === null) !== (b.rank === null)) {
       return compareRanked(a, b);
     }
     return right.score - left.score || compareRanked(a, b);
   }).map(({ candidate }) => candidate);
 }
 
-/** Usage order: unblocked first, then known usage, then below the usage risk limit, then most headroom, ending in a total order for determinism. */
+/** Usage order: unblocked first, then known usage, then most headroom, ending in a total order for determinism. */
 function compareRanked(a: Candidate, b: Candidate): number {
   if (a.blocked !== b.blocked) return a.blocked ? 1 : -1;
   if ((a.rank === null) !== (b.rank === null)) return a.rank === null ? 1 : -1;
-  if (a.strained !== b.strained) return a.strained ? 1 : -1;
   if (a.rank !== null && b.rank !== null && a.rank !== b.rank) return b.rank - a.rank;
   if (!!a.hotSession !== !!b.hotSession) return a.hotSession ? 1 : -1;
   const conf = CONFIDENCE_ORDER.indexOf(a.confidence) - CONFIDENCE_ORDER.indexOf(b.confidence);

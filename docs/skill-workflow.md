@@ -123,7 +123,7 @@ worker `verify` called `started`. Details: [Verify and rejections](verify-and-re
 | --- | --- |
 | `downgraded: true` | Mention the downgrade and reason in the worker's task spec. Effort is not raised to make up for a weaker model; narrow the task or add checks |
 | `upgraded: true` | Surface the warning. Happens only when the requested and all lower tiers have no candidates |
-| warning `all covering routes with known usage are blocked or expected to end above ...` | The router selected a strained route. Relay the warning and keep the job small |
+| warning `selected route is expected to end above ...` | The router selected a strained route. Relay the warning and keep the job small |
 | `effort.applied` | `flag`, `model-id`, or `provider-default` (the agent decides). Never claim an effort was set when it is `provider-default` |
 | warning `… is a last-resort agent …` | The route costs money per token or runs on this machine; tell the user before launching several workers on it |
 | `status: "wait"` | Read `waitUntil` (epoch ms). Wait, or retry without `--no-downgrade` if the user allows a downgrade |

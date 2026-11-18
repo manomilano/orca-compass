@@ -113,7 +113,7 @@ source fields and `placementsBuiltAt`:
 | `confidence` | `high`, `medium`, `low` |
 | `risk` | `{ pool, usedPercent, elapsedPercent, projectedPercent, tooEarly, resetsAt }` for the route; `null` when usage is unknown |
 | `reasons` | One line per fact behind the choice; the needs line includes `covering routes: 3 across all cost tiers`, and a route adds `cost: daily ($4.00/M blended, maker price)` (tier, count, price and source vary) |
-| `warnings` | Downgrade, upgrade, skipped preference, last-resort use, every covering route above `usageRiskLimit` |
+| `warnings` | Downgrade, upgrade, skipped preference, last-resort use, high reported usage or a forecast above `usageRiskLimit` on the selected route |
 | `alternatives` | Up to five other candidates in decision order. For an ordinary covering pick these can span all cost tiers. Fields include `agent`, `model`, `effort`, `tier`, `headroom` (fraction, or `null`), `confidence`, `blocked`, `risk`, `reason` |
 | `skipped` | `{ agent, model?, reason }` for excluded agents and skipped models, including per-axis shortfalls. Superseded releases and no-ZDR exclusions are omitted. Preference exclusions appear in `warnings` |
 | `waitUntil` | Earliest known time (epoch ms) when a candidate considered for waiting clears all its blocking pools |

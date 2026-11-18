@@ -113,8 +113,8 @@ pool's reset time has already passed. See
 - `none` with `all <tier> candidates blocked`: every model of that tier is at
   or above its usage limit, and neither a pricier nor a lower tier can take the job.
 - A pricier model than expected: compare the pick and runner-up in
-  `reasons`. A cheaper model may be blocked, strained, missing usage
-  data or a lower combined headroom and price score.
+  `reasons`. A cheaper model may be exhausted, lack usage data,
+  or have a lower combined headroom and price score.
 - `wait`: you passed `--no-downgrade` and every route that covers the job is
   blocked.
   `waitUntil` says when the first candidate resets.

@@ -14,9 +14,9 @@ through Claude Code and Cursor can draw on different quotas.
 - **Check capability.** A regular candidate must meet every required axis and
   support any exact effort requested. Models from all cost tiers can qualify.
 - **Check quota.** Read the pools assigned to each route, including recent
-  hand-outs. By default, 95% used in a long window or 90% in a session blocks
-  the route. Among open routes, prefer known healthy usage, then known strained
-  usage, then unknown usage. Expected use above 90% at reset is strained.
+  hand-outs. A route is exhausted when Orca reports 100% or more in any active
+  required pool. Recent hand-outs affect its score only. Open routes with known
+  usage compete across tiers. A forecast above 90% at reset triggers a warning.
 - **Score the eligible routes.** Start with the percentage expected to remain
   at reset in the limiting pool. Positive headroom counts in full for a reset
   within seven days and is discounted for a later reset. Subtract the price
@@ -125,7 +125,7 @@ Change the cost thresholds with `costBands` or move a model with
 
 ## 5. Compare subscription headroom and price
 
-OrcaCompass estimates what will remain at reset. Among healthy measured
+OrcaCompass estimates what will remain at reset. Among open measured
 routes, subtract up to five price points from reset-adjusted headroom. The highest score wins.
 For example, consider these routes when the other qualifying routes have
 less headroom or share the same pools at higher prices.
@@ -136,10 +136,9 @@ less headroom or share the same pools at higher prices.
 | Claude Code, Sonnet 5.5 | weekly reset less than a day ago | 55% |
 | Cursor, Sonnet 5.5 or Gemini 4 Carbon | 76% used, 78% of the window gone | 3% |
 
-A route at or over a limit is blocked and skipped. A route expected to end
-its usage window above `usageRiskLimit` (90%) is strained: it ranks after the
-healthy measured routes. If every measured open route is strained, the same
-weighted score applies and the decision carries a warning. In this
+A measured route at 96% can still win when it is the only capable choice.
+At 100% reported usage it is blocked until reset. The selected route carries
+a warning if the expected use at reset exceeds `usageRiskLimit` (90%). In this
 example Sol and Sonnet qualify for the price comparison; they have the same
 price, so Sol wins on headroom. Routes handed out in the
 last `handoutMinutes` (10) count as `handoutPercent` (5%) more usage, so

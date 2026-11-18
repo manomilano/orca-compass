@@ -55,8 +55,9 @@ expresses capability needs, so a covering pick may have a cheaper cost tier.
 
 A model covers a job when every required axis meets its cut. All covering
 routes that support the requested effort compete across cost tiers. Open
-routes with known usage rank first, with healthy usage ahead of strained
-usage (expected use above `usageRiskLimit`, default 90%). Unknown usage is
+routes with known usage compete on the same score up to actual exhaustion
+(100% reported in any active required pool). A forecast above `usageRiskLimit`
+adds a warning to the selected route. Unknown usage is
 a fallback, and blocked routes cannot win. If all covering routes are
 blocked, routing can downgrade by smallest shortfall or wait with
 `--no-downgrade`.

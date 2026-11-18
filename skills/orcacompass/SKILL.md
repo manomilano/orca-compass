@@ -178,7 +178,7 @@ route without `--effort`.
    has no model selection flag.
 
 3. Compare all qualifying routes across cost tiers. Among unblocked routes,
-   known usage takes priority, then standing under `usageRiskLimit` (90%).
+   known usage takes priority. A pool blocks only at 100% reported usage.
    Choose the highest ranked headroom in points minus a price adjustment of up to five points.
    Parse JSON and inspect `status`, `reasons`, `warnings`, `confidence`,
    `downgraded`, and `upgraded`. Exit code 0 alone does not mean a route exists.
@@ -250,8 +250,8 @@ route without `--effort`.
   several workers on it.
 - `upgraded: true`: surface the warning. The covering pick's cost tier is
   higher than the requested tier because no cheaper route covers the job.
-- A warning that all covering routes with known usage are blocked or
-  expected to exceed the limit means the selected route is strained.
+- A quota or forecast warning means the selected route is close to its
+  usage limit or expected to exceed the configured forecast threshold.
   Relay the warning to the user.
 - `status: "wait"`: inspect `waitUntil` (epoch milliseconds); wait until reset
   or retry without `--no-downgrade` if user constraints permit a downgrade.

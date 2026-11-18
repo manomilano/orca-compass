@@ -40,7 +40,11 @@ export function applyHandouts(usage: Record<AgentId, AgentUsage>, live: Handout[
   for (const h of live) for (const name of new Set(h.pools)) {
     const agent = Object.hasOwn(result, h.agent) ? result[h.agent] : undefined;
     const pool = agent && Object.hasOwn(agent.pools, name) ? agent.pools[name] : undefined;
-    if (pool) { pool.usedPercent += percent; pool.handouts = (pool.handouts ?? 0) + 1; }
+    if (pool) {
+      pool.reportedUsedPercent ??= pool.usedPercent;
+      pool.usedPercent += percent;
+      pool.handouts = (pool.handouts ?? 0) + 1;
+    }
   }
   return result;
 }
