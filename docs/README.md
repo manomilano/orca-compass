@@ -17,8 +17,8 @@ New here? Start with [Getting started](getting-started.md): install with
 
 | Page | Read it for |
 | --- | --- |
-| [Getting started](getting-started.md) | Install, first-time setup (terminal or chat), what runs on every call |
-| [How it works, end to end](how-it-works.md) | One job followed through every step: needs, evidence, cost tier, usage, launch |
+| [Getting started](getting-started.md) | Install, first-time setup (terminal or chat), first check |
+| [How it works, end to end](how-it-works.md) | One job followed through every step: needs, evidence, cost tier, usage, launch; what every call reads and caches |
 | [Skill workflow](skill-workflow.md) | How the orchestrator uses the Skill: rate, route, launch, verify, handle the result |
 | [Examples](examples.md) | Worked examples of routing and verification |
 | [Verify and rejections](verify-and-rejections.md) | Checking that a worker's agent accepted its model, and routing around refusals |

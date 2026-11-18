@@ -1,11 +1,11 @@
 ---
-description: Install OrcaCompass, complete setup, and understand what routing reads and caches.
+description: Install OrcaCompass, complete setup, and check your first route.
 ---
 
 # Getting started
 
 Three steps: install OrcaCompass, choose your setup preferences, and check
-your first route. Other install options and what each call reads come after.
+your first route. Other install options come after.
 
 ## Quick start
 
@@ -247,74 +247,3 @@ orcacompass install --skill-only --global
 
 `npm ci` installs the build tools and compiles the CLI. `--skill-only` installs
 the Skill from the checkout and leaves the CLI you just installed alone.
-
-## What runs on every call
-
-`route`, `status`, the `agents` listing, `setup`, setting a `prefer` entry,
-`ban` (including its listing) and `unban` gather the same picture of your
-machine (`src/routing/environment.ts`). `tiers` and `ranking` load the
-placement table without live usage; both can rebuild it when stale.
-
-The **placement table** holds every model's tiers, built from every source
-and kept for `placementsTtlHours` (5 hours by default). A **route** is the
-recommended agent, model and effort, chosen using that table and live usage.
-The optional `--tier-reason` is the
-coordinator's short explanation, returned with the decision. The coordinator
-classifies the task using the Skill's rubric. OrcaCompass does not call a
-model for classification.
-
-1. **Load config** from the platform path (see [Configuration](configuration.md));
-   a missing file means defaults, an invalid one is exit code 2.
-2. **Gather in parallel:** load the placement table, read usage, and read
-   Orca's agent switches. The following entries describe those branches, not
-   a sequential series of waits.
-
-   **Read the placement table** from the cache. When it is missing, older
-   than `placementsTtlHours`, from another OrcaCompass version, built with
-   other `tierOverrides` or `costBands`, an older placement schema, a changed
-   evidence generation recorded in `evidence-check.json`, a future build time,
-   or a newly detected agent, it is rebuilt. The manifest checks the repository evidence
-   snapshot with cached and bundled fallbacks (24 hours by default).
-
-   **Discover agents** in parallel. For each one: find the executable,
-   read its model list, note its effort levels and which usage pools it draws
-   on. Live listings (`cursor-agent models`, `agy models`, `opencode models`,
-   and `grok models` when `~/.grok/models_cache.json` is empty) run with a
-   30 s timeout; a nonempty successful listing is saved and reused if a later command fails
-   or produces no parsed models. If no models were parsed and the output
-   asks you to sign in, the agent is marked `not signed in` instead.
-   `agy models` runs with its background auto-updater off, so listing models
-   never updates Antigravity; `agy` still updates itself when you or Orca run it.
-
-   **Profile every model** with raw evidence scores and a separate cost tier
-   from user `tierOverrides`, then snapshot prices (3:1 input/output blend, `costBands` default `[1, 5, 12]`),
-   falling back to hints and evidence class without a price. `orcacompass ranking`
-   is the evidence view; `orcacompass tiers` groups by cost tier and
-   `orcacompass tiers --axis coding` shows evidence bands.
-3. **Read usage** with `orca account list --json` (20 s timeout). The usage reader covers all supported agents except OpenCode,
-   which has no usage entry. Each covered agent gets a status (`ok`, `unavailable`, `unknown`) and its usage pools. A pool with a
-   missing number is skipped, never read as 0%. This is the only child command a
-   route runs when the table is fresh; local files and executable locations
-   are still checked.
-4. **Read Orca's agent switches**, read-only, from the active profile's
-   `profile-state.db` (or `orca-data.json`). Anything unexpected is `unknown`
-   and excludes nobody.
-5. **Apply recent [hand-outs](tiers-and-routing.md#usage-headroom-and-pace)**
-   to known usage pools, then **load rejections**:
-   models an agent refused at launch, saved by `verify`,
-   still younger than `rejectionTtlHours`.
-
-Then the pure routing core (`src/routing/router.ts`, no I/O) turns that
-environment, your request and your config into a `Decision`: every model that
-covers the job competes, from all cost tiers, and the score is the route's
-usage headroom minus a price adjustment of at most five points. Setup and
-status show a pick from another cost tier with a label such as
-`(daily cost tier)` for Advanced needs; a cheaper covering pick is not a
-downgrade. See
-[Tiers and routing](tiers-and-routing.md).
-
-Each evidence HTTP request has a 10 s timeout (manifest, then snapshot when
-needed); live model listings have 30 s each and usage has 20 s. These limits
-apply to individual operations, not the total call. See
-[The first call is slow](troubleshooting.md#the-first-call-is-slow) for how
-the concurrent operations affect waiting time.

@@ -99,27 +99,6 @@ runtime. The user guide builds on Linux in CI, where the built site is also
 verified. CI runs on every pull request,
 including pull requests from forks, with read-only access and no secrets.
 
-## Releases
-
-Anyone can contribute; only the maintainer releases. A release is never a side
-effect of merging or of pushing a tag.
-
-1. A pull request raises `version` in `package.json` and `package-lock.json`,
-   updates `tests/version.test.ts`, and adds a `## <version>` section to
-   `CHANGELOG.md`. Releases raise the patch number (0.2.1, then 0.2.2); a
-   minor or major step is the maintainer's decision.
-2. After the merge, the maintainer runs the **Release** workflow on `main`
-   (`gh workflow run release.yml --ref main`). It refuses a version that is
-   already on npm or has no changelog section, then repeats every CI check,
-   including the installer check, on all three systems.
-3. The publish job waits for the maintainer's approval in the `npm`
-   environment. It publishes to npm through trusted publishing (the
-   repository stores no npm token), then creates the `v<version>` tag and the
-   GitHub release from the changelog section.
-
-Run it with `-f dry_run=true` to do everything except publish. Do not create
-version tags by hand; the workflow creates them after a successful publish.
-
 ## User guide
 
 For model-data updates, follow [Model data](./model-data.md). Review changes
@@ -253,3 +232,24 @@ include a concrete before/after example for routing changes.
 - [ ] Fixtures and diagnostics contain no credentials or personal/account data.
 - [ ] Metadata attribution and the existing license are preserved.
 - [ ] Files served from `main` (see above) stay present and readable by older releases.
+
+## Releases
+
+Anyone can contribute; only the maintainer releases. A release is never a side
+effect of merging or of pushing a tag.
+
+1. A pull request raises `version` in `package.json` and `package-lock.json`,
+   updates `tests/version.test.ts`, and adds a `## <version>` section to
+   `CHANGELOG.md`. Releases raise the patch number (0.2.1, then 0.2.2); a
+   minor or major step is the maintainer's decision.
+2. After the merge, the maintainer runs the **Release** workflow on `main`
+   (`gh workflow run release.yml --ref main`). It refuses a version that is
+   already on npm or has no changelog section, then repeats every CI check,
+   including the installer check, on all three systems.
+3. The publish job waits for the maintainer's approval in the `npm`
+   environment. It publishes to npm through trusted publishing (the
+   repository stores no npm token), then creates the `v<version>` tag and the
+   GitHub release from the changelog section.
+
+Run it with `-f dry_run=true` to do everything except publish. Do not create
+version tags by hand; the workflow creates them after a successful publish.

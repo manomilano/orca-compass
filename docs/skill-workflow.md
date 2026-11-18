@@ -49,13 +49,16 @@ Use these commands to write config; do not edit it by hand. The user can
 also run `orcacompass setup` in a terminal. See
 [First-time setup](getting-started.md#first-time-setup).
 
-## Rate the work
+## The five steps for each job {#rate-the-work}
+
+For each job the orchestrator rates it, requests a route, launches the worker,
+verifies the launch and handles the result.
+
+### 1. Rate the job
 
 Rate capability needs and effort demand separately using the packaged Skill's
 rubric below. [Favorites](tiers-and-routing.md#preferences-pins) still apply
 per requested tier.
-
-### 1. Rate the job
 
 Rate all three needs from the work itself, regardless of spare capacity:
 

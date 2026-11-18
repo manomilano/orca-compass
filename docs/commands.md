@@ -12,6 +12,8 @@ Code: `src/cli.ts`.
 
 | Command | What it does | Section |
 | --- | --- | --- |
+| `install` | Installs or updates the CLI, then its matching Skill | [`install`](#install) |
+| `setup` | First-time setup, in a terminal or from chat | [`setup`](#setup) |
 | `route` | Recommends an agent, model and effort for a job | [`route`](#route) |
 | `verify` | Checks whether a just-started worker's agent accepted its model | [`verify`](#verify) |
 | `rejected` | Lists or clears models agents refused at launch | [`rejected`](#rejected) |
@@ -22,8 +24,6 @@ Code: `src/cli.ts`.
 | `prefer` | Lists or sets a favorite route per tier and its risk limit | [`prefer`](#prefer) |
 | `ban` / `unban` | Lists, adds or removes model and family bans | [`ban` / `unban`](#ban-unban) |
 | `refresh` | Downloads fresh model metadata, rebuilds the placement table | [`refresh`](#refresh) |
-| `setup` | First-time setup, in a terminal or from chat | [`setup`](#setup) |
-| `install` | Installs or updates the CLI, then its matching Skill | [`install`](#install) |
 | `update` | Fetches the latest release and runs its installer | [`update`](#update) |
 | `uninstall` | Removes the Skill; a full `--global` run also removes the CLI | [`uninstall`](#uninstall) |
 
@@ -111,6 +111,81 @@ Unknown agent ids are handled differently by command:
 | 0 | Answered. For `route` this covers `ok`, `wait` **and** `none`: check `status` in the output |
 | 1 | Usage error (bad flag, unknown agent, missing argument) or runtime error; also `setup` canceled with Ctrl+C (answering no to "Save" exits 0) |
 | 2 | Config error: `config error: <path>: <message>` |
+
+## `install`
+
+Installs or updates the CLI, then the Skill that matches its version.
+
+Run `npx orcacompass install` from your project.
+
+| Flag | Meaning |
+| --- | --- |
+| `-g`, `--global` | Install the Skill user-wide |
+| `-l`, `--local` | Accepted as the project default; it cannot be combined with `--global` and is not passed to the Skill installer |
+| `-y`, `--yes` | Passed to the Skill installer, which then accepts its defaults |
+| `-a`, `--agent <name>` | Repeatable. Passed to the Skill installer |
+| `--skill-only` | Skip the CLI check and installation entirely |
+
+The default is a project Skill. Without `--global`, the interactive Skill
+installer may ask Project or Global; keep its Project default for a local
+installation.
+
+Steps:
+
+1. Unless `--skill-only` is given, read the globally installed version with
+   `npm ls --global`. Install a missing or older CLI with
+   `npm install -g orcacompass@<this version>`; keep an already current CLI.
+   An older installer refuses to downgrade a newer CLI or replace its Skill.
+   Copies in npx's cache or project-local installations do not count as global
+   installations.
+2. After the CLI step succeeds, install the Skill with
+   `npx -y skills@1 add <package folder>`, the
+   [`skills`](https://github.com/vercel-labs/skills) installer pointed at the
+   Skill inside this package, so the Skill matches this CLI version.
+
+Both steps run attached to the terminal, so their questions and output reach
+you. Without a terminal it exits 1 unless `--yes` is given. It exits 1 when
+either step fails, naming the step that failed and how to finish by hand.
+
+::: info Windows
+OrcaCompass disables telemetry only in its `skills` subprocesses to avoid an
+upstream shutdown crash. It does not change your environment or npm's settings.
+:::
+
+## `setup`
+
+First-time setup of agents, favorites and bans. See
+[Getting started](getting-started.md#first-time-setup) for the questions.
+
+| Form | What it does |
+| --- | --- |
+| `setup` | Interactive questions and a summary in a terminal; nothing is saved until you confirm. Without a terminal it exits 1 |
+| `setup --json` | Prints what the questions need, for an orchestrator asking them in chat |
+| `setup --complete` | Marks chat setup complete, including unchanged defaults |
+| `setup --skip` | Declines setup: keeps existing settings or defaults and stops the chat offer |
+
+`--complete` and `--skip` cannot be combined.
+
+`setup --json` prints one document:
+
+| Field | Content |
+| --- | --- |
+| `configPath`, `configExists` | Where the config lives and whether it exists |
+| `orcaAgents` | Orca's agent switches as read, or why they are unknown |
+| `config` | Current `allowAgents`, `denyAgents`, `pins`, `preferRiskLimit`, `banModels` |
+| `defaultPreferRiskLimit` | 100 |
+| `agents` | `agent`, `installed`, `enabledInOrca`, `orcaUsage`, `models` (count), `chosen`, `preselected` (in the default answer to question 1), `verdict` |
+| `tiers` | Per tier: `pick`, `preferred`, `options` (agent, `model` to prefer, `blocked`, `onPacePercent`, `reason`), `warnings` |
+| `families` | Each discovered family with its models and whether it is banned |
+
+`setup --complete` creates an empty config when absent and preserves an
+existing file, so `configExists` becomes true even when all answers kept their
+defaults. Text output is `Setup complete. Config: <path>`; with `--json` it
+returns the same document as `setup --json`.
+
+`setup --skip` writes an empty `{}` config file when none exists, so the Skill
+stops offering setup; defaults then apply (agents follow Orca's switches).
+`setup --skip --json` returns `{ configPath, agentsUsed, orcaAgents }`.
 
 ## `route`
 
@@ -422,81 +497,6 @@ key, then rebuilds placements. It does not read Orca usage. If the network
 fails, a valid cached or bundled snapshot is used and a message on stderr says
 which. JSON returns `{ evidence, placements }`; `placements` holds `builtAt`,
 `models` and `agents` (counts).
-
-## `setup`
-
-First-time setup of agents, favorites and bans. See
-[Getting started](getting-started.md#first-time-setup) for the questions.
-
-| Form | What it does |
-| --- | --- |
-| `setup` | Interactive questions and a summary in a terminal; nothing is saved until you confirm. Without a terminal it exits 1 |
-| `setup --json` | Prints what the questions need, for an orchestrator asking them in chat |
-| `setup --complete` | Marks chat setup complete, including unchanged defaults |
-| `setup --skip` | Declines setup: keeps existing settings or defaults and stops the chat offer |
-
-`--complete` and `--skip` cannot be combined.
-
-`setup --json` prints one document:
-
-| Field | Content |
-| --- | --- |
-| `configPath`, `configExists` | Where the config lives and whether it exists |
-| `orcaAgents` | Orca's agent switches as read, or why they are unknown |
-| `config` | Current `allowAgents`, `denyAgents`, `pins`, `preferRiskLimit`, `banModels` |
-| `defaultPreferRiskLimit` | 100 |
-| `agents` | `agent`, `installed`, `enabledInOrca`, `orcaUsage`, `models` (count), `chosen`, `preselected` (in the default answer to question 1), `verdict` |
-| `tiers` | Per tier: `pick`, `preferred`, `options` (agent, `model` to prefer, `blocked`, `onPacePercent`, `reason`), `warnings` |
-| `families` | Each discovered family with its models and whether it is banned |
-
-`setup --complete` creates an empty config when absent and preserves an
-existing file, so `configExists` becomes true even when all answers kept their
-defaults. Text output is `Setup complete. Config: <path>`; with `--json` it
-returns the same document as `setup --json`.
-
-`setup --skip` writes an empty `{}` config file when none exists, so the Skill
-stops offering setup; defaults then apply (agents follow Orca's switches).
-`setup --skip --json` returns `{ configPath, agentsUsed, orcaAgents }`.
-
-## `install`
-
-Installs or updates the CLI, then the Skill that matches its version.
-
-Run `npx orcacompass install` from your project.
-
-| Flag | Meaning |
-| --- | --- |
-| `-g`, `--global` | Install the Skill user-wide |
-| `-l`, `--local` | Accepted as the project default; it cannot be combined with `--global` and is not passed to the Skill installer |
-| `-y`, `--yes` | Passed to the Skill installer, which then accepts its defaults |
-| `-a`, `--agent <name>` | Repeatable. Passed to the Skill installer |
-| `--skill-only` | Skip the CLI check and installation entirely |
-
-The default is a project Skill. Without `--global`, the interactive Skill
-installer may ask Project or Global; keep its Project default for a local
-installation.
-
-Steps:
-
-1. Unless `--skill-only` is given, read the globally installed version with
-   `npm ls --global`. Install a missing or older CLI with
-   `npm install -g orcacompass@<this version>`; keep an already current CLI.
-   An older installer refuses to downgrade a newer CLI or replace its Skill.
-   Copies in npx's cache or project-local installations do not count as global
-   installations.
-2. After the CLI step succeeds, install the Skill with
-   `npx -y skills@1 add <package folder>`, the
-   [`skills`](https://github.com/vercel-labs/skills) installer pointed at the
-   Skill inside this package, so the Skill matches this CLI version.
-
-Both steps run attached to the terminal, so their questions and output reach
-you. Without a terminal it exits 1 unless `--yes` is given. It exits 1 when
-either step fails, naming the step that failed and how to finish by hand.
-
-::: info Windows
-OrcaCompass disables telemetry only in its `skills` subprocesses to avoid an
-upstream shutdown crash. It does not change your environment or npm's settings.
-:::
 
 ## `update`
 
