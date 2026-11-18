@@ -37,10 +37,11 @@ const readable = `daily → claude · claude-sonnet-5-5 · medium (high confiden
 </script>
 
 <template>
-  <section id="demo" class="landing-section oc-tone-deep oc-chart-grid" aria-labelledby="demo-title">
+  <section id="demo" class="landing-section landing-section--alt" aria-labelledby="demo-title">
     <div class="oc-container">
       <SectionHeading id="demo-title" title="Read a route and its reasons" lead="Illustrative routes show what your orchestrator receives and how it uses the result." />
-      <div class="demo-terminal">
+      <!-- Always dark, like the route chart above: a screen set on the page. -->
+      <div class="demo-terminal oc-tone-deep">
         <div class="demo-terminal__label"><span>OrcaCompass / routing log</span><span>Illustrative examples</span></div>
         <div class="demo-tabs" :role="ready ? 'tablist' : undefined" aria-label="Routing examples">
           <!-- VitePress captures anchor clicks before Vue; buttons switch in place after hydration. -->
