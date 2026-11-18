@@ -18,8 +18,8 @@ import LandingWorkflow from './LandingWorkflow.vue'
 <template>
   <div class="landing">
     <LandingHero />
-    <LandingQuickStart />
     <LandingStory />
+    <LandingQuickStart />
     <LandingDocsMap />
     <LandingWorkflow />
     <LandingRouteDemo />
