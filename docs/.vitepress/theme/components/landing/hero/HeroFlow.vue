@@ -41,7 +41,7 @@ const workers = [
   { job: 'Design the levels', agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium' },
   { job: 'Add the start screen', agent: 'claude', model: 'claude-haiku-5-5', effort: 'low' },
   { job: 'Write the enemy AI', agent: 'claude', model: 'claude-sonnet-5-5', effort: 'high' },
-  { job: 'Add touch controls', agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium' },
+  { job: 'Add keyboard controls', agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium' },
   { job: 'Save the high scores', agent: 'codex', model: 'gpt-6.1-terra', effort: 'low' },
 ].map((worker, i) => {
   const y = 251 + (i % SLOTS) * 58
