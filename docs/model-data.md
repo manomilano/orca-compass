@@ -20,7 +20,9 @@ which.
 
 Curated rows can also carry pricing and a `fallback` model id. On axes where
 the curated model has no score, the fallback model's score stands in, labelled
-`assumed` (Composer 2.5 takes its agentic score from Kimi K2.5). The snapshot
+`assumed`. The current LLMBenchmark dataset has no entry for Composer 2.5,
+so it takes all three capability scores from Kimi K2.5. Its price comes from
+Cursor. A future LLMBenchmark score for Composer takes priority on that axis. The snapshot
 omits missing or unusable dataset prices; schema 1 still accepts rows without pricing.
 
 The blended price feeds both the routing score and the cost tier, using a 3:1 input/output blend and configurable

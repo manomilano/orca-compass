@@ -195,15 +195,19 @@ describe('vendor estimates', () => {
     expect(estimateScores([measured, entry('independent', rows.map((r) => ({ ...r, kind: 'measured' })))], BENCHMARKS)[1].scores.coding).toBeUndefined();
   });
 
-  it('merges the curated Composer 2.5 near Opus 4.7 on coding', () => {
+  it('uses only Kimi K2.5 capability scores for Composer 2.5 when Composer has no dataset entry', () => {
     const curated = JSON.parse(readFileSync(new URL('../../data/evidence-curated.json', import.meta.url), 'utf8'));
-    const snapshot = buildSnapshot(dataset, { ...opts, curated });
-    const composer = snapshot.models.find((m) => m.id === 'composer-2-5')!;
-    expect(composer.scores.coding).toMatchObject({ kind: 'estimated', benchmarks: 2 });
-    expect(Math.abs(composer.scores.coding!.score - snapshot.models.find((m) => m.id === 'claude-opus-4-7')!.scores.coding!.score)).toBeLessThan(3);
-    expect(snapshot.models).toHaveLength(dataset.models.length + 1);
-    expect(composer.results).toHaveLength(2);
-    expect(snapshot.models.find((m) => m.id === 'claude-opus-4-7')!.scores).toEqual(model('claude-opus-4-7').scores);
+    const kimi = entry('kimi-k2-5', [], {
+      coding: { score: 38.6, benchmarks: 3, kind: 'measured' },
+      agentic: { score: 35.7, benchmarks: 18, kind: 'estimated' },
+      reasoning: { score: 52.4, benchmarks: 3, kind: 'measured' },
+    });
+    const merged = mergeCurated([kimi], curated);
+    expect(merged.find((m) => m.id === 'composer-2-5')!.results).toEqual([]);
+    const composer = applyFallbacks(estimateScores(merged, BENCHMARKS)).find((m) => m.id === 'composer-2-5')!;
+    for (const axis of ['coding', 'agentic', 'reasoning'] as const) {
+      expect(composer.scores[axis]).toEqual({ ...kimi.scores[axis], kind: 'estimated', from: kimi.id });
+    }
   });
 
   it('fills only the missing axes from a curated fallback model and marks where they came from', () => {

@@ -270,7 +270,7 @@ export function estimateScores(models: SnapshotModel[], benchmarks: EvidenceSnap
 
 /**
  * A curated `fallback` names the model whose score stands in on every axis the model has no
- * measured or estimated score for (Composer 2.5 has no agentic benchmark; Kimi K2.5 stands in).
+ * measured or estimated score for.
  * The copy is marked `estimated` with `from`, so it never counts as the model's own evidence.
  */
 export function applyFallbacks(models: SnapshotModel[]): SnapshotModel[] {
