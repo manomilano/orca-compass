@@ -36,8 +36,8 @@ import StoryPanel from './story/StoryPanel.vue'
       <div class="story__after">
         <RouteLine class="story__route" />
         <p>
-          OrcaCompass weighs the job's needs against remaining subscription usage and returns a
-          recommendation with launch arguments. Orca launches the worker.
+          OrcaCompass picks a model that can do the job and still has usage left; Orca launches
+          the worker on it.
         </p>
       </div>
     </div>
@@ -55,8 +55,8 @@ import StoryPanel from './story/StoryPanel.vue'
   list-style: none;
 }
 
+/* Wide enough for the closing sentence to sit on one line on a desktop screen. */
 .story__after {
-  max-width: var(--oc-measure);
   margin: clamp(var(--oc-space-6), 4vw, var(--oc-space-7)) auto 0;
 }
 

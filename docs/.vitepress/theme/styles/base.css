@@ -94,10 +94,33 @@
   outline-offset: 2px;
 }
 
+/*
+ * From 768 px the theme switch and the repository link sit in the bar itself. The default
+ * theme keeps the switch in a "more" menu until 1280 px; with both in the bar that menu
+ * would be empty, so it is hidden.
+ */
 @media (min-width: 768px) {
-  .VPNavBar .VPNavBarSocialLinks {
+  .VPNavBar .VPNavBarSocialLinks,
+  .VPNavBar .VPNavBarAppearance {
     display: flex;
     align-items: center;
+  }
+
+  .VPNavBar .VPNavBarExtra {
+    display: none;
+  }
+}
+
+/* A smaller name and mark below the full desktop width, so the bar holds every control. */
+@media (min-width: 768px) and (max-width: 1279.98px) {
+  .VPNavBarTitle .title {
+    font-size: 1.25rem;
+  }
+
+  .VPNavBar .VPNavBarTitle .logo {
+    width: 22px;
+    height: 22px;
+    margin-right: 6px;
   }
 }
 
