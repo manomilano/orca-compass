@@ -12,13 +12,17 @@ your first route. Other install options and what each call reads come after.
 ```sh
 npx orcacompass install   # 1. shared CLI and project Skill, from your project
 orcacompass setup         # 2. optional: your agents, favorite models and bans
-orcacompass status        # 3. usage and the pick per tier
+orcacompass status        # 3. optional: usage and the pick per tier
 ```
 
-Step 2 is optional: without it, OrcaCompass uses every agent that is installed
-and not switched off in Orca. You can also ask your orchestrator to "set up
-OrcaCompass" in chat. Each step has its own section below:
-[Install](#install), [First-time setup](#first-time-setup) and
+After the install, you can do the rest from your agent instead of the
+terminal: ask it to "set up OrcaCompass", then to run `orcacompass status`.
+
+`orcacompass setup` and `orcacompass status` are optional: without setup,
+OrcaCompass uses every agent that is installed and not switched off in Orca.
+
+Each step has its own section below: [Install](#install),
+[First-time setup](#first-time-setup) and
 [Check that it works](#check-that-it-works).
 
 ## Requirements
