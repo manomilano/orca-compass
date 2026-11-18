@@ -31,7 +31,13 @@ import HeroInstall from './hero/HeroInstall.vue'
           </CompassButton>
         </div>
 
-        <HeroInstall />
+        <div class="hero__steps">
+          <HeroInstall />
+          <p class="hero__hint">
+            Optional: run <code>orcacompass setup</code> to choose your agents, favorite models and
+            bans, or ask your orchestrator to set it up.
+          </p>
+        </div>
       </div>
 
       <HeroFlow class="hero__flow" />
@@ -71,6 +77,19 @@ import HeroInstall from './hero/HeroInstall.vue'
   display: flex;
   flex-wrap: wrap;
   gap: var(--oc-space-3);
+}
+
+/* The install command, then one line on the optional setup step. */
+.hero__steps {
+  display: grid;
+  gap: var(--oc-space-3);
+  max-width: 34rem;
+}
+
+.hero__hint {
+  margin: 0;
+  font-size: var(--oc-text-sm);
+  color: var(--oc-color-text-muted);
 }
 
 /* Capped so the diagram's text stays near body size on wide screens. */
