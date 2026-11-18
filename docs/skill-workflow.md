@@ -100,7 +100,7 @@ Options the orchestrator may add:
 | `--agent <id>` (repeatable) | The user restricted the job to some agents. Also lifts OpenCode's last-resort status for this route |
 | `--exclude-agent <id>` (repeatable) | The user excluded an agent for this job |
 | `--effort <e>` | Only when the user asked for a specific effort. Never snapped: routes that cannot apply it exactly are left out |
-| `--no-downgrade` | Prevent capability shortfalls and Cursor Auto fallback; cheaper covering cost tiers remain allowed |
+| `--no-downgrade` | Prevent capability shortfalls and Cursor Auto fallback; covering routes from any cost tier remain allowed |
 
 ::: warning Preference exception in this checkout
 The router checks a favorite before the normal `--no-downgrade` branch. An
@@ -123,10 +123,11 @@ Valid explicit effort levels are `none`, `minimal`, `low`, `medium`, `high`,
 exit 1. If no route supports the exact requested level, ask the user or route
 without `--effort`.
 
-Routing first chooses the cheapest covering cost tier, then headroom. If
-all covering routes there are blocked or expected to end above
-`usageRiskLimit` (default 90%), it can use a pricier tier in good standing.
-Relay the warning. Prices affect cost tiers, not evidence scores or need cuts.
+Routing compares every covering route across cost tiers: the most usage
+headroom wins, after a price adjustment of at most five points. A route is
+blocked only when Orca reports a usage window as 100% used. A pick that is
+close to its limit, or expected to end above `usageRiskLimit` (default 90%),
+carries a warning; relay it. Prices never change evidence scores or need cuts.
 
 Parse the JSON and read `status`, `reasons`, `warnings`, `confidence`,
 `downgraded` and `upgraded`. Exit code 0 alone does not mean a route exists.
@@ -189,9 +190,9 @@ reported as `started`. Details: [Verify and rejections](verify-and-rejections.md
 | Field | Action |
 | --- | --- |
 | `downgraded: true` | Mention the downgrade and reason in the worker's task spec. Effort is not raised to make up for a weaker model; narrow the task or add checks |
-| `upgraded: true` | Surface the warning. The covering pick's cost tier is above the requested tier; usage or a favorite can also cause this. See the [upgrade warning caveat](tiers-and-routing.md#fallbacks-downgrade-upgrade-wait-none) |
-| warning `cheaper <tier> cost tier passed over …` | Every covering route in the cheaper tier is blocked or expected to end above `usageRiskLimit`, so a pricier tier was used. Relay it to the user |
-| warning `every unblocked route that covers the job is expected to end above …` | No route in good standing exists; the pick is the cheapest with the most room. Relay it |
+| `upgraded: true` | Surface the warning. No route at or below the requested tier covers the job, so a pricier cost tier was used. See [Fallbacks](tiers-and-routing.md#fallbacks-downgrade-upgrade-wait-none) |
+| warning `<window> quota is N% used; resets in …` | Orca reports the pick's usage window at or above its warning threshold (`thresholds`, 95% long, 90% session). Relay it and keep the job small |
+| warning `selected route is expected to end above …` | The pick is expected to end its usage window above `usageRiskLimit`. Relay it and keep the job small |
 | `effort.applied` | `flag`, `model-id`, or `provider-default` (the agent decides). Never claim an effort was set when it is `provider-default` |
 | warning `… is a last-resort agent …` | The route costs money per token or runs on this machine; tell the user before launching several workers on it |
 | `status: "wait"` | Read `waitUntil` (epoch ms). Wait, or retry without `--no-downgrade` if the user allows a downgrade |

@@ -40,6 +40,8 @@ export interface UsagePool {
   name: string;
   kind: 'session' | 'long';
   usedPercent: number;
+  /** Orca reading before temporary hand-outs adjusted usedPercent. */
+  reportedUsedPercent?: number;
   handouts?: number;
   windowMinutes: number;
   resetsAt: number; // epoch ms
@@ -277,8 +279,7 @@ export interface Config {
   /** Above this projected usage, replace the favorite only with a known within-limit alternative. */
   preferRiskLimit: number;
   /**
-   * A route expected to end its usage window above this percent is strained: it is used only when
-   * no other route that covers the job is below the limit, in any cost tier.
+   * Warn when the selected route is expected to exceed this percentage at reset.
    */
   usageRiskLimit: number;
   /** Model ids or families the user never wants routed. */

@@ -89,10 +89,11 @@ Each model has two separate profiles:
 - **Cost tier:** the first available tier from a user override, API price,
   family/model-line or provider-lineup hint, then evidence class.
 
-The job's needs select qualifying models. The cheapest qualifying cost tier
-forms the [fit group](tiers-and-routing.md#the-fit-group), which can move up
-for usage; [headroom](tiers-and-routing.md#usage-headroom-and-pace) picks
-within it. `orcacompass ranking` shows the evidence and `orcacompass tiers`
+The job's needs select qualifying models, from every cost tier. Their routes
+are [scored](tiers-and-routing.md#ranking-covering-routes) by usage
+[headroom](tiers-and-routing.md#usage-headroom-and-pace) minus a price
+adjustment of at most five points, and the highest score wins.
+`orcacompass ranking` shows the evidence and `orcacompass tiers`
 shows the cost tiers. Cursor `auto` is only a fallback and has no profile.
 See [How it works](how-it-works.md) for a worked example and
 [Tiers and routing](tiers-and-routing.md#needs-and-ranking) for the full order.

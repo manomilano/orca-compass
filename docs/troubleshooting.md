@@ -140,10 +140,16 @@ pool's reset time has already passed. See
   `orcacompass agents`.
 - `none` with `no model covers the job`: agents are usable, but no model meets
   the needs and no downgrade or fallback route is allowed or available.
-- A pricier model than expected, with the warning `cheaper <tier> cost tier
-  passed over`: every route in the cheaper tier that covers the job is blocked
-  or expected to end above `usageRiskLimit` (90% by default). Raise the limit
-  in the config to stay in the cheaper tier longer.
+- A pricier model than expected: compare the `selection` and `next best`
+  lines in `reasons`. Covering routes from all cost tiers compete; a cheaper
+  model loses when its usage is unknown, when it is blocked (Orca reports a
+  window as 100% used), or when another subscription has more headroom than
+  the price difference makes up for (at most five points). See
+  [Ranking covering routes](tiers-and-routing.md#ranking-covering-routes).
+- A warning `<window> quota is N% used` or `selected route is expected to end
+  above …`: the pick is close to its usage limit and nothing with more room
+  covered the job. The route is still valid; keep the job small. The warning
+  levels are `thresholds` and `usageRiskLimit` in the config.
 - `wait`: no allowed unblocked pick was found, but a candidate has a known
   future unblock time. This can happen with or without `--no-downgrade`.
   The reason reads `all <tier> candidates blocked` when covering routes exist,

@@ -45,7 +45,9 @@ tokens decides the tier:
 | Frontier | 12 or above |
 
 The blended price is `(3 × inputPerM + outputPerM) / 4`, rounded to two
-decimals. It is a 3:1 sorting key, not a subscription bill.
+decimals. It sets the cost tier and the
+[price adjustment](#ranking-covering-routes) in ranking; it is not a
+subscription bill.
 
 The cost tier comes from the first source that has one; `cost.source` in the
 JSON names it:
@@ -130,7 +132,7 @@ Every route has a **requested tier** (`requestedTier` in the JSON). With
 Light, `low` Daily, `mid` Advanced, `high` or `top` Frontier. It picks the
 tier-default effort and the preference that applies, and it is what
 `upgraded` compares against. It does not limit the cost tier: a covering pick
-may have a cheaper cost tier.
+may have a cheaper or a pricier cost tier.
 :::
 
 A model **covers** the job when its band on every axis reaches the need (for
@@ -140,9 +142,9 @@ the axes (an axis without a score counts as one step below Light), and each
 short axis is listed under `skipped` as `below need on <axis> (<score> < <cut>)`.
 
 Within one agent, only the newest release of a family competes per cost tier.
-Sonnet 4.6 (Advanced cost) can remain beside Sonnet 5.5 (Daily cost), but cannot
-beat it for a job the cheaper model covers. Grok 4.5 and 4.7 are both Daily cost,
-so only 4.7 competes.
+Sonnet 4.6 (Advanced cost) can remain beside Sonnet 5.5 (Daily cost). If both
+qualify and draw on the same pools, the lower price favors Sonnet 5.5. Grok
+4.5 and 4.7 are both Daily cost, so only 4.7 competes.
 
 ### Order of decisions {#order-of-decisions}
 
@@ -163,63 +165,82 @@ so only 4.7 competes.
    superseded releases are dropped without an entry.
 3. **Effort.** With `--effort`, routes that cannot apply exactly that effort
    are dropped (see [Effort](effort.md#explicit-effort-is-a-constraint)).
-4. **Fit group.** The covering routes of the cheapest cost tier, moved up only
-   for usage (see [The fit group](#the-fit-group)).
+4. **Covering routes.** Every remaining route whose model covers the job, from
+   every cost tier, in [rank order](#ranking-covering-routes).
 5. **Preference.** A preference for the requested tier is tried first (see
    [Preferences](#preferences-pins)).
-6. **Effort check.** With `--effort`, when the fit group (formed without the
-   effort filter) has routes but none can apply the effort, the result is
-   `none` with the efforts each route offers. A pricier tier is not tried.
-7. **Pick.** The first unblocked route of the fit group in rank order.
+6. **Effort check.** With `--effort`, when models cover the job but none of
+   their routes can apply the effort, the result is `none` with the efforts
+   each route offers. No downgrade is tried.
+7. **Pick.** The first unblocked covering route in rank order.
 8. **Downgrade.** Without `--no-downgrade`: routes that fall short, in groups
-   of increasing shortfall; the first unblocked route in rank order wins.
+   of increasing shortfall; the first unblocked route in
+   [usage order](#usage-order) wins.
 9. **Cursor auto.** Without `--no-downgrade`, when it is not blocked.
-10. **Wait or none.** `wait` when some blocked route in the fit group (or,
-    without `--no-downgrade`, a route that falls short) will unblock;
+10. **Wait or none.** `wait` when some blocked covering route (or, without
+    `--no-downgrade`, a blocked route that falls short) will unblock;
     `waitUntil` is the earliest time one has all its blocking windows reset.
     `none` otherwise.
 
-### Ranking inside a group
+### Ranking covering routes {#ranking-covering-routes}
 
-Routes inside the fit group, a downgrade group or a preference's own models are
-compared in this order:
+Covering routes from all cost tiers compete together. A pricier model can win
+when its subscription has clearly more room. They are compared in this order:
+
+1. unblocked before [blocked](#usage-headroom-and-pace);
+2. known usage before unknown usage;
+3. the higher **score**: [pace-scaled headroom](#usage-headroom-and-pace) in
+   percentage points, minus the price adjustment below;
+4. on equal scores, the [usage order](#usage-order).
+
+The price adjustment for a blended price of `p` USD per million tokens is
+`5 × p / (p + 4)` points:
+
+| Blended $/M | Price adjustment |
+| --- | --- |
+| 0.20 | 0.24 points |
+| 1 | 1.00 point |
+| 4 | 2.50 points |
+| 8 | 3.33 points |
+| 16 | 4.00 points |
+| any price | below 5 points |
+
+So five points more headroom outweigh any price difference, and two routes on
+the same usage windows are decided by price: the cheaper model wins.
+
+- The price is kept inside the model's cost tier, so a `tierOverrides` entry
+  also moves the adjustment: a model priced at $8 and overridden to Daily
+  counts as $5.
+- A model without a price counts as the middle of its cost tier ($0.50, $3 or
+  $8.50), or $12 in the Frontier tier.
+- A model billed per use (OpenCode's `pay per use through <provider>`) takes
+  the full five points.
+- A route with unknown usage has no headroom to score, so among such routes
+  the adjustment alone decides: the cheapest first.
+
+For example, a $1/M model with 80% headroom scores 79. A $4/M model with 82%
+scores 79.5 and wins. At 81% it scores 78.5 and the cheaper model wins.
+
+A route that returns this pick adds the line `selection: 62.00 ranked headroom
+points minus 2.50 price points = 59.50` to its reasons, and `next best` names
+the runner-up with its price.
+
+### Usage order {#usage-order}
+
+Routes inside a downgrade group or a preference's own models, and covering
+routes with equal scores, are compared in this order:
 
 1. unblocked before blocked;
 2. known usage before unknown usage;
-3. below `usageRiskLimit` before [strained](#usage-headroom-and-pace);
-4. more [pace-scaled headroom](#usage-headroom-and-pace);
-5. no [hot session](#usage-headroom-and-pace) before a hot session;
-6. higher usage confidence;
-7. stronger evidence label for the job (`measured` first);
-8. the lower blended price, when both routes cover the job;
-9. the higher need-weighted score (each axis score times its need step);
-10. non-fast before fast variants;
-11. the newer release date;
-12. agent id, then model id.
-
-### The fit group
-
-The fit group is the set of covering routes in the cheapest cost tier that has
-one: routing chooses the cheapest cost tier whose evidence covers the job, then
-the route with the most headroom. Usage can move the fit group up:
-
-- When the cheapest covering tier has at least one route that is neither
-  blocked nor strained, it is the fit group. A route with unknown usage counts
-  as neither.
-- Otherwise the fit group is the cheapest pricier tier with an unblocked,
-  unstrained covering route of known usage. The route then carries a warning
-  starting `cheaper <tier> cost tier passed over`.
-- When no tier has such a route, the job keeps its level: the fit group is the
-  cheapest covering tier if it has an unblocked route, otherwise the cheapest
-  pricier tier with an unblocked covering route of known usage. Its route with
-  the most room is used, with the warning `every unblocked route that covers
-  the job is expected to end above <usageRiskLimit>% of its usage window
-  (usageRiskLimit)`.
-- Only when every covering route is blocked does routing go on to
-  [downgrade](#fallbacks-downgrade-upgrade-wait-none), or wait with
-  `--no-downgrade`.
-
-A route with unknown usage never pulls the fit group up.
+3. more [pace-scaled headroom](#usage-headroom-and-pace);
+4. no [hot session](#usage-headroom-and-pace) before a hot session;
+5. higher usage confidence;
+6. stronger evidence label for the job (`measured` first);
+7. the lower blended price, when both routes cover the job;
+8. the higher need-weighted score (each axis score times its need step);
+9. non-fast before fast variants;
+10. the newer release date;
+11. agent id, then model id.
 
 `quality` in the route JSON reports the evidence class, the cost (`tier`,
 `blended`, `source`), `covers`, `shortfall`, `overshoot`, the evidence label
@@ -234,13 +255,14 @@ OrcaCompass reads each agent's usage windows (pools) from Orca. Per route:
 
 | Term | Rule | Default |
 | --- | --- | --- |
-| Blocked | A window is at or above its limit: `thresholds.longPercent` for long windows, `thresholds.sessionPercent` for session windows. Checked even on stale usage | 95% / 90% |
+| Blocked | Orca reports a window as 100% used or more. Recent hand-outs are not counted here. Checked even on stale usage. A blocked route cannot be picked | 100% |
+| Near its limit | Orca reports a window at or above `thresholds.longPercent` (long windows) or `thresholds.sessionPercent` (session windows), below 100%. The route can still win; when it does, it carries the warning `<window> quota is N% used; resets in …` | 95% / 90% |
 | Expired window | Its reset time has passed: ignored, and confidence drops to low | — |
 | Headroom | The share of the window expected to be left unused at reset (negative when on pace to run out) | — |
-| Ranked window | The long window with the least room; a session window instead when its current pace would reach `sessionPercent` before reset and it has less room; the session window when there is no long one | — |
+| Ranked window | The long window with the least room; a session window instead when it is near its limit, or its current pace would reach `sessionPercent` before reset, and it has less room; the session window when there is no long one | — |
 | Pace-scaled headroom | Headroom scaled down when the window resets more than 7 days away: counted in proportion, half at 14 days | 7 days |
 | Hot session | A session window at or above `sessionPercent` − 20 points: a tiebreak after headroom | 70% |
-| Strained | Not blocked, but the ranked window is expected to end above `usageRiskLimit` | 90% |
+| Strained | Not blocked, but the ranked window is expected to end above `usageRiskLimit`. It changes no ranking; a strained pick carries the warning `selected route is expected to end above N% of its usage window` | 90% |
 | Unknown usage | No usage window (OpenCode), usage not reported by Orca, no matching window, or usage older than four times `usageStaleMinutes` | 2 hours |
 
 The expected use at reset is what is used so far plus the rest of the window at
@@ -256,7 +278,8 @@ not extrapolated (`tooEarly`). Reasons show it as `on pace for N%`, and
 Every `route` that returns a route records a hand-out. For `handoutMinutes`
 (10) after it, each hand-out counts as `handoutPercent` (5) points more usage
 on each of that model's windows, so workers routed back to back spread across
-subscriptions.
+subscriptions. Hand-outs lower headroom only: a window is blocked by the usage
+Orca reports, never by hand-outs.
 
 ## Preferences (pins) {#preferences-pins}
 
@@ -269,8 +292,9 @@ tier; with a model, that model, even when it is unranked.
    or is blocked, is skipped with a warning and routing continues normally.
 2. When its `risk` is within `preferRiskLimit` (100% by default), or its usage
    is unknown, the favorite is used.
-3. Above the limit, it is replaced by the best unblocked route of the fit group
-   with known usage whose `risk` is within the limit.
+3. Above the limit, it is replaced by the best unblocked covering route with
+   known usage whose `risk` is within the limit, from any cost tier, in
+   [rank order](#ranking-covering-routes).
 4. With no such route, the favorite is kept, with a warning.
 
 A favorite is used even when it does not cover the job; the route is then
@@ -280,14 +304,14 @@ job`. `preferRiskLimit` is set with `orcacompass prefer --risk-limit <percent>`.
 ```text
 preferred codex gpt-6.1-terra skipped: weekly on pace for 150% (limit 100%), resets in 2d
 preferred codex retained: no unblocked alternative with known usage within the 100% risk limit
-preferred codex skipped: blocked (weekly 96% used, resets in 1d)
+preferred codex skipped: blocked (weekly 100% used, resets in 1d)
 preferred grok skipped: not available (not enabled in Orca)
 ```
 
 ::: info Two different limits
-`usageRiskLimit` ranks every route by its *expected* use at reset and moves
-the fit group. `preferRiskLimit` only decides whether a favorite is replaced,
-using the simpler `risk` projection.
+`usageRiskLimit` only adds a warning, when the picked route's *expected* use
+at reset is above it. `preferRiskLimit` decides whether a favorite is
+replaced, using the simpler `risk` projection.
 :::
 
 ## Last-resort agents {#last-resort-agents}
@@ -325,23 +349,17 @@ Stale usage still blocks. Evidence certainty appears in `quality.evidence`.
 | Outcome | Meaning |
 | --- | --- |
 | `downgraded: true` | The pick falls short of the job's needs. Effort is not raised to make up for it; the warning says to split the job or add stronger checks |
-| `upgraded: true` | The pick covers the job and its cost tier is pricier than the requested tier |
+| `upgraded: true` | The pick covers the job, its cost tier is pricier than the requested tier, and no route at or below the requested tier covers the job (with `--effort`: and can apply that effort). The warning reads `no model in the <tier> cost tier covers the job; using <tier>` |
 | `status: "wait"` | Nothing can be routed now; `waitUntil` is the earliest reset that unblocks a route |
-| `status: "none"` | Nothing can be routed and no reset helps, or no route can apply an explicit `--effort` |
+| `status: "none"` | Nothing can be routed and no reset helps, or no covering route can apply an explicit `--effort` |
 
-A pricier fit group chosen for usage is reported as a warning. A cheaper cost
-tier that covers the needs is not a downgrade.
+A pick from another cost tier is an ordinary pick whenever a route at or below
+the requested tier also covers the job: a cheaper cost tier that covers the
+needs is not a downgrade, and a pricier route picked for its headroom is not
+an upgrade.
 
-::: warning `upgraded` also follows usage and preferences
-The code sets `upgraded` whenever a covering pick's cost tier is above the
-requested tier, so it is also `true` when usage moved the fit group up, or a
-favorite sits in a pricier tier. Its warning still reads
-`no model in the <tier> cost tier covers the job; using <tier>` in those
-cases.
-:::
-
-`orcacompass status` routes each tier with `--no-downgrade`. It shows a cheaper
-covering pick with its cost tier, for example `(daily cost tier)` on the
+`orcacompass status` routes each tier with `--no-downgrade`. It shows a pick
+from another cost tier with that tier, for example `(daily cost tier)` on the
 Advanced line, and shows no route for a tier whose pick is upgraded. The
 example routes in `setup` mark `(upgraded to X)` and `(downgraded to X)`.
 

@@ -144,13 +144,14 @@ Text output (illustrative; values vary):
 ```text
 light → claude · claude-haiku-5-5 · medium (high confidence)
   claude claude-haiku-5-5: weekly 20% used, 56% of window elapsed (headroom 60%) → on pace for 36% before reset in 3d
-  needs coding=low agentic=low reasoning=low from tier daily; fit group: light cost tier (3 models)
+  needs coding=low agentic=low reasoning=low from tier daily; covering routes: 14 across all cost tiers
   cost: light ($0.20/M blended, maker price)
   coding 68.4 measured, agentic 53.5 measured, reasoning 74.6 measured
   effort: medium from tier default, passed as --effort
-  next best: cursor claude-haiku-5-5 (monthly headroom 41%, resets in 12d)
+  selection: 60.00 ranked headroom points minus 0.24 price points = 59.76
+  next best: claude claude-sonnet-5-5 (weekly headroom 60%, resets in 3d, $4.00/M blended)
   skipped: grok (not enabled in Orca), opencode (last resort: used only when no other agent can take the job)
-orca orchestration worker-start --spec "<task>" --agent claude --model claude-sonnet-5-5 --effort medium
+orca orchestration worker-start --spec "<task>" --agent claude --model claude-haiku-5-5 --effort medium
 ```
 
 ### Route JSON
@@ -161,21 +162,21 @@ fields (`evidenceSource`, `catalogSource`, `scoreSource`) and `placementsBuiltAt
 | Field | Meaning |
 | --- | --- |
 | `status` | `ok`, `wait`, or `none` |
-| `requestedTier`, `tier` | Requested needs shorthand and the pick's cost tier (absent without a route and for the Cursor `auto` fallback); a cheaper covering tier is neither a downgrade nor an upgrade |
+| `requestedTier`, `tier` | Requested needs shorthand and the pick's cost tier (absent without a route and for the Cursor `auto` fallback); a covering pick from a cheaper tier is not a downgrade, and one from a pricier tier is an upgrade only when no cheaper route covers the job |
 | `source` | Where the pick's cost tier came from: `override`, `lineup`, `family` or `evidence`; `auto` for the Cursor `auto` fallback |
 | `tierReason` | The coordinator's explanation of the requested tier, when supplied. Also included in `reasons`, even when there is no route |
-| `downgraded`, `upgraded` | Whether fallback changed the tier |
+| `downgraded`, `upgraded` | A downgrade falls short of the requested needs. An upgrade is a covering pick from a pricier cost tier than the requested tier, when no route at or below the requested tier covers the job (and can apply an explicit `--effort`) |
 | `route` | `{ agent, model, effort }`; `effort` is `null` when it is in the model id or not set |
 | `effort` | How the effort was chosen and applied; see [Effort](effort.md#the-effort-object-in-route-json) |
 | `launchArgs` | Array to append to `orca orchestration worker-start --spec "<task>"`, one argument per element |
 | `launch` | Readable template with a `<task>` placeholder; not shell-escaped, not for automation; `null` without a route |
 | `confidence` | `high`, `medium`, `low` |
 | `risk` | `{ pool, usedPercent, elapsedPercent, projectedPercent, tooEarly, resetsAt }` for the route; `null` when usage is unknown |
-| `reasons` | One line per fact behind the choice; the needs line includes `fit group: daily cost tier (3 models)`, and a route adds `cost: daily ($4.00/M blended, maker price)` (tier, count, price and source vary) |
-| `warnings` | Downgrade, upgrade, skipped preference, last-resort use, a cheaper cost tier passed over for usage, every covering route above `usageRiskLimit` |
-| `alternatives` | Up to five other candidates from the pick's group: the fit group (the cheapest covering cost tier, which can differ from the requested tier), or for a downgrade the models with the same shortfall; without a pick, the fit group: `agent`, `model`, `effort`, `tier`, `headroom` (fraction, or `null`), `confidence`, `blocked`, `risk`, `reason` |
+| `reasons` | One line per fact behind the choice; the needs line includes `covering routes: 3 across all cost tiers`, a route adds `cost: daily ($4.00/M blended, maker price)`, and a pick made by score adds `selection: 62.00 ranked headroom points minus 2.50 price points = 59.50` (tier, count, price and source vary) |
+| `warnings` | Downgrade, upgrade, skipped preference, last-resort use, and on the picked route: reported usage at or above `thresholds` (`weekly quota is 96% used; resets in 14h`) or a forecast above `usageRiskLimit` (`selected route is expected to end above 90% of its usage window`) |
+| `alternatives` | Up to five other candidates in decision order: the other covering routes, from all cost tiers, or for a downgrade the models with the same shortfall; without a pick, the covering routes: `agent`, `model`, `effort`, `tier`, `headroom` (fraction, or `null`), `confidence`, `blocked`, `risk`, `reason` |
 | `skipped` | `{ agent, model?, reason }` for excluded agents (including an unknown `--agent`), banned and refused models, unranked models and models below the requested needs, in every tier. Superseded releases and no-ZDR exclusions are omitted. Preference exclusions appear in `warnings` |
-| `waitUntil` | Epoch ms of the earliest reset that unblocks a candidate; present with `wait` only |
+| `waitUntil` | Epoch ms of the earliest time a blocked candidate has all its blocking windows reset; present with `wait` only |
 | `needs`, `needsSource` | The three requested levels and whether they came from `need` or `tier` |
 | `quality` | Evidence class, cost, coverage, shortfall or overshoot, evidence and per-axis scores, bands, needs and cuts; also on alternatives |
 | `quality.class` | Highest evidence band across the axes; independent of cost |
@@ -256,8 +257,8 @@ Text output contains:
 - Orca's agent switches.
 - Each agent with its note, model count, usage state and pools with headroom.
 - Recent hand-outs.
-- The pick and up to three alternatives per requested tier, including cheaper
-  covering cost tiers, without downgrade or structural upgrade fallbacks.
+- The pick and up to three alternatives per requested tier, from any cost
+  tier that covers it, without downgrade or upgrade fallbacks.
 - Banned and refused models.
 - Unclassified models (the first 15 per agent; the JSON has all of them).
 
@@ -271,7 +272,7 @@ Text output contains:
 | `evidenceWarning` | `null`, or a warning when the evidence in use is older than the snapshot bundled with the installed release. The same text is added to `route` warnings; `orcacompass refresh` clears it |
 | `placements` | `builtAt`, `age` in ms, `version`, `rebuilt` (why this call rebuilt it, or `null`), `saveError` (or `null`) |
 | `orcaAgents` | Orca's agent switches as read, or `null` |
-| `agents` | One row per agent: `agent`, `installed`, `enabledInOrca`, `models` (count), `usage` (`null` or `status`, `updatedAt`, `error`, and `pools` with `headroom`, `expired`, `blocked`), plus `note` and `skipped` when they apply |
+| `agents` | One row per agent: `agent`, `installed`, `enabledInOrca`, `models` (count), `usage` (`null` or `status`, `updatedAt`, `error`, and `pools` with `headroom`, `expired`, `blocked`, and `reportedUsedPercent` when recent hand-outs raised `usedPercent`), plus `note` and `skipped` when they apply |
 | `banned` | `{ agent, model }` pairs |
 | `rejected` | Active refusals |
 | `tiers` | Per tier: `status`, `pick`, `alternatives`, `warnings`, `waitUntil` |

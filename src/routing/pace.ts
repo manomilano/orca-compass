@@ -1,4 +1,4 @@
-import type { Config, Risk, UsagePool } from '../types.js';
+import type { Risk, UsagePool } from '../types.js';
 
 export interface PoolState {
   expired: boolean;
@@ -47,18 +47,18 @@ export function rankHeadroom(headroom: number, resetsAt: number, now: number): n
   return headroom > 0 && remaining > URGENCY_HORIZON_MS ? headroom * (URGENCY_HORIZON_MS / remaining) : headroom;
 }
 
-export function poolState(pool: UsagePool, now: number, t: Config['thresholds']): PoolState {
+export function poolState(pool: UsagePool, now: number): PoolState {
   const expired = pool.resetsAt <= now;
   const windowMs = pool.windowMinutes * 60_000;
   const elapsed = windowMs > 0 ? Math.min(1, Math.max(0, 1 - (pool.resetsAt - now) / windowMs)) : 0;
   const headroom = 1 - expectedUse(pool.usedPercent / 100, elapsed);
-  const limit = pool.kind === 'session' ? t.sessionPercent : t.longPercent;
-  return { expired, blocked: !expired && pool.usedPercent >= limit, headroom, elapsed };
+  const reported = pool.reportedUsedPercent ?? pool.usedPercent;
+  return { expired, blocked: !expired && reported >= 100, headroom, elapsed };
 }
 
 /** Usage at the window's reset if the current pace holds: used% / elapsed fraction. */
 export function projectPool(pool: UsagePool, now: number): Risk {
-  const { elapsed } = poolState(pool, now, { longPercent: Infinity, sessionPercent: Infinity });
+  const { elapsed } = poolState(pool, now);
   const tooEarly = elapsed < MIN_ELAPSED_TO_PROJECT;
   const projected = tooEarly ? pool.usedPercent : pool.usedPercent / elapsed;
   return {
