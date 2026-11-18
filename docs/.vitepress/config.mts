@@ -88,8 +88,8 @@ export default defineConfig({
       dark: { src: '/brand/mark-on-dark.svg', width: 32, height: 32, alt: '' },
     },
     nav: [
-      { text: 'Docs', link: '/guide' },
       { text: 'Get started', link: '/getting-started' },
+      { text: 'Docs', link: '/guide' },
       { text: 'Reference', items: [
         { text: 'Commands', link: '/commands' },
         { text: 'Configuration', link: '/configuration' },
@@ -109,17 +109,17 @@ export default defineConfig({
       { text: 'Work with OrcaCompass', items: [
         { text: 'Skill workflow', link: '/skill-workflow' },
         { text: 'Examples', link: '/examples' },
+        { text: 'Verify and rejections', link: '/verify-and-rejections' },
         { text: 'Commands', link: '/commands' },
         { text: 'Configuration', link: '/configuration' },
-        { text: 'Verify and rejections', link: '/verify-and-rejections' },
         { text: 'Troubleshooting', link: '/troubleshooting' },
       ] },
       { text: 'Routing reference', items: [
         { text: 'Tiers and routing', link: '/tiers-and-routing' },
         { text: 'Reasoning effort', link: '/effort' },
         { text: 'Models and agents', link: '/models-and-agents' },
-        { text: 'Model data', link: '/model-data' },
         { text: 'Orca agents', link: '/orca-agents' },
+        { text: 'Model data', link: '/model-data' },
       ] },
       { text: 'Project and community', items: [
         { text: 'Roadmap and limitations', link: '/roadmap' },
