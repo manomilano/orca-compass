@@ -1,12 +1,43 @@
 # How it works
 
-OrcaCompass answers one question for an orchestrator: which agent, model and
-reasoning effort should this worker get? It narrows the field in four moves:
-what the job needs, which models can do it, which of those costs least, and
-which subscription has room. This page follows one job through every step.
+OrcaCompass recommends an agent, model and reasoning effort for a worker.
+A route is a particular model through a particular agent. The same model
+through Claude Code and Cursor can draw on different quotas.
 
-The scores, prices and usage below come from a real run in November 2026.
-Your models, data and usage will differ; the steps stay the same.
+## Decision order
+
+- **Describe the job.** Supply the minimum coding, agentic and reasoning levels
+  (or a tier shorthand). Optionally specify reasoning demand or an exact effort.
+- **Find eligible routes.** Apply agent restrictions, availability, model bans
+  and recorded launch refusals. Keep the latest release per agent, family and
+  cost tier. Defer last-resort agents such as OpenCode unless explicitly selected.
+- **Check capability.** A regular candidate must meet every required axis and
+  support any exact effort requested. Models from all cost tiers can qualify.
+- **Check quota.** Read the pools assigned to each route, including recent
+  hand-outs. By default, 95% used in a long window or 90% in a session blocks
+  the route. Among open routes, prefer known healthy usage, then known strained
+  usage, then unknown usage. Expected use above 90% at reset is strained.
+- **Score the eligible routes.** Start with the percentage expected to remain
+  at reset in the limiting pool. Positive headroom counts in full for a reset
+  within seven days and is discounted for a later reset. Subtract the price
+  adjustment (at most five points) and choose the highest score within the
+  best available usage group. [Scoring details](tiers-and-routing.md#needs-and-ranking).
+- **Apply a configured favorite.** An eligible, unblocked favorite can take
+  precedence, even if it falls short on capability. Above its separate risk
+  limit, use a qualifying alternative with known usage within that limit if
+  available. The decision reports when a preference or shortfall applies.
+- **Handle missing routes.** When downgrades are allowed, try open models
+  with the smallest capability shortfall. If ordinary agents yield no route,
+  retry with last-resort agents. Configured Cursor auto is the final model
+  fallback when downgrades are allowed. Return a reset time to wait for when
+  one is known, or report that no route is available.
+- **Return and verify the pick.** Resolve the effort, return launch arguments,
+  reasons and up to five alternatives. The route command records a temporary
+  hand-out (five points of usage for ten minutes by default). The orchestrator
+  launches the worker and verifies it. After a confirmed model refusal it
+  reruns routing for the same task with that agent/model pair excluded.
+
+The worked example below uses illustrative November 2026 figures.
 
 ## The job
 
@@ -53,8 +84,7 @@ earlier launch are left out here. See [Models and agents](models-and-agents.md).
 
 ## 3. Evidence decides who can do the job
 
-Every model has a coding, agentic and reasoning score from the LLMBenchmark
-evidence snapshot. A model qualifies only when it meets the minimum on all
+The evidence snapshot supplies coding, agentic and reasoning scores where available. A model qualifies only when it meets the minimum on all
 three axes. Price plays no part in this step.
 
 | Model | coding ≥ 75 | agentic ≥ 70 | reasoning ≥ 70 | Result |
@@ -77,11 +107,10 @@ agentic benchmark, so Kimi K2.5's score stands in for it and is labelled
 `assumed`. See
 [Model data](model-data.md).
 
-## 4. Price decides how much model to spend
+## 4. Determine the price adjustment
 
 Each model also has a cost tier, set by its API price in the snapshot, blended
-3:1 input to output, in USD per million tokens. The price only sorts models
-from cheap to expensive; it is not what your subscription charges.
+3:1 input to output, in USD per million tokens. The router uses this price as a proxy for cost when scoring a subscription route.
 
 | Cost tier | Blended $/M | Qualifying models in the example |
 | --- | --- | --- |
@@ -124,7 +153,7 @@ The demand `moderate` maps to `medium`, an effort Sol supports, passed as
 `--effort medium`. Agents that encode effort in the model id get it there
 instead. See [Reasoning effort](effort.md).
 
-## 7. The answer
+## 7. Return the decision
 
 The route comes back with launch arguments and the reasons behind it:
 

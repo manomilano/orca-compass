@@ -12,7 +12,7 @@ the curated model has no score for, the fallback model's score stands in and
 is labelled `assumed` (Composer 2.5 takes its agentic score from Kimi K2.5). Missing or unusable dataset prices
 are omitted; schema 1 still accepts rows without pricing.
 
-Price decides the cost tier only, using a 3:1 input/output blend and configurable
+The blended price feeds both the routing score and the cost tier, using a 3:1 input/output blend and configurable
 `costBands` (default `[1, 5, 12]`). It never changes evidence scores, bands or
 need cuts. Models without a price fall back to family/lineup hints and then
 evidence class; user cost-tier overrides take precedence over price.

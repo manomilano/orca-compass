@@ -105,7 +105,7 @@ source fields and `placementsBuiltAt`:
 | `status` | `ok`, `wait`, or `none` |
 | `requestedTier`, `tier` | Requested needs shorthand and the pick's cost tier (absent without a route); a cheaper covering tier is neither a downgrade nor an upgrade |
 | `tierReason` | The coordinator's explanation of the requested tier, when supplied. Also included in `reasons`, even when there is no route |
-| `downgraded`, `upgraded` | Whether fallback changed the tier |
+| `downgraded`, `upgraded` | A downgrade falls short of the requested capabilities. An upgrade picks a higher cost tier when no route at or below the requested tier covers the job at the required effort. |
 | `route` | `{ agent, model, effort }`; `effort` is `null` when it is in the model id or not set |
 | `effort` | How the effort was chosen and applied; see [Effort](effort.md#the-effort-object-in-route-json) |
 | `launchArgs` | Array to append to `orca orchestration worker-start --spec "<task>"`, one argument per element |
@@ -114,9 +114,9 @@ source fields and `placementsBuiltAt`:
 | `risk` | `{ pool, usedPercent, elapsedPercent, projectedPercent, tooEarly, resetsAt }` for the route; `null` when usage is unknown |
 | `reasons` | One line per fact behind the choice; the needs line includes `covering routes: 3 across all cost tiers`, and a route adds `cost: daily ($4.00/M blended, maker price)` (tier, count, price and source vary) |
 | `warnings` | Downgrade, upgrade, skipped preference, last-resort use, every covering route above `usageRiskLimit` |
-| `alternatives` | Up to five other candidates from the chosen tier (requested tier without a pick): `agent`, `model`, `effort`, `tier`, `headroom` (fraction, or `null`), `confidence`, `blocked`, `risk`, `reason` |
-| `skipped` | `{ agent, model?, reason }` for excluded agents and banned/refused models in the requested tier. Superseded releases and no-ZDR exclusions are omitted. Preference exclusions appear in `warnings` |
-| `waitUntil` | Epoch ms when a blocked requested-tier candidate resets; with `wait`, sometimes with `none` |
+| `alternatives` | Up to five other candidates in decision order. For an ordinary covering pick these can span all cost tiers. Fields include `agent`, `model`, `effort`, `tier`, `headroom` (fraction, or `null`), `confidence`, `blocked`, `risk`, `reason` |
+| `skipped` | `{ agent, model?, reason }` for excluded agents and skipped models, including per-axis shortfalls. Superseded releases and no-ZDR exclusions are omitted. Preference exclusions appear in `warnings` |
+| `waitUntil` | Earliest known time (epoch ms) when a candidate considered for waiting clears all its blocking pools |
 | `needs`, `needsSource` | The three requested levels and whether they came from `need` or `tier` |
 | `quality` | Evidence class, cost, coverage, shortfall or overshoot, evidence and per-axis scores, bands, needs and cuts; also on alternatives |
 | `quality.class` | Highest evidence band across the axes; independent of cost |

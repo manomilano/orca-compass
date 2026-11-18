@@ -84,8 +84,8 @@ assumed evidence is provisional. `Decision.tier` is the pick's cost tier;
 `quality.class` remains its evidence class. See [Commands](commands.md) for JSON.
 
 Within one agent, only the newest release of a family competes per cost tier.
-Sonnet 4.6 (Advanced cost) can remain beside Sonnet 5.5 (Daily cost), but cannot
-beat it for a job the cheaper model covers. Grok 4.5 and 4.7 are both Daily cost,
+Sonnet 4.6 (Advanced cost) can remain beside Sonnet 5.5 (Daily cost). If both
+qualify and draw on the same pools, the lower price favors Sonnet 5.5. Grok 4.5 and 4.7 are both Daily cost,
 so only 4.7 competes.
 
 ## Cursor auto fallback
