@@ -423,18 +423,17 @@
       ]
     },
     "og": {
-      "intendedUse": "Social preview card, crop of hero without baked-in text.",
-      "alt": "An orca and glowing golden compass with routes across the sea toward mountain islands.",
+      "intendedUse": "Social preview card: a 1200 px wide capture of the landing page hero, light theme, with the flow diagram in its finished state.",
+      "alt": "The OrcaCompass home page: the headline Pick the right model for every job, the install command, and a diagram of an orchestrator asking OrcaCompass for a model and starting three Orca workers.",
       "files": [
         {
-          "file": "og.jpg",
+          "file": "social-card.jpg",
           "width": 1200,
           "height": 630,
           "format": "jpeg",
-          "bytes": 276027
+          "bytes": 242004
         }
-      ],
-      "derivedFrom": "hero"
+      ]
     },
     "flow-orchestrator": {
       "intendedUse": "Orchestrator node portrait in the landing page hero flow diagram.",
