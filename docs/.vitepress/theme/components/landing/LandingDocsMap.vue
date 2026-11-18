@@ -25,7 +25,7 @@ const groups = [
 </script>
 
 <template>
-  <section id="docs" class="landing-section" aria-labelledby="docs-title">
+  <section id="docs" class="landing-section landing-section--alt" aria-labelledby="docs-title">
     <div class="oc-container">
       <SectionHeading id="docs-title" title="Start with the docs" />
       <nav class="chart-index" aria-label="Documentation by task">
@@ -52,7 +52,7 @@ const groups = [
 
 <style scoped>
 .chart-index { display: grid; gap: var(--oc-space-4); }
-.chart-index__group { display: grid; gap: var(--oc-space-4); padding: var(--oc-space-5); border: var(--oc-border-hair) solid var(--oc-color-line); }
+.chart-index__group { display: grid; gap: var(--oc-space-4); padding: var(--oc-space-5); border: var(--oc-border-hair) solid var(--oc-color-line); background: var(--oc-color-surface); }
 .chart-index__heading { display: grid; align-content: start; }
 .chart-index h3 { margin: 0; font-size: var(--oc-text-xl); font-weight: 700; line-height: var(--oc-leading-snug); }
 .chart-index__heading p { margin: var(--oc-space-2) 0 0; color: var(--oc-color-text-muted); }

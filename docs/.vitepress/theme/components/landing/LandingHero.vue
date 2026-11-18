@@ -40,9 +40,14 @@ import HeroInstall from './hero/HeroInstall.vue'
 </template>
 
 <style scoped>
+/* The tinted band, with a soft light behind the diagram on the right. */
 .hero {
   --oc-text-display: clamp(2.75rem, 2rem + 2.6vw, 4.25rem);
   padding-block: var(--oc-space-7);
+  background-image:
+    radial-gradient(60rem 34rem at 82% 30%, var(--oc-color-band-glow), transparent 70%),
+    radial-gradient(var(--oc-color-halftone) 1px, transparent 1.4px);
+  background-size: auto, 7px 7px;
 }
 
 .hero__inner {
