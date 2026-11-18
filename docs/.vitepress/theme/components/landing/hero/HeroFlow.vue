@@ -20,13 +20,16 @@ import { withBase } from 'vitepress'
 /** Width of one character in the mono face, as a share of the font size. */
 const MONO = 0.6
 
-/** The two actors: small round portraits joined by an ask lane and an answer lane. */
-const orchestrator = { x: 31, y: 149, r: 30, art: withBase('/art/flow-orchestrator.webp') }
-const compass = { x: 409, y: 149, r: 30, art: withBase('/art/flow-compass.webp') }
+/** The two actors: small round portraits, each centred under its name, joined by an ask lane and an answer lane. */
+const orchestrator = { x: 50, y: 149, r: 30, art: withBase('/art/flow-orchestrator.webp') }
+const compass = { x: 390, y: 149, r: 30, art: withBase('/art/flow-compass.webp') }
 const ASK = `M${orchestrator.x + 33},141 H${compass.x - 33}`
 const ANSWER = `M${compass.x - 33},157 H${orchestrator.x + 33}`
 /** Centre of the lanes, where the question and the answer are written. */
 const MID = (orchestrator.x + compass.x) / 2
+
+/** A worker's box, right of the trunk that drops from the orchestrator. */
+const BOX = { x: 76, width: 362 }
 
 const workers = [
   { job: 'Design the sync engine', agent: 'claude', model: 'claude-opus-5-5', effort: 'high' },
@@ -44,7 +47,7 @@ const workers = [
     route,
     routeWidth: route.length * 11 * MONO,
     /** From the orchestrator down the trunk and into this worker's box. */
-    launch: `M${orchestrator.x},${orchestrator.y + orchestrator.r} V${y - 8} Q${orchestrator.x},${y} ${orchestrator.x + 8},${y} H56`,
+    launch: `M${orchestrator.x},${orchestrator.y + orchestrator.r} V${y - 8} Q${orchestrator.x},${y} ${orchestrator.x + 8},${y} H${BOX.x}`,
   }
 })
 
@@ -104,26 +107,26 @@ const label =
     </g>
 
     <!-- Orchestrator -->
-    <text class="flow__heading" :x="orchestrator.x - orchestrator.r" y="104">Orchestrator</text>
+    <text class="flow__heading" :x="orchestrator.x" y="104" text-anchor="middle">Orchestrator</text>
     <image :href="orchestrator.art" :x="orchestrator.x - orchestrator.r" :y="orchestrator.y - orchestrator.r" :width="orchestrator.r * 2" :height="orchestrator.r * 2" clip-path="url(#flow-clip-orchestrator)" preserveAspectRatio="xMidYMid slice" />
     <circle class="flow__ring" :cx="orchestrator.x" :cy="orchestrator.y" :r="orchestrator.r" />
 
     <!-- OrcaCompass -->
-    <text class="flow__heading" :x="compass.x + compass.r" y="104" text-anchor="end">OrcaCompass</text>
+    <text class="flow__heading" :x="compass.x" y="104" text-anchor="middle">OrcaCompass</text>
     <circle class="flow__pulse" :cx="compass.x" :cy="compass.y" :r="compass.r" />
     <image :href="compass.art" :x="compass.x - compass.r" :y="compass.y - compass.r" :width="compass.r * 2" :height="compass.r * 2" clip-path="url(#flow-clip-compass)" preserveAspectRatio="xMidYMid slice" />
     <circle class="flow__ring" :cx="compass.x" :cy="compass.y" :r="compass.r" />
 
     <!-- Workers -->
-    <text class="flow__heading flow__heading--split" x="56" y="212">Orca workers</text>
+    <text class="flow__heading flow__heading--split" :x="BOX.x" y="212">Orca workers</text>
     <text class="flow__command" x="438" y="212" text-anchor="end">orca orchestration worker-start</text>
     <g v-for="(worker, i) in workers" :key="`worker-${worker.job}`">
-      <rect class="flow__slot" x="56" :y="worker.y - 25" width="382" height="50" rx="2" />
+      <rect class="flow__slot" :x="BOX.x" :y="worker.y - 25" :width="BOX.width" height="50" rx="2" />
       <g class="flow__worker" :style="{ '--i': i }">
-        <rect class="flow__box flow__box--split" x="56" :y="worker.y - 25" width="382" height="50" rx="2" />
-        <text class="flow__job" x="70" :y="worker.y - 10">{{ worker.job }}</text>
-        <rect class="flow__mark flow__mark--pick" x="66" :y="worker.y + 2" :width="worker.routeWidth + 8" height="17" rx="2" />
-        <text class="flow__route" x="70" :y="worker.y + 10.5" :textLength="worker.routeWidth">{{ worker.route }}</text>
+        <rect class="flow__box flow__box--split" :x="BOX.x" :y="worker.y - 25" :width="BOX.width" height="50" rx="2" />
+        <text class="flow__job" :x="BOX.x + 14" :y="worker.y - 10">{{ worker.job }}</text>
+        <rect class="flow__mark flow__mark--pick" :x="BOX.x + 10" :y="worker.y + 2" :width="worker.routeWidth + 8" height="17" rx="2" />
+        <text class="flow__route" :x="BOX.x + 14" :y="worker.y + 10.5" :textLength="worker.routeWidth">{{ worker.route }}</text>
         <rect class="flow__chip" x="354" :y="worker.y - 11" width="74" height="22" rx="2" />
         <path class="flow__check" :d="`M362,${worker.y} l3.5,3.5 l6,-7`" />
         <text class="flow__chip-text" x="377" :y="worker.y">started</text>
