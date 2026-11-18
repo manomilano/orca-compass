@@ -104,7 +104,7 @@ Price plays no part in this step.
 | Model | coding ≥ 75 | agentic ≥ 70 | reasoning ≥ 70 | Result |
 | --- | --- | --- | --- | --- |
 | Haiku 5.5 | 68.4 | 53.5 | 74.6 | out |
-| Composer 2.5 | 67.1 (estimated) | 35.7 (assumed) | 75.0 (estimated) | out |
+| Composer 2.5 | 38.6 (assumed) | 35.7 (assumed) | 52.4 (assumed) | out |
 | GPT-6.1 Terra | 76.5 | 69.1 | 82.3 | out |
 | Grok 4.7 | 64.8 | 43.7 | 75.1 | out |
 | GPT-6.1 Sol | 79.8 | 75.5 | 88.7 | qualifies |
@@ -118,9 +118,9 @@ Each model that falls short is listed under `skipped` with the reason, for
 example `below need on agentic (69.1 < 70)`. A model with no evidence at all is
 `unranked` and skipped. A new release with no scores of its own inherits, per
 axis, the best score of its family or of the same vendor's models at or below
-its hinted tier, labelled `assumed`, until its own data arrives. Composer 2.5
-has no agentic benchmark, so Kimi K2.5's score stands in for it and is also
-labelled `assumed`. See [Model data](model-data.md).
+its hinted tier, labelled `assumed`, until its own data arrives. For Composer
+2.5, the snapshot uses Kimi K2.5 as an explicit fallback on all three axes.
+See [Model data](model-data.md).
 
 ## 4. Price sets the cost tier and the price adjustment {#_4-price-decides-how-much-model-to-spend}
 
