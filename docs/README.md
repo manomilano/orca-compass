@@ -10,20 +10,8 @@ OrcaCompass helps an Orca orchestrator choose the **agent**, **model** and
 Skill (`skills/orcacompass/SKILL.md`) backed by a small TypeScript CLI
 (`orcacompass`). It recommends; Orca launches.
 
-## Quick tour
-
-```sh
-npx orcacompass install            # shared CLI and project Skill
-orcacompass setup                   # three questions, then a summary
-orcacompass route --tier daily --demand moderate --json
-```
-
-See [Getting started](getting-started.md) for requirements and install options.
-
-The orchestrator does the last step for you once the Skill is installed: it
-rates the job, calls `orcacompass route`, launches the worker with the returned
-`launchArgs`, then runs `orcacompass verify` to make sure the agent accepted the
-model.
+New here? Start with [Getting started](getting-started.md): install with
+`npx orcacompass install`, then set up and check your first route.
 
 ## Pages
 
