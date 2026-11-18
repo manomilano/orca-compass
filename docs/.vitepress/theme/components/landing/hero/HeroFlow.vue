@@ -10,10 +10,11 @@
  * Two colours carry the two halves of the request through the picture: blue for the split
  * into workers, gold for what OrcaCompass picks.
  *
- * Plain SVG in a viewBox, so the server-rendered page already holds the finished picture: all
- * three workers launched. The motion is CSS only and runs only when the reader allows motion.
- * The three workers are parts of the one job the request names, from hardest to easiest.
- * Their routes are illustrative; the model ids follow README.md and docs/examples.md.
+ * Plain SVG in a viewBox, so the server-rendered page already holds the finished picture: the
+ * first three workers launched. The motion is CSS only and runs only when the reader allows
+ * motion. The jobs are parts of the one job the request names; there are more of them than
+ * worker slots, so each slot shows two jobs in turn. Their routes are illustrative; the model
+ * ids follow README.md and docs/examples.md.
  */
 import { withBase } from 'vitepress'
 
@@ -31,12 +32,19 @@ const MID = (orchestrator.x + compass.x) / 2
 /** A worker's box, right of the trunk that drops from the orchestrator. */
 const BOX = { x: 76, width: 362 }
 
+/** Worker boxes on screen. Job `i` lands in slot `i % SLOTS`. */
+const SLOTS = 3
+
+/** In the order they are routed. The CSS timing below is written for exactly six. */
 const workers = [
   { job: 'Build the physics engine', agent: 'claude', model: 'claude-opus-5-5', effort: 'high' },
   { job: 'Design the levels', agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium' },
   { job: 'Add the start screen', agent: 'claude', model: 'claude-haiku-5-5', effort: 'low' },
+  { job: 'Write the enemy AI', agent: 'claude', model: 'claude-sonnet-5-5', effort: 'high' },
+  { job: 'Add touch controls', agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium' },
+  { job: 'Save the high scores', agent: 'codex', model: 'gpt-6.1-terra', effort: 'low' },
 ].map((worker, i) => {
-  const y = 251 + i * 58
+  const y = 251 + (i % SLOTS) * 58
   const pick = `${worker.model} · ${worker.effort}`
   const route = `${worker.agent} · ${pick}`
   return {
@@ -50,6 +58,8 @@ const workers = [
     launch: `M${orchestrator.x},${orchestrator.y + orchestrator.r} V${y - 8} Q${orchestrator.x},${y} ${orchestrator.x + 8},${y} H${BOX.x}`,
   }
 })
+/** One entry per slot, for the parts drawn once per box. */
+const slots = workers.slice(0, SLOTS)
 
 /**
  * The request, in three runs. Widths are the runs' measured widths in the text face at 13.5px;
@@ -91,7 +101,7 @@ const label =
     <path class="flow__line" :d="ASK" />
     <path class="flow__line" :d="ANSWER" />
     <path class="flow__line" :d="`M${compass.x - 40},136 l7,5 l-7,5 M${orchestrator.x + 40},152 l-7,5 l7,5`" />
-    <path v-for="worker in workers" :key="`line-${worker.job}`" class="flow__line" :d="worker.launch" />
+    <path v-for="slot in slots" :key="`line-${slot.job}`" class="flow__line" :d="slot.launch" />
 
     <!-- One round per worker: ask, answer, launch -->
     <g v-for="(worker, i) in workers" :key="worker.job" :style="{ '--i': i }">
@@ -120,24 +130,24 @@ const label =
     <!-- Workers -->
     <text class="flow__heading flow__heading--split" :x="BOX.x" y="212">Orca workers</text>
     <text class="flow__command" x="438" y="212" text-anchor="end">orca orchestration worker-start</text>
-    <g v-for="(worker, i) in workers" :key="`worker-${worker.job}`">
-      <rect class="flow__slot" :x="BOX.x" :y="worker.y - 25" :width="BOX.width" height="50" rx="2" />
-      <g class="flow__worker" :style="{ '--i': i }">
-        <rect class="flow__box flow__box--split" :x="BOX.x" :y="worker.y - 25" :width="BOX.width" height="50" rx="2" />
-        <text class="flow__job" :x="BOX.x + 14" :y="worker.y - 10">{{ worker.job }}</text>
-        <rect class="flow__mark flow__mark--pick" :x="BOX.x + 10" :y="worker.y + 2" :width="worker.routeWidth + 8" height="17" rx="2" />
-        <text class="flow__route" :x="BOX.x + 14" :y="worker.y + 10.5" :textLength="worker.routeWidth">{{ worker.route }}</text>
-        <rect class="flow__chip" x="354" :y="worker.y - 11" width="74" height="22" rx="2" />
-        <path class="flow__check" :d="`M362,${worker.y} l3.5,3.5 l6,-7`" />
-        <text class="flow__chip-text" x="377" :y="worker.y">started</text>
-      </g>
+    <rect v-for="slot in slots" :key="`slot-${slot.job}`" class="flow__slot" :x="BOX.x" :y="slot.y - 25" :width="BOX.width" height="50" rx="2" />
+    <g v-for="(worker, i) in workers" :key="`worker-${worker.job}`" class="flow__worker" :class="{ 'flow__later': i >= SLOTS }" :style="{ '--i': i }">
+      <rect class="flow__box flow__box--split" :x="BOX.x" :y="worker.y - 25" :width="BOX.width" height="50" rx="2" />
+      <text class="flow__job" :x="BOX.x + 14" :y="worker.y - 10">{{ worker.job }}</text>
+      <rect class="flow__mark flow__mark--pick" :x="BOX.x + 10" :y="worker.y + 2" :width="worker.routeWidth + 8" height="17" rx="2" />
+      <text class="flow__route" :x="BOX.x + 14" :y="worker.y + 10.5" :textLength="worker.routeWidth">{{ worker.route }}</text>
+      <rect class="flow__chip" x="354" :y="worker.y - 11" width="74" height="22" rx="2" />
+      <path class="flow__check" :d="`M362,${worker.y} l3.5,3.5 l6,-7`" />
+      <text class="flow__chip-text" x="377" :y="worker.y">started</text>
     </g>
   </svg>
 </template>
 
 <style scoped>
 .flow {
-  --flow-loop: 12s;
+  /* One job is routed every step; the loop is six steps, one per job. */
+  --flow-step: 4s;
+  --flow-loop: calc(var(--flow-step) * 6);
   /* Lines and frames; the highlights behind text are fixed so ink stays readable on them. */
   --flow-split: var(--oc-color-link);
   --flow-pick: var(--oc-color-route);
@@ -175,6 +185,8 @@ const label =
 .flow__answer { opacity: 0; }
 .flow .flow__pick { fill: var(--oc-ink); font: 700 11.5px var(--oc-font-mono); }
 .flow .flow__first { opacity: 1; }
+/* Jobs past the first three share a slot with an earlier one, so they wait their turn. */
+.flow__later { opacity: 0; }
 
 .flow__slot { fill: none; stroke: var(--oc-color-text-subtle); stroke-width: 1.25; stroke-dasharray: 4 4; opacity: 0.55; }
 .flow .flow__job { font: 600 13.5px var(--oc-font-text); }
@@ -184,19 +196,20 @@ const label =
 .flow .flow__chip-text { font: 700 11px var(--oc-font-mono); }
 
 /*
- * One 12 s loop per worker, each starting 4 s after the one before: ask, answer, launch, then
- * the worker stays up until its next round. Everything above is the finished picture, which
- * is what a reader who prefers reduced motion sees.
+ * Each job runs the same 24 s loop, starting one 4 s step after the job before it. In its
+ * first step it is asked about, answered and launched; its worker then stays up for two more
+ * steps and fades as the other job of its slot is asked about. Everything above is the
+ * finished picture, which is what a reader who prefers reduced motion sees.
  */
 @media (prefers-reduced-motion: no-preference) {
   .flow__trail, .flow__dot, .flow__ask, .flow__answer, .flow__worker {
-    animation: var(--flow-loop) linear calc(var(--i) * var(--flow-loop) / 3) infinite backwards;
+    animation: var(--flow-loop) linear calc(var(--i) * var(--flow-step)) infinite backwards;
   }
   .flow__trail { animation-name: flow-trail; }
   .flow__ask { animation-name: flow-ask; }
   .flow__answer { animation-name: flow-answer; }
   .flow__worker { animation-name: flow-worker; }
-  .flow__pulse { animation: flow-pulse calc(var(--flow-loop) / 3) ease-out infinite; }
+  .flow__pulse { animation: flow-pulse var(--flow-step) ease-out infinite; }
   @supports (offset-path: path('M0,0')) {
     .flow__dot--ask { animation-name: flow-dot-ask; }
     .flow__dot--answer { animation-name: flow-dot-answer; }
@@ -206,35 +219,35 @@ const label =
 
 @keyframes flow-dot-ask {
   0% { offset-distance: 0%; opacity: 0; }
-  1%, 7% { opacity: 1; }
-  8%, 100% { offset-distance: 100%; opacity: 0; }
+  0.5%, 3.5% { opacity: 1; }
+  4%, 100% { offset-distance: 100%; opacity: 0; }
 }
 @keyframes flow-dot-answer {
-  0%, 12.5% { offset-distance: 0%; opacity: 0; }
-  13.5%, 19% { opacity: 1; }
-  20%, 100% { offset-distance: 100%; opacity: 0; }
+  0%, 6.25% { offset-distance: 0%; opacity: 0; }
+  6.75%, 9.5% { opacity: 1; }
+  10%, 100% { offset-distance: 100%; opacity: 0; }
 }
 @keyframes flow-dot-launch {
-  0%, 20% { offset-distance: 0%; opacity: 0; }
-  21%, 27% { opacity: 1; }
-  28%, 100% { offset-distance: 100%; opacity: 0; }
+  0%, 10% { offset-distance: 0%; opacity: 0; }
+  10.5%, 13.5% { opacity: 1; }
+  14%, 100% { offset-distance: 100%; opacity: 0; }
 }
 @keyframes flow-ask {
-  0%, 21%, 100% { opacity: 0; }
-  2%, 18% { opacity: 1; }
+  0%, 10.5%, 100% { opacity: 0; }
+  1%, 9% { opacity: 1; }
 }
 @keyframes flow-answer {
-  0%, 12%, 33%, 100% { opacity: 0; }
-  14%, 30% { opacity: 1; }
+  0%, 6%, 16.5%, 100% { opacity: 0; }
+  7%, 15% { opacity: 1; }
 }
 @keyframes flow-trail {
-  0%, 20% { stroke-dashoffset: 1; opacity: 1; }
-  28%, 92% { stroke-dashoffset: 0; opacity: 1; }
-  100% { stroke-dashoffset: 0; opacity: 0; }
+  0%, 10% { stroke-dashoffset: 1; opacity: 1; }
+  14%, 46% { stroke-dashoffset: 0; opacity: 1; }
+  50%, 100% { stroke-dashoffset: 0; opacity: 0; }
 }
 @keyframes flow-worker {
-  0%, 26%, 100% { opacity: 0; }
-  30%, 92% { opacity: 1; }
+  0%, 13%, 50%, 100% { opacity: 0; }
+  15%, 46% { opacity: 1; }
 }
 /* OrcaCompass weighs the job between the question and the answer. */
 @keyframes flow-pulse {
