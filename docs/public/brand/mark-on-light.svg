@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="OrcaCompass">
+  <title>OrcaCompass</title>
+  <circle cx="32" cy="32" r="27" fill="none" stroke="#0a0e13" stroke-width="3.5"/>
+  <g fill="#0a0e13" transform="translate(0 2.25)">
+    <path d="M27 32L32 53L37 32Z"/>
+    <path d="M32 27L54 32L32 37Z"/>
+    <path d="M32 27L10 32L32 37Z"/>
+    <path d="M24 33C25 22 30 12 37 7C35 17 37 27 41 33Z"/>
+  </g>
+</svg>

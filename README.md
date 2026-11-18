@@ -13,7 +13,7 @@
 [![Node.js: 20+](https://img.shields.io/badge/Node.js-%3E%3D20-339933?logo=nodedotjs&logoColor=white)](package.json)
 [![Platforms: Windows, macOS, Linux](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-64748b)](#install)
 
-[Install](#install) · [Quick start](#quick-start) · [User guide](docs/README.md) · [Commands](docs/commands.md) · [Troubleshooting](docs/troubleshooting.md) · [Contributing](CONTRIBUTING.md)
+[Install](#install) · [Quick start](#quick-start) · [Website](https://manomilano.github.io/orca-compass/) · [User guide](https://manomilano.github.io/orca-compass/guide.html) · [Commands](https://manomilano.github.io/orca-compass/commands.html) · [Troubleshooting](https://manomilano.github.io/orca-compass/troubleshooting.html) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
@@ -34,10 +34,10 @@ as an Agent Skill backed by a small TypeScript CLI.
 2. **OrcaCompass builds profiles** with raw LLMBenchmark capability evidence
    and separate cost tiers from price (3:1 input/output blend, `costBands`
    default `[1, 5, 12]`; hints are the fallback when price is missing).
-3. **It chooses a route** from the cheapest cost tier whose evidence covers
-   the job, then the most headroom (the cheaper model on a tie), accounting
-   for recent hand-outs. When that tier is close to its usage limits, it moves
-   up a cost tier and warns. Cursor `auto` is a fallback.
+3. **It compares qualifying models across cost tiers.** Among open routes with
+   known usage, it scores reset-adjusted headroom in percentage points
+   minus a price adjustment capped at five points. Recent hand-outs count toward
+   usage. Cursor `auto` is a fallback.
 
 ```sh
 orcacompass route --need coding=mid,agentic=low,reasoning=low --demand moderate --json
@@ -46,8 +46,8 @@ orcacompass tiers                  # cost-tier view
 ```
 
 `--tier` remains a shorthand for equal needs on all axes.
-[How it works](docs/how-it-works.md) follows one job through every step, and
-[Tiers and routing](docs/tiers-and-routing.md) has the details.
+[How it works](https://manomilano.github.io/orca-compass/how-it-works.html) follows one job through every step, and
+[Tiers and routing](https://manomilano.github.io/orca-compass/tiers-and-routing.html) has the details.
 
 ## Install
 
@@ -96,7 +96,7 @@ The CLI is shared across projects; the Skill is installed for this project.
 Keep Project if the installer asks for scope. Add `--global` to the second
 command for a user-wide Skill, or `--local` to spell out the project default.
 
-See [Getting started](docs/getting-started.md#install) for all options and
+See [Getting started](https://manomilano.github.io/orca-compass/getting-started.html#install) for all options and
 building from source.
 To work on OrcaCompass itself, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -140,29 +140,29 @@ Only `status: "ok"` carries a route. Pass `launchArgs` as separate, properly
 quoted arguments together with your usual Orca worktree and lifecycle options.
 OrcaCompass never launches workers itself.
 
-For example, a routing decision can look like this (illustrative numbers):
+For example, a routing decision can look like this (illustrative numbers, shortened):
 
 ```text
 $ orcacompass route --tier advanced
-advanced → claude · claude-sonnet-5-5 · medium (high confidence)
-  cost: daily ($4.00/M blended, maker price)
+daily → claude · claude-sonnet-5-5 · medium (high confidence)
   claude claude-sonnet-5-5: weekly 40% used, 62% of window elapsed (headroom 34%) → on pace for 65% before reset in 2d
+  cost: daily ($4.00/M blended, maker price)
 ```
 
 ## User guide
 
-Start with [Getting started](docs/getting-started.md), or browse the
-[complete user guide](docs/README.md).
+Start with [Getting started](https://manomilano.github.io/orca-compass/getting-started.html), or browse the
+[complete user guide](https://manomilano.github.io/orca-compass/guide.html).
 
 | Learn about | Read |
 | --- | --- |
-| Every command, flag, exit code and JSON response | [Commands](docs/commands.md) |
-| Preferences, bans, paths and defaults | [Configuration](docs/configuration.md) |
-| How routes are ranked and how fallbacks work | [Tiers and routing](docs/tiers-and-routing.md) |
-| Effort demand and supported effort levels | [Effort](docs/effort.md) |
-| How the orchestrator routes, launches and verifies | [Skill workflow](docs/skill-workflow.md) |
-| Checking that a worker's agent accepted its model | [Verify and rejections](docs/verify-and-rejections.md) |
-| Supported agents and where their models come from | [Models and agents](docs/models-and-agents.md) |
-| Data sources, cache timing and maintaining model scores | [Model data](docs/model-data.md) |
-| What to do when an agent is not used or a route fails | [Troubleshooting](docs/troubleshooting.md) |
-| Planned work and known limitations | [Roadmap](docs/roadmap.md) |
+| Every command, flag, exit code and JSON response | [Commands](https://manomilano.github.io/orca-compass/commands.html) |
+| Preferences, bans, paths and defaults | [Configuration](https://manomilano.github.io/orca-compass/configuration.html) |
+| How routes are ranked and how fallbacks work | [Tiers and routing](https://manomilano.github.io/orca-compass/tiers-and-routing.html) |
+| Effort demand and supported effort levels | [Effort](https://manomilano.github.io/orca-compass/effort.html) |
+| How the orchestrator routes, launches and verifies | [Skill workflow](https://manomilano.github.io/orca-compass/skill-workflow.html) |
+| Checking that a worker's agent accepted its model | [Verify and rejections](https://manomilano.github.io/orca-compass/verify-and-rejections.html) |
+| Supported agents and where their models come from | [Models and agents](https://manomilano.github.io/orca-compass/models-and-agents.html) |
+| Data sources, cache timing and maintaining model scores | [Model data](https://manomilano.github.io/orca-compass/model-data.html) |
+| What to do when an agent is not used or a route fails | [Troubleshooting](https://manomilano.github.io/orca-compass/troubleshooting.html) |
+| Planned work and known limitations | [Roadmap](https://manomilano.github.io/orca-compass/roadmap.html) |

@@ -1,12 +1,54 @@
+---
+description: Follow one job from its needs through model selection, cost, usage and reasoning effort to a route.
+---
+
 # How it works
 
-OrcaCompass answers one question for an orchestrator: which agent, model and
-reasoning effort should this worker get? It narrows the field in four moves:
-what the job needs, which models can do it, which of those costs least, and
-which subscription has room. This page follows one job through every step.
+OrcaCompass answers one question for an orchestrator (the agent coordinating
+workers): which agent, model and reasoning effort should this worker get? A
+**route** is one model through one agent; the same model through Claude Code
+and through Cursor draws on different subscriptions. This page gives the
+decision order, then follows one job through every step.
 
-The scores, prices and usage below come from a real run in November 2026.
-Your models, data and usage will differ; the steps stay the same.
+## Decision order {#decision-order}
+
+- **Describe the job.** Supply the minimum coding, agentic and reasoning levels
+  (or a tier shorthand). Optionally specify reasoning demand or an exact effort.
+- **Find eligible routes.** Apply agent restrictions, availability, model bans
+  and recorded launch refusals. Keep the latest release per agent, family and
+  cost tier. Defer last-resort agents such as OpenCode unless explicitly selected.
+- **Check capability.** A regular candidate must meet every required axis and
+  support any exact effort requested. Models from all cost tiers can qualify.
+- **Check quota.** Read the usage windows of each route. A route is blocked
+  when Orca reports 100% or more in any of its active windows. Recent
+  hand-outs lower its score only. A forecast above 90% at reset adds a warning.
+- **Score the eligible routes.** Start with the percentage expected to remain
+  at reset in the limiting window. Positive headroom counts in full for a reset
+  within seven days and is discounted for a later reset. Subtract the price
+  adjustment (at most five points) and choose the highest score among the
+  unblocked routes with known usage. See
+  [Ranking covering routes](tiers-and-routing.md#ranking-covering-routes).
+- **Apply a configured favorite.** An eligible, unblocked favorite can take
+  precedence, even if it falls short on capability. Above its separate risk
+  limit, a qualifying alternative with known usage within that limit is used
+  if there is one. The decision reports when a preference or shortfall applies.
+- **Handle missing routes.** When downgrades are allowed, try unblocked models
+  with the smallest capability shortfall. If ordinary agents yield no route,
+  retry with last-resort agents. Cursor `auto` is the final fallback when
+  downgrades are allowed. Return a reset time to wait for when one is known,
+  or report that no route is available.
+- **Return and verify the pick.** Resolve the effort, return launch arguments,
+  reasons and up to five alternatives. The route command records a temporary
+  hand-out (five points of usage for ten minutes by default). The orchestrator
+  launches the worker and verifies it. After a confirmed model refusal it
+  routes the same task again with that agent and model left out.
+
+::: info About the example
+The scores and prices below are from the bundled evidence snapshot of
+November 2026; the usage figures and the set of installed agents are
+illustrative. Your models, data and usage will differ; the steps stay the
+same. The exact rules are in [Tiers and routing](tiers-and-routing.md).
+:::
 
 ## The job
 
@@ -17,8 +59,8 @@ design decision.
 
 ## 1. The orchestrator rates the job
 
-The orchestrator (the agent handing out work) rates what the job needs on
-three axes, and how much the worker should think:
+The orchestrator rates the capability the job needs on three axes and the
+effort demand (how much the worker should think):
 
 ```sh
 orcacompass route --need coding=mid,agentic=mid,reasoning=low --demand moderate --json
@@ -41,7 +83,9 @@ level below it.
 So this job asks for coding 75 or more, agentic 70 or more and reasoning 70 or
 more. The cuts travel with the evidence snapshot, so a data refresh can move
 them. [Skill workflow](skill-workflow.md) explains how to rate a job;
-`--tier` is a shorthand for the same level on every axis.
+`--tier` is a shorthand for the same level on every axis. The highest level
+here, `mid`, makes Advanced the requested tier, which sets the default effort
+and which [preference](tiers-and-routing.md#preferences-pins) applies.
 
 ## 2. OrcaCompass finds what you can launch
 
@@ -53,35 +97,37 @@ earlier launch are left out here. See [Models and agents](models-and-agents.md).
 
 ## 3. Evidence decides who can do the job
 
-Every model has a coding, agentic and reasoning score from the LLMBenchmark
-evidence snapshot. A model qualifies only when it meets the minimum on all
-three axes. Price plays no part in this step.
+The evidence snapshot supplies coding, agentic and reasoning scores where
+available. A model qualifies only when it meets the minimum on all three axes.
+Price plays no part in this step.
 
 | Model | coding ≥ 75 | agentic ≥ 70 | reasoning ≥ 70 | Result |
 | --- | --- | --- | --- | --- |
 | Haiku 5.5 | 68.4 | 53.5 | 74.6 | out |
-| Composer 2.5 | 67.1 | 35.7 (assumed) | 75.0 | out |
-| GPT-6.1 Terra | 76.4 | 69.1 | 82.3 | out |
+| Composer 2.5 | 67.1 (estimated) | 35.7 (assumed) | 75.0 (estimated) | out |
+| GPT-6.1 Terra | 76.5 | 69.1 | 82.3 | out |
 | Grok 4.7 | 64.8 | 43.7 | 75.1 | out |
 | GPT-6.1 Sol | 79.8 | 75.5 | 88.7 | qualifies |
 | Sonnet 5.5 | 84.3 | 78.2 | 87.3 | qualifies |
 | Opus 5.5 | 87.3 | 82.0 | 90.6 | qualifies |
 | GPT-6 Astra | 83.8 | 80.5 | 89.7 | qualifies |
-| Fable 5.2 | 87.8 | 85.4 | 94.7 | qualifies |
+| Fable 5.2 | 87.6 | 85.4 | 94.7 | qualifies |
+| Gemini 4 Carbon | 86.6 | 78.8 | 94.2 | qualifies |
 
 Each model that falls short is listed under `skipped` with the reason, for
 example `below need on agentic (69.1 < 70)`. A model with no evidence at all is
-`unranked` and skipped. A new release of a known family inherits the evidence
-of the release before it until its own data arrives. Composer 2.5 has no
-agentic benchmark, so Kimi K2.5's score stands in for it and is labelled
-`assumed`. See
-[Model data](model-data.md).
+`unranked` and skipped. A new release with no scores of its own inherits, per
+axis, the best score of its family or of the same vendor's models at or below
+its hinted tier, labelled `assumed`, until its own data arrives. Composer 2.5
+has no agentic benchmark, so Kimi K2.5's score stands in for it and is also
+labelled `assumed`. See [Model data](model-data.md).
 
-## 4. Price decides how much model to spend
+## 4. Price sets the cost tier and the price adjustment {#_4-price-decides-how-much-model-to-spend}
 
 Each model also has a cost tier, set by its API price in the snapshot, blended
-3:1 input to output, in USD per million tokens. The price only sorts models
-from cheap to expensive; it is not what your subscription charges.
+3:1 input to output, in USD per million tokens. It is not what your
+subscription charges; the router uses it as a measure of how much of a
+subscription a model consumes.
 
 | Cost tier | Blended $/M | Qualifying models in the example |
 | --- | --- | --- |
@@ -90,41 +136,49 @@ from cheap to expensive; it is not what your subscription charges.
 | Advanced | 5 to below 12 | Opus 5.5 ($8) |
 | Frontier | 12 or above | Fable 5.2 ($16), Astra ($20) |
 
-The cheapest tier with at least one qualifying model is the fit group: Daily.
-Opus, Fable and Astra could do the job, but they are not used for it. A
-pricier tier is used when no cheaper tier has a qualifying model, or when
-every qualifying route in the cheaper tiers is blocked or close to its usage
-limit (see step 5). Change
-the thresholds with `costBands`, or move a model with `tierOverrides`; see
+Every qualifying model enters the comparison, including Opus, Fable and Astra.
+The price takes a few points off a route's score in the next step: 2.5 points
+at $4, 3.33 at $8, 4 at $16, and never more than 5. Change the thresholds with
+`costBands`, or move a model with `tierOverrides`; see
 [Tiers and routing](tiers-and-routing.md).
 
-## 5. Subscription headroom picks the winner
+## 5. Compare subscription headroom and price
 
-Inside the fit group, OrcaCompass reads your live usage from Orca and projects
-it: at the current pace, how much of each usage window will be left when it
-resets? The route with the most room wins. Price no longer matters at this
-point.
+OrcaCompass reads your live usage from Orca and projects it: at the current
+pace, how much of each usage window will be left when it resets? This
+remaining share is **headroom**. Each route's score is its headroom in
+percentage points minus its price adjustment, and the highest score wins. In
+the example, every model of an agent draws on the same weekly window, and
+Cursor offers Sonnet 5.5 and Gemini 4 Carbon:
 
-| Route | Usage | Headroom |
-| --- | --- | --- |
-| Codex, Sol | weekly 8% used, 31% of the week gone | 62% |
-| Claude Code, Sonnet 5.5 | weekly reset less than a day ago | 55% |
-| Cursor, Sonnet 5.5 or Gemini 4 Carbon | 76% used, 78% of the window gone | 3% |
+| Route | Usage | Headroom | Price adjustment | Score |
+| --- | --- | --- | --- | --- |
+| Codex, Sol ($4) | weekly 8% used, 31% of the week gone | 62% | 2.50 | 59.50 |
+| Codex, Astra ($20) | same window | 62% | 4.17 | 57.83 |
+| Claude Code, Sonnet 5.5 ($4) | weekly reset less than a day ago | 55% | 2.50 | 52.50 |
+| Claude Code, Opus 5.5 ($8) | same window | 55% | 3.33 | 51.67 |
+| Claude Code, Fable 5.2 ($16) | same window | 55% | 4.00 | 51.00 |
+| Cursor, Sonnet 5.5 or Gemini 4 Carbon ($4) | 76% used, 78% of the window gone | 3% | 2.50 | 0.50 |
 
-A route at or over a limit is blocked and skipped. A route expected to end
-its usage window above `usageRiskLimit` (90%) is strained: it ranks after the
-others. When every route in the fit group is blocked or strained, the
-cheapest pricier tier with a route in good standing takes over, and the route
-carries a warning that names the tier it passed over. When every covering
-route is strained, the job keeps its level on the cheapest tier's route with
-the most room, with a warning; it is downgraded only when every covering route
-is blocked. In the example the
-Cursor routes are strained, but Codex and Claude Code are not, so the fit
-group stays Daily. Routes handed out in the
-last `handoutMinutes` (10) count as `handoutPercent` (5%) more usage, so
-workers launched back to back spread across subscriptions. A favorite set
-with `orcacompass prefer` can take the place of this pick; see
-[Configuration](configuration.md).
+- On one subscription the cheaper model always scores higher: Sol before
+  Astra, Sonnet before Opus and Fable.
+- Between subscriptions, room decides: a pricier route wins only when it has
+  clearly more headroom. Five points more always outweigh the price.
+- A route is **blocked**, and skipped, only when Orca reports one of its
+  windows as 100% used. A route at 96% can still win when nothing better is
+  left; the pick then carries a warning that the quota is nearly used up
+  (from 95% of a long window or 90% of a session by default).
+- A pick expected to end its usage window above `usageRiskLimit` (90%) carries
+  a warning too. The Cursor routes here are in that state; they are not picked,
+  so nothing is warned.
+- A route with unknown usage is used only when no unblocked route with known
+  usage covers the job.
+
+Each route handed out in the last `handoutMinutes` (10) counts as
+`handoutPercent` (5 points) more usage on that model's windows, so workers
+routed back to back spread across subscriptions. A favorite set with
+`orcacompass prefer` can take the place of this pick; see
+[Preferences](tiers-and-routing.md#preferences-pins).
 
 ## 6. Effort follows the demand
 
@@ -132,20 +186,27 @@ The demand `moderate` maps to `medium`, an effort Sol supports, passed as
 `--effort medium`. Agents that encode effort in the model id get it there
 instead. See [Reasoning effort](effort.md).
 
-## 7. The answer
+## 7. Return the decision
 
-The route comes back with launch arguments and the reasons behind it:
+The route comes back with launch arguments and the reasons behind it. Without
+`--json` it prints like this (illustrative, `skipped` list shortened):
 
 ```text
-route: codex gpt-6.1-sol, effort medium, confidence high
-reasons:
+daily → codex · gpt-6.1-sol · medium (high confidence)
   codex gpt-6.1-sol: weekly 8% used, 31% of window elapsed (headroom 62%) → on pace for 26% before reset in 4d
-  needs coding=mid agentic=mid reasoning=low; fit group: daily cost tier (4 models)
+  needs coding=mid agentic=mid reasoning=low; covering routes: 7 across all cost tiers
   cost: daily ($4.00/M blended, maker price)
   coding 79.8 measured, agentic 75.5 measured, reasoning 88.7 measured
   effort: medium from moderate reasoning demand (balanced policy), passed as --effort
-  next best: claude claude-sonnet-5-5 (weekly headroom 55%, resets in 6d)
+  selection: 62.00 ranked headroom points minus 2.50 price points = 59.50
+  next best: codex gpt-6-astra (weekly headroom 62%, resets in 4d, $20.00/M blended)
+  skipped: …
+orca orchestration worker-start --spec "<task>" --agent codex --model gpt-6.1-sol --effort medium
 ```
+
+The first line shows the pick's cost tier. "7" counts the covering routes in
+the table above. `next best` is the runner-up by score: here the pricier model
+on the same subscription.
 
 The orchestrator appends `launchArgs` to `orca orchestration worker-start`,
 then runs `orcacompass verify --dispatch <id>` to confirm the agent accepted
@@ -156,21 +217,23 @@ next route picks another model. See
 
 ## What changes the answer
 
-- **Codex is at its limit.** Same fit group, next most room: Sonnet 5.5
-  through Claude Code.
+- **Codex is at its limit.** Sol and Astra are blocked; the next score is
+  Sonnet 5.5 through Claude Code.
 - **The job needs more coding.** At `coding=high` (82 or more), Sol (79.8)
-  drops out and Sonnet 5.5 (84.3) still qualifies in the Daily tier.
-- **No Daily model qualifies.** The fit group moves up to Advanced (Opus 5.5),
-  then Frontier.
-- **Every Daily route is blocked or close to its limit.** The fit group moves
-  up to the cheapest tier with a route below `usageRiskLimit`: Opus 5.5
-  through Claude Code, with a warning.
-- **Every qualifying route is close to its limit.** The job keeps its level:
-  the cheapest tier with an unblocked qualifying route (Daily here) is used,
-  and its route with the most room, with a warning.
+  drops out. Astra (83.8) on the same subscription now has the highest score
+  (57.83), ahead of Sonnet 5.5 (52.50).
+- **A pricier route has much more headroom.** If Claude Code had 79% headroom
+  and Codex 60%, Opus 5.5 (75.67) would beat Sol (57.50); Sonnet 5.5 (76.50),
+  on the same subscription as Opus, would still win.
+- **No Daily model qualifies.** The pick comes from a pricier tier. When the
+  requested tier is cheaper than the pick and has no covering model, the route
+  is marked `upgraded`.
+- **Every qualifying route is close to its limit.** They still compete on the
+  same score, and the pick carries a warning.
 - **Every qualifying route is blocked.** OrcaCompass picks the closest model
   that falls short and marks the route `downgraded`, or returns `wait` with
   `--no-downgrade`. See
   [Fallbacks](tiers-and-routing.md#fallbacks-downgrade-upgrade-wait-none).
-- **Nothing can be routed.** Cursor `auto` is the last fallback before waiting;
-  Cursor then picks the model itself.
+- **Nothing can be routed.** Cursor `auto` is the last fallback before waiting
+  (not with `--no-downgrade` or `--effort`); Cursor then picks the model
+  itself.

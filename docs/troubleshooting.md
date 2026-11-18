@@ -1,7 +1,12 @@
+---
+description: Diagnose installation, agent discovery, usage, routing, and configuration problems.
+---
+
 # Troubleshooting
 
-Start with these three commands. They inspect availability and routing and
-may update local metadata and model-list caches:
+Use this page to diagnose installation problems, missing agents, unknown usage and
+unexpected routes. Start with these commands; they can update local metadata
+and model-list caches, and `route` also records a recent hand-out:
 
 ```sh
 orcacompass agents          # which agents are used, and why not
@@ -40,9 +45,26 @@ would downgrade your CLI. Use `npx orcacompass@latest update` with the same scop
 **`Cannot resolve the latest installer …`**: npm could not read its latest
 version tag. Check network access and registry settings, then retry `update`.
 
+**`This installer (…) is newer than the latest published release (…)`**: you
+ran `update` from a version that is not on npm, such as a source checkout or
+an unpublished build. Nothing was changed, and there is nothing to update to.
+
+**`The update did not complete (…)`**: the latest installer, started through
+`npx`, exited with an error; its own output above says why. Fix the cause and
+run the `npx …` command the message prints.
+
+**`Skill removal did not complete (…)`**: the Skill installer failed or was
+cancelled before it removed the Skill. The CLI was left unchanged. Fix the
+reported problem and run the `orcacompass uninstall …` command the message
+prints.
+
 **`Cannot confirm Skill removal …`**: the Skill installer may have been
 cancelled or could not remove every copy. The shared CLI was retained. Fix
 the reported problem and retry `uninstall --global`.
+
+**`The Skill was removed, but CLI removal failed (…)`**: npm could not remove
+the global package; its own output above says why. Run
+`npm uninstall -g orcacompass`. Your config and cache are preserved.
 
 **`Cannot check the installed CLI …`**: npm could not read its global package
 metadata. Run `npm ls --global --depth=0 --json orcacompass` to inspect the
@@ -59,7 +81,8 @@ Ask your orchestrator to "set up OrcaCompass" in chat instead (it reads
 
 ## An agent is not used
 
-`orcacompass agents` gives the reason in the `verdict` column.
+Find the reason in the `verdict` column of `orcacompass agents`, then follow
+the matching action below.
 
 | Verdict | What to do |
 | --- | --- |
@@ -71,29 +94,34 @@ Ask your orchestrator to "set up OrcaCompass" in chat instead (it reads
 | `no models` | The agent was found but listed no models; `status` shows the listing's error |
 | `used as last resort` | OpenCode is used only when no other agent can take the job. Change `lastResortAgents` to make it ordinary; see [Configuration](configuration.md#which-agents-and-models) |
 
-OrcaCompass looks for agent executables on the PATH of the shell that runs it.
+OrcaCompass checks adapter-specific install folders first, then the PATH of
+the shell that runs it.
 On macOS and Linux it then tries the folders Orca adds to its own PATH, so a
 launcher or non-login shell that leaves them out does not hide an agent:
 Homebrew, `/usr/local/bin`, `~/bin`, `~/.local/bin`, Nix, Snap, MacPorts and a
 few agents' own folders. A file only counts if you can execute it.
 It also checks where some installers put them: `%LOCALAPPDATA%\cursor-agent`
-for Cursor, `~/.grok/bin` (or `$GROK_HOME/bin`) for Grok Build, and
-`%LOCALAPPDATA%\agy\bin` or `~/.local/bin` for Antigravity. A terminal opened
+for Cursor, `~/.grok/bin` (or `$GROK_HOME/bin`) for Grok Build,
+`%LOCALAPPDATA%\agy\bin` or `~/.local/bin` for Antigravity, and
+`~/.opencode/bin` for OpenCode. A terminal opened
 before you installed an agent keeps the old PATH: open a new one, and restart
 Orca if the orchestrator runs in an Orca terminal that started earlier.
 
 Orca's agent switches and its model catalog are read from Orca's databases
 using `node:sqlite`. Use Node.js 24, or Node.js 22.13+ where SQLite works
-without extra flags. Without it, Claude Code's and Codex's models come from
-their own caches and their notes say `Orca's model catalog skipped`.
+without extra flags. Without SQLite, the legacy `agent-model-catalog.json` is tried before
+Claude Code's and Codex's own caches and the evidence fallback. When the
+database read fails and no legacy list is used, discovery notes include
+`Orca's model catalog skipped`.
 When SQLite is unavailable, or when the file cannot be read,
 the switches are `unknown` and exclude nobody. The first line of
 `orcacompass agents` says which one applies.
 
 ## Usage is unknown and confidence is low
 
-`status` shows `usage unknown: Orca not reachable: …` for every agent when
-`orca account list --json` fails or takes longer than 20 seconds. Start Orca,
+`status` shows `usage unknown: Orca not reachable: …` for agents covered by
+its usage reader (all supported agents except OpenCode) when
+`orca account list --json` fails or reaches its 20-second command timeout. Start Orca,
 make sure `orca` is on your PATH (on macOS and Linux, `/usr/local/bin`
 and `~/.local/bin` are also tried), and run `orca account list --json` yourself
 to see the error. Routing still works without usage, but every route has low
@@ -110,21 +138,31 @@ pool's reset time has already passed. See
 
 - `none` with `no usable agent`: no agent passed the checks above. Run
   `orcacompass agents`.
-- `none` with `all <tier> candidates blocked`: every model of that tier is at
-  or above its usage limit, and neither a pricier nor a lower tier can take the job.
-- A pricier model than expected, with the warning `cheaper <tier> cost tier
-  passed over`: every route in the cheaper tier that covers the job is blocked
-  or expected to end above `usageRiskLimit` (90% by default). Raise the limit
-  in the config to stay in the cheaper tier longer.
-- `wait`: you passed `--no-downgrade` and every route that covers the job is
-  blocked.
-  `waitUntil` says when the first candidate resets.
+- `none` with `no model covers the job`: agents are usable, but no model meets
+  the needs and no downgrade or fallback route is allowed or available.
+- A pricier model than expected: compare the `selection` and `next best`
+  lines in `reasons`. Covering routes from all cost tiers compete; a cheaper
+  model loses when its usage is unknown, when it is blocked (Orca reports a
+  window as 100% used), or when another subscription has more headroom than
+  the price difference makes up for (at most five points). See
+  [Ranking covering routes](tiers-and-routing.md#ranking-covering-routes).
+- A warning `<window> quota is N% used` or `selected route is expected to end
+  above …`: the pick is close to its usage limit and nothing with more room
+  covered the job. The route is still valid; keep the job small. The warning
+  levels are `thresholds` and `usageRiskLimit` in the config.
+- `wait`: no allowed unblocked pick was found, but a candidate has a known
+  future unblock time. This can happen with or without `--no-downgrade`.
+  The reason reads `all <tier> candidates blocked` when covering routes exist,
+  or `no model covers the job` when only blocked downgrade routes remain.
+  `waitUntil` is the earliest candidate unblock time; a candidate with several
+  blocking pools must wait for its latest blocking reset.
 - `none` with `--effort`: no candidate can apply that exact effort; the
   reasons list what each one offers. Use `--demand` instead to let OrcaCompass
   pick a supported effort.
 
-`skipped` lists excluded agents and banned/refused models in the requested
-tier. Superseded releases and no-ZDR exclusions are omitted. Preference
+`skipped` lists operational exclusions and models that fall below the
+requested needs or have no usable evidence. JSON keeps the full list; text
+groups and limits the profile diagnostics. Superseded releases and no-ZDR exclusions are omitted. Preference
 exclusions appear in `warnings`.
 See [Fallbacks](tiers-and-routing.md#fallbacks-downgrade-upgrade-wait-none).
 
@@ -155,8 +193,8 @@ agent changed its wording. Please open an issue with that tail. See
 ## Models are missing or out of date
 
 Every model's tiers come from the placement table, normally reused for
-`placementsTtlHours` (5 hours). A refresh, changed placement settings, a CLI
-update or a newly detected agent can rebuild it earlier. A model you just gained, or an
+`placementsTtlHours` (5 hours). A refresh, changed placement settings, a changed
+evidence snapshot, a CLI update or a newly detected agent can rebuild it earlier. A model you just gained, or an
 agent you just signed in to, shows up at the next build. `orcacompass tiers`
 prints the table with its age. This rebuilds it now and refetches the
 metadata too:
@@ -167,8 +205,10 @@ orcacompass refresh
 
 If `status` says `evidence: snapshot`, the bundled evidence is in use.
 Run `orcacompass refresh` when online to check the repository. Unranked models
-lack evidence or a usable inheritance hint; inspect `orcacompass ranking` and
-use `tierOverrides` if appropriate.
+lack evidence or a usable inheritance hint; inspect `orcacompass ranking`. A
+`tierOverrides` entry ranks such a model only when its maker is known (it then
+inherits assumed scores); a model with no known maker, such as most local
+ones, stays unranked and is routed only as an explicit model preference.
 
 ## Config errors (exit code 2)
 
@@ -181,7 +221,8 @@ command that reads the config exits 2 until it is valid. When a value has the
 wrong type the message names the key, such as `usageStaleMinutes must be a
 non-negative number`.
 
-Unknown keys are ignored without a warning, so a setting that has no effect is
+Unknown keys are ignored without a warning (retired `scoreWeight`, `classWeight` and
+`modelsDevTtlHours` have specific migration warnings), so a setting that has no effect is
 often a typo, such as `denyAgent` for `denyAgents`. Check the spelling against
 [Configuration](configuration.md#keys-and-defaults).
 
@@ -191,17 +232,22 @@ OrcaCompass runs its background commands with a hidden console. It also starts
 `agy models` with Antigravity's auto-updater off, because that detached updater
 opens a brief terminal window on Windows, at most once every 15 minutes.
 
-A window that still flashes comes from another program, for example a console
-tool started by a process with no console of its own. An agent launched through
-Orca also opens its own terminal tab, which is expected.
+If a window still flashes, inspect the program that opened it. Hiding
+OrcaCompass's child console does not control windows opened by every program
+it starts indirectly. An agent launched through Orca also opens its own
+terminal tab, which is expected.
 
 ## The first call is slow
 
-A call that builds the placement table checks the evidence manifest and then runs
-every agent's model listing, so it can take longer than any single timeout:
-10 s for metadata, 30 s for each live listing, 20 s for Orca usage. That
+A table build loads evidence and then discovers agents in parallel; only
+adapters with live listings run model-list commands. Usage and agent-switch
+reads run alongside table loading. Each evidence HTTP request has a 10 s
+timeout (manifest, then snapshot when needed); each live listing has 30 s and
+Orca usage has 20 s. These are individual limits, not a total call budget. That
 happens on the first call, during `orcacompass refresh`, and when the table
 becomes stale. A routing request with a fresh table only runs `orca account list`
-for live usage. `status` and `tiers` say when the table was built. The cache
-holds observed state only and is safe to delete; see
+for live usage. `status` and `tiers` say when the table was built.
+
+Deleting the cache also forgets recent hand-outs and saved model refusals,
+as well as discovery and evidence data. See
 [Where things live](configuration.md#where-things-live).

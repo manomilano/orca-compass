@@ -1,0 +1,260 @@
+/*
+ * OrcaCompass design tokens.
+ *
+ * Three layers:
+ *   1. Palette   --oc-<name>          raw colours; never change meaning
+ *   2. Semantic  --oc-color-<role>    what components use; flip per theme and tone
+ *   3. Mapping   --vp-*               VitePress default-theme variables, fed from 1 and 2
+ *
+ * Components use semantic tokens only. Palette tokens appear in components
+ * only where a colour must stay fixed in every theme (caption yellow, gold).
+ */
+
+/* 1. Palette and scale tokens (theme-independent) */
+:root {
+  /* Water, from deepest to lightest */
+  --oc-abyss-deep: #041221;
+  --oc-abyss: #06182b;
+  --oc-trench: #0a2238;
+  --oc-swell: #0e2a45;
+  --oc-deep-sea: #0c3558;
+  --oc-open-water-deep: #155d93;
+  --oc-open-water: #1a6aa6;
+  --oc-sky: #8cc9ee;
+  --oc-sky-light: #a9d7f3;
+
+  /* Paper and ink */
+  --oc-paper: #fcfdfe;
+  --oc-foam: #f3f8fb;
+  --oc-mist: #e6eef4;
+  --oc-hairline: #c9d5df;
+  --oc-ink: #0a0e13;
+  --oc-slate: #34414e;
+  --oc-slate-light: #56646f;
+  --oc-steel: #93abbe;
+  --oc-steel-light: #c2d2df;
+  --oc-steel-line: #8fa6b8;
+
+  /* The single warm accent: the route */
+  --oc-gold: #f0b429;
+  --oc-glow: #ffd76a;
+  --oc-caption: #ffd23f;
+
+  /* Typefaces */
+  --oc-font-display: 'Bangers', Impact, 'Arial Narrow', sans-serif;
+  --oc-font-caption: 'Shantell Sans', 'Comic Sans MS', 'Segoe Print', sans-serif;
+  --oc-font-text: 'Atkinson Hyperlegible Next', ui-sans-serif, system-ui, -apple-system,
+    'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --oc-font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Monaco, Consolas,
+    'Liberation Mono', monospace;
+
+  /* Type scale (rem; 1rem = 16px). Fluid steps clamp between 360px and 1440px viewports. */
+  --oc-text-xs: 0.8125rem; /* 13px: fine print, bearings */
+  --oc-text-sm: 0.875rem; /* 14px: captions, meta, buttons */
+  --oc-text-base: 1rem; /* 16px: body */
+  --oc-text-md: 1.125rem; /* 18px: lead text, landing body */
+  --oc-text-lg: 1.25rem; /* 20px: card titles */
+  --oc-text-xl: clamp(1.375rem, 1.3rem + 0.35vw, 1.625rem); /* 22-26px: h3 */
+  --oc-text-2xl: clamp(1.75rem, 1.5rem + 1.1vw, 2.5rem); /* 28-40px: docs h1 */
+  --oc-text-3xl: clamp(2.25rem, 1.8rem + 2vw, 3.5rem); /* 36-56px: section titles */
+  --oc-text-display: clamp(2.75rem, 1.9rem + 3.8vw, 5.5rem); /* 44-88px: hero title */
+
+  --oc-leading-tight: 1.02; /* display face only */
+  --oc-leading-snug: 1.25; /* headings, captions */
+  --oc-leading-body: 1.65; /* running text */
+
+  --oc-tracking-display: 0.025em;
+  --oc-tracking-caption: 0.04em;
+  --oc-tracking-eyebrow: 0.14em;
+
+  /* Spacing: 4px base */
+  --oc-space-1: 0.25rem; /* 4 */
+  --oc-space-2: 0.5rem; /* 8 */
+  --oc-space-3: 0.75rem; /* 12 */
+  --oc-space-4: 1rem; /* 16 */
+  --oc-space-5: 1.5rem; /* 24 */
+  --oc-space-6: 2rem; /* 32 */
+  --oc-space-7: 3rem; /* 48 */
+  --oc-space-8: 4rem; /* 64 */
+  --oc-space-9: 6rem; /* 96 */
+
+  /* Layout */
+  --oc-container-max: 1200px;
+  --oc-container-narrow: 760px;
+  --oc-gutter: clamp(1rem, 4vw, 3rem); /* page side padding: 16px on a phone */
+  --oc-section-pad: clamp(3.5rem, 2.5rem + 5vw, 7rem); /* vertical padding of a landing section */
+  --oc-panel-gutter: clamp(0.75rem, 0.5rem + 1vw, 1.25rem); /* gap between comic panels */
+  --oc-measure: 68ch; /* max line length of running text */
+
+  /* Shape */
+  --oc-radius-none: 0;
+  --oc-radius-sm: 2px; /* panels, captions: almost square, like inked frames */
+  --oc-radius-md: 6px; /* buttons, inputs */
+  --oc-radius-pill: 999px; /* badges only */
+  --oc-border-ink: 3px; /* comic panel frame */
+  --oc-border-strong: 2px; /* caption boxes, buttons */
+  --oc-border-hair: 1px; /* rules, dividers */
+
+  /* Motion */
+  --oc-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --oc-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --oc-duration-fast: 120ms; /* hover, press */
+  --oc-duration-base: 220ms; /* reveal, colour change */
+  --oc-duration-slow: 480ms; /* section entrance */
+  --oc-duration-ambient: 9s; /* looping route-light drift; never on text */
+}
+
+/* 2. Semantic colour tokens: light (default), and the paper tone */
+:root,
+.oc-tone-paper {
+  --oc-color-bg: var(--oc-paper);
+  --oc-color-bg-alt: var(--oc-foam);
+  --oc-color-bg-soft: var(--oc-mist);
+  --oc-color-surface: #ffffff;
+  --oc-color-text: var(--oc-ink);
+  --oc-color-text-muted: var(--oc-slate);
+  --oc-color-text-subtle: var(--oc-slate-light);
+  --oc-color-link: var(--oc-open-water-deep);
+  --oc-color-link-hover: var(--oc-open-water);
+  --oc-color-eyebrow: var(--oc-open-water-deep);
+  --oc-color-line: var(--oc-ink); /* comic panel frames, button outlines */
+  --oc-color-rule: var(--oc-hairline); /* hairlines, dividers */
+  --oc-color-shadow: var(--oc-ink); /* hard offset shadows */
+  --oc-color-focus: var(--oc-open-water);
+  --oc-color-accent: var(--oc-gold); /* fills only, never text on light */
+  --oc-color-accent-hover: var(--oc-glow);
+  --oc-color-on-accent: var(--oc-ink);
+  --oc-color-route: var(--oc-gold); /* route lines and compass needles */
+  --oc-color-halftone: rgba(10, 14, 19, 0.07);
+  --oc-color-code-bg: var(--oc-mist);
+  --oc-shadow-panel: 5px 5px 0 var(--oc-color-shadow);
+  --oc-shadow-lift: 0 10px 30px -12px rgba(6, 24, 43, 0.35);
+}
+
+/* Dark theme, and the always-dark tones used for landing bands and panels */
+.dark,
+.oc-tone-abyss,
+.oc-tone-deep {
+  --oc-color-bg: var(--oc-abyss);
+  --oc-color-bg-alt: var(--oc-abyss-deep);
+  --oc-color-bg-soft: var(--oc-swell);
+  --oc-color-surface: var(--oc-deep-sea);
+  --oc-color-text: var(--oc-foam);
+  --oc-color-text-muted: var(--oc-steel-light);
+  --oc-color-text-subtle: var(--oc-steel);
+  --oc-color-link: var(--oc-sky);
+  --oc-color-link-hover: var(--oc-sky-light);
+  --oc-color-eyebrow: var(--oc-sky);
+  --oc-color-line: var(--oc-steel-line);
+  --oc-color-rule: rgba(140, 201, 238, 0.2);
+  --oc-color-shadow: #000000;
+  --oc-color-focus: var(--oc-glow);
+  --oc-color-accent: var(--oc-gold);
+  --oc-color-accent-hover: var(--oc-glow);
+  --oc-color-on-accent: var(--oc-ink);
+  --oc-color-route: var(--oc-gold);
+  --oc-color-halftone: rgba(140, 201, 238, 0.07);
+  --oc-color-code-bg: var(--oc-abyss-deep);
+  --oc-shadow-panel: 5px 5px 0 var(--oc-color-shadow);
+  --oc-shadow-lift: 0 14px 40px -14px rgba(0, 0, 0, 0.7);
+}
+
+/* Deep tone: one step lighter than abyss; panels inside sit on abyss */
+.oc-tone-deep {
+  --oc-color-bg: var(--oc-deep-sea);
+  --oc-color-bg-alt: var(--oc-abyss);
+  --oc-color-bg-soft: var(--oc-swell);
+  --oc-color-surface: var(--oc-abyss);
+}
+
+/* Tone scopes paint themselves so nested text inherits the right colour */
+.oc-tone-paper,
+.oc-tone-abyss,
+.oc-tone-deep {
+  color: var(--oc-color-text);
+  background-color: var(--oc-color-bg);
+}
+
+.oc-tone-paper {
+  color-scheme: light;
+}
+
+.oc-tone-abyss,
+.oc-tone-deep {
+  color-scheme: dark;
+}
+
+/* 3. Mapping onto the VitePress default theme: light */
+:root {
+  --vp-font-family-base: var(--oc-font-text);
+  --vp-font-family-mono: var(--oc-font-mono);
+
+  --vp-c-bg: var(--oc-paper);
+  --vp-c-bg-alt: var(--oc-foam);
+  --vp-c-bg-elv: #ffffff;
+  --vp-c-bg-soft: var(--oc-mist);
+
+  --vp-c-border: #808f9c; /* 3:1 on every light surface */
+  --vp-c-divider: var(--oc-hairline);
+  --vp-c-gutter: #dce5ec;
+
+  --vp-c-text-1: var(--oc-ink);
+  --vp-c-text-2: var(--oc-slate);
+  --vp-c-text-3: var(--oc-slate-light);
+
+  --vp-c-brand-1: var(--oc-open-water-deep);
+  --vp-c-brand-2: var(--oc-open-water);
+  --vp-c-brand-3: var(--oc-open-water);
+  --vp-c-brand-soft: rgba(26, 106, 166, 0.12);
+
+  --vp-button-brand-border: var(--oc-ink);
+  --vp-button-brand-text: var(--oc-ink);
+  --vp-button-brand-bg: var(--oc-gold);
+  --vp-button-brand-hover-border: var(--oc-ink);
+  --vp-button-brand-hover-text: var(--oc-ink);
+  --vp-button-brand-hover-bg: var(--oc-glow);
+  --vp-button-brand-active-border: var(--oc-ink);
+  --vp-button-brand-active-text: var(--oc-ink);
+  --vp-button-brand-active-bg: var(--oc-gold);
+
+  --vp-code-block-bg: var(--oc-foam);
+  --vp-code-bg: var(--oc-mist);
+  --vp-code-color: var(--oc-open-water-deep);
+
+  --vp-c-tip-1: var(--oc-open-water-deep);
+  --vp-c-tip-2: var(--oc-open-water);
+  --vp-c-tip-3: var(--oc-open-water);
+  --vp-c-tip-soft: rgba(26, 106, 166, 0.1);
+
+  --vp-nav-logo-height: 28px;
+}
+
+/* 3. Mapping onto the VitePress default theme: dark */
+.dark {
+  --vp-c-bg: var(--oc-abyss);
+  --vp-c-bg-alt: var(--oc-abyss-deep);
+  --vp-c-bg-elv: var(--oc-trench);
+  --vp-c-bg-soft: var(--oc-swell);
+
+  --vp-c-border: #557a9b; /* 3:1 on every dark surface */
+  --vp-c-divider: #1d3a55;
+  --vp-c-gutter: #020b14;
+
+  --vp-c-text-1: var(--oc-foam);
+  --vp-c-text-2: var(--oc-steel-light);
+  --vp-c-text-3: var(--oc-steel);
+
+  --vp-c-brand-1: var(--oc-sky);
+  --vp-c-brand-2: var(--oc-sky-light);
+  --vp-c-brand-3: var(--oc-open-water);
+  --vp-c-brand-soft: rgba(140, 201, 238, 0.16);
+
+  --vp-code-block-bg: var(--oc-abyss-deep);
+  --vp-code-bg: var(--oc-swell);
+  --vp-code-color: var(--oc-sky);
+
+  --vp-c-tip-1: var(--oc-sky);
+  --vp-c-tip-2: var(--oc-sky-light);
+  --vp-c-tip-3: var(--oc-open-water);
+  --vp-c-tip-soft: rgba(140, 201, 238, 0.12);
+}

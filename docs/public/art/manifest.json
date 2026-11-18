@@ -1,0 +1,440 @@
+{
+  "version": 1,
+  "provenance": "generated",
+  "date": "2026-11-16",
+  "pathBase": "art/",
+  "images": {
+    "hero": {
+      "intendedUse": "Landing page hero; dark left third supports HTML headline.",
+      "alt": "A lead orca rises beside a glowing golden compass as its pod follows lit routes toward northern islands.",
+      "master": "hero.png",
+      "masterWidth": 2560,
+      "masterHeight": 1440,
+      "originalWidth": 1672,
+      "originalHeight": 941,
+      "resampling": "Lanczos3; upscale from preserved generated original, centre crop to target aspect",
+      "files": [
+        {
+          "file": "hero-640.avif",
+          "width": 640,
+          "height": 360,
+          "format": "avif",
+          "bytes": 31696,
+          "quality": 48
+        },
+        {
+          "file": "hero-640.webp",
+          "width": 640,
+          "height": 360,
+          "format": "webp",
+          "bytes": 62366,
+          "quality": 78
+        },
+        {
+          "file": "hero-1280.avif",
+          "width": 1280,
+          "height": 720,
+          "format": "avif",
+          "bytes": 105082,
+          "quality": 48
+        },
+        {
+          "file": "hero-1280.webp",
+          "width": 1280,
+          "height": 720,
+          "format": "webp",
+          "bytes": 205180,
+          "quality": 78
+        },
+        {
+          "file": "hero-1920.avif",
+          "width": 1920,
+          "height": 1080,
+          "format": "avif",
+          "bytes": 175496,
+          "quality": 48
+        },
+        {
+          "file": "hero-1920.webp",
+          "width": 1920,
+          "height": 1080,
+          "format": "webp",
+          "bytes": 349074,
+          "quality": 78
+        },
+        {
+          "file": "hero-2400.avif",
+          "width": 2400,
+          "height": 1350,
+          "format": "avif",
+          "bytes": 226980,
+          "quality": 48
+        },
+        {
+          "file": "hero-2400.webp",
+          "width": 2400,
+          "height": 1350,
+          "format": "webp",
+          "bytes": 458592,
+          "quality": 78
+        },
+        {
+          "file": "hero-1280.jpg",
+          "width": 1280,
+          "height": 720,
+          "format": "jpeg",
+          "bytes": 258421
+        }
+      ]
+    },
+    "story-1": {
+      "intendedUse": "First story panel: the pod follows its leader.",
+      "alt": "Five orcas travel together through blue northern water beneath a bright mountain sky.",
+      "master": "story-1.png",
+      "masterWidth": 1920,
+      "masterHeight": 1440,
+      "originalWidth": 1448,
+      "originalHeight": 1086,
+      "resampling": "Lanczos3; upscale from preserved generated original, centre crop to target aspect",
+      "files": [
+        {
+          "file": "story-1-640.avif",
+          "width": 640,
+          "height": 480,
+          "format": "avif",
+          "bytes": 34868,
+          "quality": 48
+        },
+        {
+          "file": "story-1-640.webp",
+          "width": 640,
+          "height": 480,
+          "format": "webp",
+          "bytes": 68258,
+          "quality": 78
+        },
+        {
+          "file": "story-1-1280.avif",
+          "width": 1280,
+          "height": 960,
+          "format": "avif",
+          "bytes": 104094,
+          "quality": 48
+        },
+        {
+          "file": "story-1-1280.webp",
+          "width": 1280,
+          "height": 960,
+          "format": "webp",
+          "bytes": 201892,
+          "quality": 78
+        },
+        {
+          "file": "story-1-1920.avif",
+          "width": 1920,
+          "height": 1440,
+          "format": "avif",
+          "bytes": 143180,
+          "quality": 42
+        },
+        {
+          "file": "story-1-1920.webp",
+          "width": 1920,
+          "height": 1440,
+          "format": "webp",
+          "bytes": 320364,
+          "quality": 78
+        },
+        {
+          "file": "story-1-1280.jpg",
+          "width": 1280,
+          "height": 960,
+          "format": "jpeg",
+          "bytes": 278890
+        }
+      ]
+    },
+    "story-2": {
+      "intendedUse": "Second story panel: uncertainty at crossing currents.",
+      "alt": "A lone orca faces intersecting ocean currents beneath storm clouds and distant mountains.",
+      "master": "story-2.png",
+      "masterWidth": 1920,
+      "masterHeight": 1440,
+      "originalWidth": 1448,
+      "originalHeight": 1086,
+      "resampling": "Lanczos3; upscale from preserved generated original, centre crop to target aspect",
+      "files": [
+        {
+          "file": "story-2-640.avif",
+          "width": 640,
+          "height": 480,
+          "format": "avif",
+          "bytes": 37627,
+          "quality": 48
+        },
+        {
+          "file": "story-2-640.webp",
+          "width": 640,
+          "height": 480,
+          "format": "webp",
+          "bytes": 76294,
+          "quality": 78
+        },
+        {
+          "file": "story-2-1280.avif",
+          "width": 1280,
+          "height": 960,
+          "format": "avif",
+          "bytes": 115868,
+          "quality": 48
+        },
+        {
+          "file": "story-2-1280.webp",
+          "width": 1280,
+          "height": 960,
+          "format": "webp",
+          "bytes": 229744,
+          "quality": 78
+        },
+        {
+          "file": "story-2-1920.avif",
+          "width": 1920,
+          "height": 1440,
+          "format": "avif",
+          "bytes": 143436,
+          "quality": 39
+        },
+        {
+          "file": "story-2-1920.webp",
+          "width": 1920,
+          "height": 1440,
+          "format": "webp",
+          "bytes": 374982,
+          "quality": 78
+        },
+        {
+          "file": "story-2-1280.jpg",
+          "width": 1280,
+          "height": 960,
+          "format": "jpeg",
+          "bytes": 303245
+        }
+      ]
+    },
+    "story-3": {
+      "intendedUse": "Third story panel: each worker has a route.",
+      "alt": "A golden compass lights three sea routes, each followed by an orca toward a separate island.",
+      "master": "story-3.png",
+      "masterWidth": 1920,
+      "masterHeight": 1440,
+      "originalWidth": 1448,
+      "originalHeight": 1086,
+      "resampling": "Lanczos3; upscale from preserved generated original, centre crop to target aspect",
+      "files": [
+        {
+          "file": "story-3-640.avif",
+          "width": 640,
+          "height": 480,
+          "format": "avif",
+          "bytes": 50954,
+          "quality": 48
+        },
+        {
+          "file": "story-3-640.webp",
+          "width": 640,
+          "height": 480,
+          "format": "webp",
+          "bytes": 97816,
+          "quality": 78
+        },
+        {
+          "file": "story-3-1280.avif",
+          "width": 1280,
+          "height": 960,
+          "format": "avif",
+          "bytes": 149819,
+          "quality": 48
+        },
+        {
+          "file": "story-3-1280.webp",
+          "width": 1280,
+          "height": 960,
+          "format": "webp",
+          "bytes": 298114,
+          "quality": 78
+        },
+        {
+          "file": "story-3-1920.avif",
+          "width": 1920,
+          "height": 1440,
+          "format": "avif",
+          "bytes": 149806,
+          "quality": 33
+        },
+        {
+          "file": "story-3-1920.webp",
+          "width": 1920,
+          "height": 1440,
+          "format": "webp",
+          "bytes": 493314,
+          "quality": 78
+        },
+        {
+          "file": "story-3-1280.jpg",
+          "width": 1280,
+          "height": 960,
+          "format": "jpeg",
+          "bytes": 376699
+        }
+      ]
+    },
+    "workflow": {
+      "intendedUse": "Quiet background behind workflow text and diagrams; use empty alt when decorative.",
+      "alt": "A dark blue nautical chart with faint contour lines and a dim brass compass at the right edge.",
+      "master": "workflow.png",
+      "masterWidth": 2520,
+      "masterHeight": 1080,
+      "originalWidth": 1914,
+      "originalHeight": 822,
+      "resampling": "Lanczos3; upscale from preserved generated original, centre crop to target aspect",
+      "files": [
+        {
+          "file": "workflow-640.avif",
+          "width": 640,
+          "height": 274,
+          "format": "avif",
+          "bytes": 3585,
+          "quality": 48
+        },
+        {
+          "file": "workflow-640.webp",
+          "width": 640,
+          "height": 274,
+          "format": "webp",
+          "bytes": 5248,
+          "quality": 78
+        },
+        {
+          "file": "workflow-1280.avif",
+          "width": 1280,
+          "height": 549,
+          "format": "avif",
+          "bytes": 12334,
+          "quality": 48
+        },
+        {
+          "file": "workflow-1280.webp",
+          "width": 1280,
+          "height": 549,
+          "format": "webp",
+          "bytes": 18756,
+          "quality": 78
+        },
+        {
+          "file": "workflow-1920.avif",
+          "width": 1920,
+          "height": 823,
+          "format": "avif",
+          "bytes": 24830,
+          "quality": 48
+        },
+        {
+          "file": "workflow-1920.webp",
+          "width": 1920,
+          "height": 823,
+          "format": "webp",
+          "bytes": 37650,
+          "quality": 78
+        },
+        {
+          "file": "workflow-1280.jpg",
+          "width": 1280,
+          "height": 549,
+          "format": "jpeg",
+          "bytes": 39030
+        }
+      ]
+    },
+    "community": {
+      "intendedUse": "Community section panoramic illustration.",
+      "alt": "A pod of five orcas swims together toward a golden dusk horizon between northern islands.",
+      "master": "community.png",
+      "masterWidth": 2520,
+      "masterHeight": 1080,
+      "originalWidth": 1914,
+      "originalHeight": 822,
+      "resampling": "Lanczos3; upscale from preserved generated original, centre crop to target aspect",
+      "files": [
+        {
+          "file": "community-640.avif",
+          "width": 640,
+          "height": 274,
+          "format": "avif",
+          "bytes": 23569,
+          "quality": 48
+        },
+        {
+          "file": "community-640.webp",
+          "width": 640,
+          "height": 274,
+          "format": "webp",
+          "bytes": 46290,
+          "quality": 78
+        },
+        {
+          "file": "community-1280.avif",
+          "width": 1280,
+          "height": 549,
+          "format": "avif",
+          "bytes": 75222,
+          "quality": 48
+        },
+        {
+          "file": "community-1280.webp",
+          "width": 1280,
+          "height": 549,
+          "format": "webp",
+          "bytes": 148022,
+          "quality": 78
+        },
+        {
+          "file": "community-1920.avif",
+          "width": 1920,
+          "height": 823,
+          "format": "avif",
+          "bytes": 130622,
+          "quality": 48
+        },
+        {
+          "file": "community-1920.webp",
+          "width": 1920,
+          "height": 823,
+          "format": "webp",
+          "bytes": 253654,
+          "quality": 78
+        },
+        {
+          "file": "community-1280.jpg",
+          "width": 1280,
+          "height": 549,
+          "format": "jpeg",
+          "bytes": 193065
+        }
+      ]
+    },
+    "og": {
+      "intendedUse": "Social preview card, crop of hero without baked-in text.",
+      "alt": "An orca and glowing golden compass with routes across the sea toward mountain islands.",
+      "files": [
+        {
+          "file": "og.jpg",
+          "width": 1200,
+          "height": 630,
+          "format": "jpeg",
+          "bytes": 276027
+        }
+      ],
+      "derivedFrom": "hero"
+    }
+  }
+}

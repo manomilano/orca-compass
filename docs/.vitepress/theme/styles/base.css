@@ -1,0 +1,267 @@
+/*
+ * Global base styles: restrained identity for documentation pages, site
+ * chrome (nav bar, footer), shared utilities and the landing-page frame.
+ * Section-specific styling belongs in each section's scoped <style>.
+ */
+
+/* ---------- Global ---------- */
+
+::selection {
+  background: var(--oc-glow);
+  color: var(--oc-ink);
+}
+
+:focus-visible {
+  outline: 3px solid var(--oc-color-focus);
+  outline-offset: 2px;
+}
+
+.oc-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Centred content column with the page gutter. Use inside every landing section. */
+.oc-container {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: calc(var(--oc-container-max) + 2 * var(--oc-gutter));
+  margin-inline: auto;
+  padding-inline: var(--oc-gutter);
+}
+
+.oc-container--narrow {
+  max-width: calc(var(--oc-container-narrow) + 2 * var(--oc-gutter));
+}
+
+/* Halftone dot texture; put on any block that should feel printed. */
+.oc-halftone {
+  background-image: radial-gradient(var(--oc-color-halftone) 1px, transparent 1.4px);
+  background-size: 7px 7px;
+}
+
+/* Chart grid lines; for chart-room backgrounds behind illustrations or demos. */
+.oc-chart-grid {
+  background-image:
+    linear-gradient(var(--oc-color-rule) 1px, transparent 1px),
+    linear-gradient(90deg, var(--oc-color-rule) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+/* ---------- Site chrome: navigation bar ---------- */
+
+.VPNavBarTitle .title {
+  font-family: var(--oc-font-display);
+  font-size: 1.625rem;
+  font-weight: 400;
+  letter-spacing: var(--oc-tracking-display);
+  line-height: 1;
+}
+
+/* Compass needle before the live-text site name (decorative): gold north, ink south. */
+.VPNavBarTitle .title::before {
+  content: '';
+  flex: none;
+  width: 10px;
+  height: 24px;
+  margin-right: 10px;
+  background: linear-gradient(var(--oc-gold) 50%, var(--vp-c-text-1) 50%);
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  transform: rotate(18deg);
+}
+
+.VPNavBarTitle .title:has(.logo)::before {
+  /* An image logo replaces the mark once docs/public/brand ships one. */
+  display: none;
+}
+
+/* Keep the repository link reachable in both the bar and the phone menu. */
+.VPNav .VPSocialLink {
+  width: 44px;
+  height: 44px;
+  flex: none;
+}
+
+.VPNav .VPSocialLink:focus-visible {
+  outline: 3px solid var(--oc-color-focus);
+  outline-offset: 2px;
+}
+
+@media (min-width: 768px) {
+  .VPNavBar .VPNavBarSocialLinks {
+    display: flex;
+    align-items: center;
+  }
+}
+
+/* ---------- Site chrome: footer ---------- */
+
+.VPFooter {
+  border-top: var(--oc-border-hair) solid var(--vp-c-divider) !important;
+  background:
+    repeating-linear-gradient(
+        90deg,
+        var(--vp-c-divider) 0 1px,
+        transparent 1px 12px
+      )
+      top / 100% 6px no-repeat,
+    var(--vp-c-bg-alt) !important;
+}
+
+.VPFooter .message,
+.VPFooter .copyright {
+  font-size: var(--oc-text-sm) !important;
+}
+
+.VPFooter .copyright {
+  font-family: var(--oc-font-caption);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: var(--oc-tracking-caption);
+}
+
+/* ---------- Documentation pages (restrained) ---------- */
+
+.vp-doc {
+  font-size: 1rem;
+  line-height: var(--oc-leading-body);
+}
+
+.vp-doc h1 {
+  font-family: var(--oc-font-display);
+  font-weight: 400;
+  font-size: var(--oc-text-2xl);
+  line-height: 1.1;
+  letter-spacing: var(--oc-tracking-display);
+  padding-bottom: var(--oc-space-4);
+  /* Bearing scale: tick marks with a gold north mark */
+  background:
+    linear-gradient(var(--oc-gold), var(--oc-gold)) left bottom / 3px 10px no-repeat,
+    repeating-linear-gradient(90deg, var(--vp-c-divider) 0 1px, transparent 1px 10px)
+      left bottom / 100% 6px no-repeat;
+}
+
+.vp-doc h2 {
+  letter-spacing: -0.01em;
+}
+
+.vp-doc :not(pre) > code {
+  font-size: 0.875em;
+}
+
+.vp-doc table {
+  font-size: 0.9375rem;
+}
+
+/* Caption-style callouts: square inked corner, coloured spine */
+.vp-doc .custom-block {
+  border-radius: var(--oc-radius-sm);
+  border-left-width: 4px;
+  border-left-style: solid;
+}
+
+.vp-doc .custom-block.tip {
+  border-left-color: var(--vp-c-tip-1);
+}
+
+.vp-doc .custom-block.info {
+  border-left-color: var(--vp-c-text-3);
+}
+
+.vp-doc .custom-block.warning {
+  border-left-color: var(--vp-c-warning-1);
+}
+
+.vp-doc .custom-block.danger {
+  border-left-color: var(--vp-c-danger-1);
+}
+
+.vp-doc .custom-block .custom-block-title {
+  font-family: var(--oc-font-caption);
+  text-transform: uppercase;
+  letter-spacing: var(--oc-tracking-caption);
+  font-size: var(--oc-text-sm);
+}
+
+.vp-doc div[class*='language-'] {
+  border-radius: var(--oc-radius-sm);
+}
+
+/* ---------- Landing page frame ---------- */
+
+/*
+ * The landing page (docs/index.md, layout: page) renders LandingPage.vue,
+ * which wraps the eight sections in .landing. Every section root is
+ * <section class="landing-section" id="..."> and owns everything inside it.
+ */
+.landing {
+  --oc-measure: 60ch;
+  overflow-x: clip;
+  background: var(--oc-color-bg);
+  color: var(--oc-color-text);
+}
+
+.landing-section {
+  position: relative;
+  padding-block: var(--oc-section-pad);
+  scroll-margin-top: var(--vp-nav-height);
+  color: var(--oc-color-text);
+  background-color: var(--oc-color-bg);
+}
+
+/* Alternate band for adjacent light sections */
+.landing-section--alt {
+  background-color: var(--oc-color-bg-alt);
+}
+
+.landing p {
+  line-height: var(--oc-leading-body);
+  text-wrap: pretty;
+}
+
+.landing dd { text-wrap: pretty; }
+
+.Layout:has(.landing) .VPNavBarTitle .logo { width: 28px; height: 28px; }
+
+.landing a:not([class]) {
+  color: var(--oc-color-link);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.landing a:not([class]):hover {
+  color: var(--oc-color-link-hover);
+}
+
+.landing code {
+  font-family: var(--oc-font-mono);
+  font-size: 0.9em;
+  padding: 0.1em 0.35em;
+  border-radius: var(--oc-radius-sm);
+  background: var(--oc-color-code-bg);
+}
+
+.landing pre code {
+  padding: 0;
+  background: none;
+}
+
+/* ---------- Motion safety ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

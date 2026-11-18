@@ -51,6 +51,7 @@ npm run build
 npm run test:package
 npm run test:install
 npm run docs:build
+npm run site:check
 ```
 
 `npm test` runs the Vitest suite once (`vitest run`); use `npx vitest` to
@@ -88,7 +89,8 @@ command, a flag or an output field, change the Skill in the same pull request.
 CI runs the suite, type check, build and package smoke check on Windows, macOS
 and Linux with Node.js 24, and the installer check on the same three systems. A
 separate job checks the compiled package on Node.js 20, the minimum supported
-runtime. The user guide builds on Linux in CI. CI runs on every pull request,
+runtime. The user guide builds on Linux in CI, where the built site is also
+verified. CI runs on every pull request,
 including pull requests from forks, with read-only access and no secrets.
 
 ## Releases
@@ -115,19 +117,21 @@ version tags by hand; the workflow creates them after a successful publish.
 ## User guide
 
 For model-data updates, follow [Model data](docs/model-data.md). Review changes
-to the two snapshots in `data/`, preserve source attribution, and run the tests.
-A score-file update on public `main` reaches installed clients through refresh;
-it does not require publishing a new npm package. The Models.dev fallback
-snapshot reaches users with the next npm release; normal catalog refreshes
-fetch Models.dev directly.
+to the evidence snapshot and its manifest in `data/`, preserve source
+attribution, and run the tests. An evidence update on public `main` reaches
+installed clients through refresh; it does not require publishing a new npm
+package. The bundled copy, used as the offline fallback, reaches users with the
+next npm release.
 
 Edit the Markdown pages in `docs/`. `docs/README.md` is the guide's overview on
-GitHub and is included by `docs/index.md` for the website, so its content has
-one source. Add new pages to the sidebar in `docs/.vitepress/config.mts`.
+GitHub and is included by `docs/guide.md` for the website, so its content has
+one source. `docs/index.md` is the landing page. Add new pages to the sidebar
+in `docs/.vitepress/config.mts`.
 
 ```sh
 npm run docs:dev       # edit and preview locally
 npm run docs:build     # production build, including internal link checks
+npm run site:check     # built site: links, fragments, assets, search index, and served pages
 npm run docs:preview   # inspect the production build
 ```
 
@@ -144,7 +148,8 @@ documentation alone does not deploy the website.
 | Path | Responsibility |
 | --- | --- |
 | `src/cli.ts`, `src/setup.ts`, `src/install.ts`, `src/verify.ts` | CLI commands, setup, installation, and launch verification |
-| `src/placements/` | Agent discovery, metadata sources, and cached model tier placement |
+| `src/evidence/` | Evidence snapshot loading, scoring, bands, and refresh |
+| `src/placements/` | Agent discovery, model profiles, and cached model tier placement |
 | `src/routing/` | Usage and Orca settings, routing, effort, and rejection handling |
 | `src/system/`, `src/types.ts`, `src/config.ts`, `src/paths.ts` | Process execution, shared types, configuration, and paths |
 | `tests/` | Tests, synthetic fixtures, and helpers |
@@ -237,6 +242,7 @@ include a concrete before/after example for routing changes.
 - [ ] `npm run test:package` passes after the build.
 - [ ] `npm run test:install` passes after the build for installer changes.
 - [ ] `npm run docs:build` passes for guide changes.
+- [ ] `npm run site:check` passes for guide changes.
 - [ ] README, configuration example, and Skill match any public behavior changes.
 - [ ] Fixtures and diagnostics contain no credentials or personal/account data.
 - [ ] Metadata attribution and the existing license are preserved.

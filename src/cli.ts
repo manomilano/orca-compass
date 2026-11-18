@@ -417,7 +417,7 @@ function buildStatus(gathered: Gathered, config: Config) {
       ...(u.updatedAt !== undefined ? { updatedAt: u.updatedAt } : {}),
       ...(u.error ? { error: u.error } : {}),
       pools: Object.values(u.pools).map((p) => {
-        const s = poolState(p, env.now, config.thresholds);
+        const s = poolState(p, env.now);
         return { ...p, headroom: Math.round(s.headroom * 100) / 100, expired: s.expired, blocked: s.blocked };
       }),
     };

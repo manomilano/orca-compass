@@ -1,5 +1,39 @@
 # Changelog
 
+## Unreleased
+
+- Added the OrcaCompass website with a landing page, user guide, examples,
+  contributing, changelog and community pages, a custom theme, and site
+  verification in CI. Publication remains a manual maintainer action.
+- Routing compares every route that covers the job across all cost tiers.
+  Among unblocked routes with known usage, the score is the reset-adjusted
+  headroom in percentage points minus a price adjustment of
+  `5 × p / (p + 4)` points for a blended price of `p` USD per million tokens
+  (at most five points), and the highest score wins. Before, the cheapest
+  covering cost tier was used first and a pricier tier only when the cheaper
+  one was blocked or strained.
+- A usage window blocks its routes only when Orca reports it as 100% used.
+  `thresholds.longPercent` and `thresholds.sessionPercent` (95 and 90) are now
+  warning levels: a pick at or above them carries the warning
+  `<window> quota is N% used; resets in …`. Recent hand-outs lower headroom
+  but no longer block a window.
+- `usageRiskLimit` only adds the warning `selected route is expected to end
+  above N% of its usage window` to the pick; it no longer changes which route
+  is picked. The warnings `cheaper <tier> cost tier passed over …` and `every
+  unblocked route that covers the job is expected to end above …` are gone.
+- `upgraded` is `true` only when no route at or below the requested tier
+  covers the job. A pricier route picked for its headroom is an ordinary pick.
+- With `--effort`, a covering route from any cost tier that can apply the
+  effort is used; the result is `none` only when no covering route can.
+- Route reasons show `covering routes: N across all cost tiers` in place of
+  `fit group: …`, a `selection: …` line with the pick's score, and the price
+  of the `next best` route. `alternatives` can span cost tiers.
+- `status --json` adds `reportedUsedPercent` to a usage pool whose
+  `usedPercent` includes recent hand-outs.
+- The message shown when this Node.js cannot read Orca's databases now names
+  Node 22.13, the first release where `node:sqlite` works without a flag (it
+  said 22.5).
+
 ## 0.2.4
 
 - Upgrading no longer keeps older evidence (and its need cuts) for up to

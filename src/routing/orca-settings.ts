@@ -80,7 +80,7 @@ export async function readOrcaAgents(deps: OrcaSettingsDeps = defaultDeps()): Pr
   }
 }
 
-/** Opens profile-state.db read-only, reads the settings row and closes it at once. Needs node:sqlite (Node 22.5+). */
+/** Opens profile-state.db read-only, reads the settings row and closes it at once. Needs node:sqlite (Node 22.13+). */
 export async function readSettingsPayload(dbPath: string): Promise<string | undefined> {
   const { DatabaseSync } = await importSqlite();
   const db = new DatabaseSync(dbPath, { readOnly: true });

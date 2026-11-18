@@ -2,6 +2,8 @@
 
 This guide describes the code in this checkout. Installed releases may differ;
 use `orcacompass --help` to see the commands your version supports.
+The website's [home page](index.md) introduces OrcaCompass; this page is the
+user guide overview.
 
 OrcaCompass helps an Orca orchestrator choose the **agent**, **model** and
 **reasoning effort** for each job it hands to a worker. It ships as an Agent
@@ -24,7 +26,11 @@ Skill (`skills/orcacompass/SKILL.md`) backed by a small TypeScript CLI
 | [Models and agents](models-and-agents.md) | The agents OrcaCompass routes to, their model sources, and how to inspect available models |
 | [Model data](model-data.md) | Data sources, cache timing, snapshot dates, and maintaining shared scores |
 | [Orca agents](orca-agents.md) | Every agent id Orca can launch and what OrcaCompass does with each one |
-| [Roadmap](roadmap.md) | What is done, what is next, known limitations, decisions taken |
+| [Roadmap](roadmap.md) | Areas for future work and known limitations |
+| [Examples](examples.md) | Worked examples of routing and verification |
+| [Contributing](contributing.md) | Development setup, checks, and contribution guidelines |
+| [Changelog](changelog.md) | Changes by release |
+| [Community and support](community.md) | Where to ask questions, report bugs, and get help |
 
 To build, test or change OrcaCompass itself, see
 [CONTRIBUTING.md](https://github.com/manomilano/orca-compass/blob/main/CONTRIBUTING.md).
@@ -49,12 +55,13 @@ model.
 | Term | Meaning |
 | --- | --- |
 | **Agent** | A coding CLI Orca can launch as a worker: `claude`, `codex`, `cursor`, `grok`, `antigravity`, `opencode`, `muse` |
-| **Tier** | How capable a model the job needs: `light`, `daily`, `advanced`, `frontier` |
+| **Need** | How strong a model the job requires on each axis (`coding`, `agentic`, `reasoning`): `min`, `low`, `mid`, `high`, `top` |
+| **Tier** | A model's cost tier: `light`, `daily`, `advanced`, `frontier`. `--tier` is also shorthand for the same need on every axis |
 | **Demand** | How much the job needs to think: `low`, `moderate`, `high`, `exceptional`. Separate from the tier |
 | **Effort** | The reasoning level passed to the agent: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | **Route** | One recommendation: agent, model, effort, plus `launchArgs` for `orca orchestration worker-start` |
 | **Usage pool** | A rate-limit window Orca reports for an agent: `session`, `weekly`, `monthly`, `fableWeekly`, or a named bucket |
-| **Headroom** | The share of a usage window expected to be left unused at reset; routes rank by it |
+| **Headroom** | The share of a usage window expected to be left unused at reset; routes are scored by it, minus a small price adjustment |
 | **Risk** | Where a route's usage is heading: `used% / elapsed fraction` of the window, the pool projected to end most used |
 | **Preference (pin)** | Your favorite route for a tier; used when eligible, unblocked and under `preferRiskLimit` |
 | **Ban** | A model id or catalog family that is never routed |

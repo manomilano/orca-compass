@@ -1,4 +1,13 @@
+---
+description: Understand the evidence snapshot, pricing, refresh workflow, and offline fallback.
+---
+
 # Model data
+
+Use this page to understand where model evidence and prices come from, how
+they are rebuilt, and which copy a client uses offline.
+
+## What the snapshot contains
 
 The schema 1 `data/evidence-snapshot.json` is both the model catalog and the
 benchmark evidence used for coding, agentic and reasoning profiles. It contains
@@ -7,41 +16,63 @@ weights, bands and licensed source metadata. Optional model `pricing` is
 `{ inputPerM, outputPerM, basis? }`, in USD per million tokens. The refresh
 copies LLMBenchmark pricing: the maker API price when the maker serves the
 model on OpenRouter, otherwise the median across providers; `basis` records
-which. Curated rows can carry pricing too, and a `fallback` model id: on axes
-the curated model has no score for, the fallback model's score stands in and
-is labelled `assumed` (Composer 2.5 takes its agentic score from Kimi K2.5). Missing or unusable dataset prices
-are omitted; schema 1 still accepts rows without pricing.
+which.
 
-Price decides the cost tier only, using a 3:1 input/output blend and configurable
+Curated rows can also carry pricing and a `fallback` model id. On axes where
+the curated model has no score, the fallback model's score stands in, labelled
+`assumed` (Composer 2.5 takes its agentic score from Kimi K2.5). The snapshot
+omits missing or unusable dataset prices; schema 1 still accepts rows without pricing.
+
+The blended price feeds both the routing score and the cost tier, using a 3:1 input/output blend and configurable
 `costBands` (default `[1, 5, 12]`). It never changes evidence scores, bands or
 need cuts. Models without a price fall back to family/lineup hints and then
 evidence class; user cost-tier overrides take precedence over price.
 
+## Rebuild and validate the data
+
 The raw [LLMBenchmark.ai](https://llmbenchmark.ai) dataset is committed unchanged
-at `data/llmbenchmark/dataset.json` (about 22 MB). Every morning a workflow
+at `data/llmbenchmark/dataset.json` (about 28 MB in this checkout). Every morning a workflow
 downloads it and, when the scores changed, opens a pull request for the
-maintainer. `npm run refresh-evidence` reads it, rebuilds the snapshot and
-manifest, and refuses to write when a calibration check fails; calibration
-runs on every refresh, changed or not. When the rebuilt evidence matches the
-committed snapshot, it keeps the snapshot as it is, so a new build time or
-dataset date alone is not a change, and rewrites the manifest only if it no
-longer matches the snapshot's hash, size or date. A dataset update ships with
+maintainer. `npm run refresh-evidence` reads it and rebuilds the snapshot and
+manifest. It refuses to write either file when a calibration check fails;
+calibration runs on every refresh, changed or not.
+
+When the rebuilt evidence matches the committed snapshot, the refresh keeps
+that snapshot. A new build time or dataset date alone is not a change. It
+rewrites the manifest only if it no longer matches the snapshot's hash, size
+or date. A dataset update ships with
 its rebuilt snapshot in the same pull request; the refresh workflow runs on
 such pull requests and on `main`, and fails with the profile diff when the
-committed snapshot does not match the dataset. Only the trimmed snapshot ships
-in the npm package. Both files are licensed CC BY 4.0; see the repository
+committed snapshot does not match the dataset.
+
+The npm package includes the trimmed snapshot, manifest and curated rows,
+but omits the raw dataset. The dataset and transformed snapshot are licensed
+CC BY 4.0; see the repository
 NOTICE and `data/llmbenchmark/README.md`.
 
-Clients check `data/evidence-manifest.json` on the repository's public `main`
-at most once per `evidenceTtlHours` (24 by default). A changed manifest causes
-a snapshot download and integrity check. A valid cached copy, then the bundled
-snapshot, supplies offline fallback. A snapshot older than the one bundled with
-the installed release is never used: after an upgrade, an older cache is
-checked against the repository at once, and the bundled snapshot is kept when
-the repository has nothing newer or cannot be reached. `orcacompass refresh`
-forces a check and rebuilds placements. `evidenceSource` reports `network`
-(the repository was checked on this call, whether or not anything was
-downloaded), `cache` or `snapshot` (the repository could not be reached).
+## Client refresh and offline fallback
+
+When placements need rebuilding, clients load evidence from a fresh cache
+or check `data/evidence-manifest.json` on the repository's public `main`.
+`evidenceTtlHours` (24 by default) controls cache freshness; forced refresh
+bypasses it. A missing local snapshot or a different manifest `generatedAt`
+causes a snapshot download with byte-length and SHA-256 checks.
+
+::: info Cache identity
+A manifest with the same `generatedAt` reuses the parsed cache without comparing its
+hash or size again.
+:::
+
+A snapshot older than the one bundled with the installed release is never
+used. After an upgrade, an older cache is checked against the repository at
+once, and the bundled snapshot is kept when the repository has nothing newer
+or cannot be reached.
+
+A valid cached copy, then the bundled snapshot, supplies offline fallback.
+`orcacompass refresh` forces a check and rebuilds placements. `evidenceSource`
+reports `network` (the repository was checked on this call, whether or not
+anything was downloaded), `cache` or `snapshot` (the repository could not be
+reached).
 No API key is required; clients do not contact LLMBenchmark directly.
 
 See [Tiers and routing](tiers-and-routing.md) for scoring and routing.

@@ -21,6 +21,14 @@ it('applies live entries without mutating usage and ignores corrupt and unknown 
   expect(parseHandouts('{')).toEqual([]);
   expect(parseHandouts(JSON.stringify({ handouts: [{ at: 1 }] }))).toEqual([]);
 });
+it('keeps a reported 96% pool open when hand-outs push estimated usage past 100%', () => {
+  const env = withPool(machineEnv(), 'claude', 'weekly', { usedPercent: 96 });
+  const usage = applyHandouts(env.usage, [handout, handout], 5);
+  expect(usage.claude.pools.weekly).toMatchObject({ reportedUsedPercent: 96, usedPercent: 106 });
+  const d = route({ tier: 'frontier', agents: ['claude'], noDowngrade: true }, { ...env, usage }, DEFAULT_CONFIG);
+  expect(d.status).toBe('ok');
+  expect(d.warnings).toContainEqual(expect.stringContaining('weekly quota is 96% used'));
+});
 it('adjusted pools affect ranking, explanations and confidence', () => {
   const env = withPool(machineEnv(), 'claude', 'weekly', { usedPercent: 70 });
   const usage = applyHandouts(env.usage, [handout, handout], 5);

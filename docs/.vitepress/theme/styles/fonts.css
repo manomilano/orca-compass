@@ -1,0 +1,22 @@
+/*
+ * Self-hosted typefaces (all SIL Open Font License 1.1), bundled from the
+ * @fontsource packages at build time. Latin subset only.
+ * Never add a remote @import or <link> to a font CDN.
+ */
+
+/* Display: graphic-novel titles */
+@import '@fontsource/bangers/latin-400.css';
+
+/* Caption boxes */
+@import '@fontsource/shantell-sans/latin-700.css';
+
+/* Text: documentation and UI */
+@import '@fontsource/atkinson-hyperlegible-next/latin-400.css';
+@import '@fontsource/atkinson-hyperlegible-next/latin-400-italic.css';
+@import '@fontsource/atkinson-hyperlegible-next/latin-500.css';
+@import '@fontsource/atkinson-hyperlegible-next/latin-600.css';
+@import '@fontsource/atkinson-hyperlegible-next/latin-700.css';
+
+/* Monospace: code, terminal, bearings */
+@import '@fontsource/jetbrains-mono/latin-400.css';
+@import '@fontsource/jetbrains-mono/latin-700.css';
