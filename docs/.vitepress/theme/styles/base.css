@@ -216,9 +216,19 @@
   background-color: var(--oc-color-bg);
 }
 
-/* Alternate band for adjacent light sections */
+/* A hairline closes each section, so two bands never blur into one another. */
+.landing-section + .landing-section {
+  border-top: var(--oc-border-hair) solid var(--oc-color-rule);
+}
+
+/*
+ * Tinted band with a printed halftone. Sections alternate between this and the plain
+ * background, so the page reads as separate panels in both themes.
+ */
 .landing-section--alt {
-  background-color: var(--oc-color-bg-alt);
+  background-color: var(--oc-color-band);
+  background-image: radial-gradient(var(--oc-color-halftone) 1px, transparent 1.4px);
+  background-size: 7px 7px;
 }
 
 .landing p {

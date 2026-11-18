@@ -27,6 +27,7 @@
   --oc-paper: #fcfdfe;
   --oc-foam: #f3f8fb;
   --oc-mist: #e6eef4;
+  --oc-shallows: #e3eef7; /* pale water: the tinted landing band on paper */
   --oc-hairline: #c9d5df;
   --oc-ink: #0a0e13;
   --oc-slate: #34414e;
@@ -109,6 +110,8 @@
 .oc-tone-paper {
   --oc-color-bg: var(--oc-paper);
   --oc-color-bg-alt: var(--oc-foam);
+  --oc-color-band: var(--oc-shallows); /* landing sections that alternate with --oc-color-bg */
+  --oc-color-band-glow: rgba(140, 201, 238, 0.45); /* soft light behind the hero diagram */
   --oc-color-bg-soft: var(--oc-mist);
   --oc-color-surface: #ffffff;
   --oc-color-text: var(--oc-ink);
@@ -137,6 +140,8 @@
 .oc-tone-deep {
   --oc-color-bg: var(--oc-abyss);
   --oc-color-bg-alt: var(--oc-abyss-deep);
+  --oc-color-band: var(--oc-trench);
+  --oc-color-band-glow: rgba(26, 106, 166, 0.4);
   --oc-color-bg-soft: var(--oc-swell);
   --oc-color-surface: var(--oc-deep-sea);
   --oc-color-text: var(--oc-foam);

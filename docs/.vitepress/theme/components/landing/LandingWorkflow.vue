@@ -12,7 +12,7 @@ import RouteChart from './workflow/RouteChart.vue'
 <template>
   <section
     id="workflow"
-    class="landing-section landing-section--alt"
+    class="landing-section"
     aria-labelledby="workflow-title"
   >
     <div class="oc-container">
