@@ -15,7 +15,7 @@ const links = [
 </script>
 
 <template>
-  <section id="community" class="landing-section oc-tone-abyss" aria-labelledby="community-title">
+  <section id="community" class="landing-section" aria-labelledby="community-title">
     <div class="oc-container">
       <ComicPanel tag="figure" flush class="community__art">
         <picture>

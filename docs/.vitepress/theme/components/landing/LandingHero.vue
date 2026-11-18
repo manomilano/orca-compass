@@ -4,6 +4,8 @@
  * Below 960 px the picture is not shown, so the headline, actions and install command lead
  * the page on their own; a 1x1 transparent source keeps those windows from downloading it.
  * 960 px and up: the picture fills the section and the panel sits on its dark left third.
+ * The section follows the light or dark theme: the headline, actions, panel and the space
+ * beside the picture on wide screens all take the theme's colours.
  * Past 1920 px the picture stops growing and its side edges fade into the section, so the
  * artwork keeps the 1920 px crop instead of cropping ever deeper into the 16:9 scene.
  * On desktop the hero picture is the page's LCP element: eager, fetchpriority high.
@@ -21,7 +23,7 @@ const blank = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAA
 </script>
 
 <template>
-  <section id="hero" class="landing-section oc-tone-abyss hero" aria-labelledby="hero-title">
+  <section id="hero" class="landing-section hero" aria-labelledby="hero-title">
     <picture class="hero__picture">
       <source media="(max-width: 959.98px)" :srcset="blank" />
       <source type="image/avif" :srcset="srcset('avif')" :sizes="sizes" />
@@ -148,7 +150,7 @@ const blank = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAA
     padding: var(--oc-space-6);
     border: var(--oc-border-ink) solid var(--oc-color-line);
     border-radius: var(--oc-radius-sm);
-    background-color: var(--oc-abyss);
+    background-color: var(--oc-color-bg);
     box-shadow: var(--oc-shadow-panel);
   }
 }
