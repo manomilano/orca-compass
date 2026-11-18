@@ -13,8 +13,13 @@
  * Plain SVG in a viewBox, so the server-rendered page already holds the finished picture: the
  * first three workers launched. The motion is CSS only and runs only when the reader allows
  * motion. The jobs are parts of the one job the request names; there are more of them than
- * worker slots, so each slot shows two jobs in turn. Their routes are illustrative; the model
- * ids follow README.md and docs/examples.md.
+ * worker slots, so each slot shows two jobs in turn.
+ *
+ * The routes are illustrative, and each is one OrcaCompass can return for that job: the model
+ * meets the job's needs in the bundled evidence snapshot, and the two hard jobs go to Sonnet
+ * rather than Opus because the cheapest model that covers a job wins on equal headroom.
+ * Cursor carries the effort inside the model id, so its routes have no separate effort
+ * (docs/effort.md).
  */
 import { withBase } from 'vitepress'
 
@@ -37,15 +42,15 @@ const SLOTS = 3
 
 /** In the order they are routed. The CSS timing below is written for exactly six. */
 const workers = [
-  { job: 'Build the physics engine', agent: 'claude', model: 'claude-opus-5-5', effort: 'high' },
-  { job: 'Design the levels', agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium' },
-  { job: 'Add the start screen', agent: 'claude', model: 'claude-haiku-5-5', effort: 'low' },
+  { job: 'Build the physics engine', agent: 'claude', model: 'claude-sonnet-5-5', effort: 'high' },
+  { job: 'Design the levels', agent: 'codex', model: 'gpt-6.2-sol', effort: 'medium' },
+  { job: 'Add the start screen', agent: 'cursor', model: 'grok-4.7-low', effort: null },
   { job: 'Write the enemy AI', agent: 'claude', model: 'claude-sonnet-5-5', effort: 'high' },
-  { job: 'Add keyboard controls', agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium' },
-  { job: 'Save the high scores', agent: 'codex', model: 'gpt-6.1-terra', effort: 'low' },
+  { job: 'Add keyboard controls', agent: 'cursor', model: 'grok-4.7-medium', effort: null },
+  { job: 'Save the high scores', agent: 'claude', model: 'claude-haiku-5-5', effort: 'low' },
 ].map((worker, i) => {
   const y = 251 + (i % SLOTS) * 58
-  const pick = `${worker.model} · ${worker.effort}`
+  const pick = worker.effort ? `${worker.model} · ${worker.effort}` : worker.model
   const route = `${worker.agent} · ${pick}`
   return {
     ...worker,
@@ -74,13 +79,13 @@ const say = {
 const label =
   `You tell the orchestrator: ${say.job.text} ${say.split.text} ${say.pick.text} ` +
   'For each job it asks OrcaCompass, gets back an agent, model and effort, and launches an Orca ' +
-  `worker with them: ${workers
-    .map((w) => `${w.job} runs on ${w.agent} with ${w.model} at ${w.effort} effort`)
+  `worker with them. Illustrative routes: ${workers
+    .map((w) => `${w.job} runs on ${w.agent} with ${w.model}${w.effort ? ` at ${w.effort} effort` : ''}`)
     .join('; ')}.`
 </script>
 
 <template>
-  <svg class="flow" viewBox="0 0 440 396" role="img" :aria-label="label" focusable="false">
+  <svg class="flow" viewBox="0 0 440 412" role="img" :aria-label="label" focusable="false">
     <defs>
       <clipPath id="flow-clip-orchestrator"><circle :cx="orchestrator.x" :cy="orchestrator.y" :r="orchestrator.r" /></clipPath>
       <clipPath id="flow-clip-compass"><circle :cx="compass.x" :cy="compass.y" :r="compass.r" /></clipPath>
@@ -140,6 +145,7 @@ const label =
       <path class="flow__check" :d="`M362,${worker.y} l3.5,3.5 l6,-7`" />
       <text class="flow__chip-text" x="377" :y="worker.y">started</text>
     </g>
+    <text class="flow__command" x="438" y="405" text-anchor="end">Illustrative routes</text>
   </svg>
 </template>
 
