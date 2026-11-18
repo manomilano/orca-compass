@@ -4,8 +4,26 @@ description: Install OrcaCompass, complete setup, and understand what routing re
 
 # Getting started
 
-Install OrcaCompass, choose your setup preferences, and check your first route.
-The final sections explain what later calls read and cache.
+Three steps: install OrcaCompass, choose your setup preferences, and check
+your first route. Other install options and what each call reads come after.
+
+## Quick start
+
+```sh
+npx orcacompass install   # 1. shared CLI and project Skill, from your project
+orcacompass setup         # 2. optional: your agents, favorite models and bans
+orcacompass status        # 3. optional: usage and the pick per tier
+```
+
+After the install, you can do the rest from your agent instead of the
+terminal: ask it to "set up OrcaCompass", then to run `orcacompass status`.
+
+`orcacompass setup` and `orcacompass status` are optional: without setup,
+OrcaCompass uses every agent that is installed and not switched off in Orca.
+
+Each step has its own section below: [Install](#install),
+[First-time setup](#first-time-setup) and
+[Check that it works](#check-that-it-works).
 
 ## Requirements
 
@@ -23,9 +41,7 @@ The final sections explain what later calls read and cache.
   `codex`, `cursor-agent`, `grok`, `agy` (Antigravity), `opencode`, and `muse`. An agent
   that is not installed is simply skipped.
 
-## Install
-
-### Recommended install
+## 1. Install {#install}
 
 From your project directory, run:
 
@@ -37,92 +53,17 @@ The installer checks npm's global installation and installs or updates the
 shared CLI to its own version first. It then installs that version's Skill
 for the current project through [`skills`](https://github.com/vercel-labs/skills).
 It needs network access and asks which agents should receive the Skill.
-
-The CLI goes to npm's global folder in either scope; that prefix must be writable.
-Without `--global`, the interactive Skill installer can ask Project or Global;
-Project is preselected. Keep Project for a local installation. `--local` is an
-alias for this default flow; it does not suppress that question. With `--yes`,
-the project default is accepted automatically.
-
-### Other options
-
-```sh
-npx orcacompass install --global  # user-wide Skill, across projects
-npx orcacompass install --local   # project Skill, explicitly (the default)
-npx orcacompass update           # latest CLI and this project's Skill
-npx orcacompass uninstall        # remove this project's Skill
-```
-
-`update` checks npm for the latest release and runs that release's installer.
-It works even when an older installed CLI handles the command. Add `--global`
-to update the user-wide Skill. An already current CLI is kept and the Skill
-is refreshed. An older installer refuses to downgrade a newer CLI.
-
-If the CLI update fails, the Skill is left unchanged. If the Skill step
-fails, the updated CLI remains installed and you can retry the command.
-For a release that predates the `update` command, use
-`npx orcacompass@latest update` to download a current updater first.
-
-Local uninstall keeps the shared CLI because other projects may use it.
-`uninstall --global` removes the user-wide Skill and then the shared CLI.
-With `--skill-only` or a specific `--agent`, global uninstall keeps the CLI.
-Uninstall and updates preserve OrcaCompass preferences, caches and accounts.
-
-| Option | Effect |
-| --- | --- |
-| `-g`, `--global` | Manage the Skill for your user, across projects |
-| `-l`, `--local` | Manage this project's Skill; this is the default |
-| `-y`, `--yes` | Accept defaults; required without a terminal |
-| `-a`, `--agent <name>` | Select an agent such as `claude-code` or `codex`; repeatable |
-| `--skill-only` | Manage only the Skill; keep the shared CLI |
-
-`--global` and `--local` cannot be combined. The options apply to `install`,
-`update` and `uninstall`.
-
-For example, install for both agents across projects:
-
-```sh
-npx orcacompass install --global --agent claude-code --agent codex
-```
+The CLI goes to npm's global folder; that prefix must be writable.
 
 Keep Orca's own orchestration skill installed alongside it: OrcaCompass only
 recommends a route; Orca's skill explains how to launch and supervise workers.
 
-### Alternative: install the CLI, then the Skill
+To update, uninstall, install a user-wide Skill or build from source, see
+[More install options](#other-options).
 
-From the project where you want the Skill, run:
+## 2. First-time setup {#first-time-setup}
 
-```sh
-npm install -g orcacompass@latest
-orcacompass install --skill-only
-```
-
-This installs the same published version in two steps: the CLI first, then
-its matching Skill for the current project. Keep Project if the installer
-asks for scope. The CLI's `-g` makes the CLI available across projects; it
-does not make the Skill global. Add `--global` to the second command for a
-user-wide Skill, or `--local` to spell out the project default. The other
-Skill options above also work with the second command.
-
-### From source
-
-To run the current `main` instead of the published package, build it with
-Node.js 24 and npm, then install the Skill from that checkout:
-
-```sh
-git clone https://github.com/manomilano/orca-compass.git
-cd orca-compass
-npm ci
-npm install -g .
-orcacompass install --skill-only --global
-```
-
-`npm ci` installs the build tools and compiles the CLI. `--skill-only` installs
-the Skill from the checkout and leaves the CLI you just installed alone.
-
-## First-time setup
-
-No config file is required. Setup saves your agent choices, favorite routes
+This step is optional: no config file is required. Setup saves your agent choices, favorite routes
 and model bans for later jobs. Choose one of the three setup methods below.
 
 ### In a terminal
@@ -194,6 +135,119 @@ orcacompass ban claude-haiku              # never route a Claude Haiku model
 
 See [Commands](commands.md).
 
+## 3. Check that it works {#check-that-it-works}
+
+```sh
+orcacompass agents          # each agent: installed, enabled in Orca, usage, chosen, verdict
+orcacompass status          # usage pools, the pick per tier, metadata age
+orcacompass route --tier daily
+```
+
+Illustrative output, shortened (models, percentages and prices depend on
+your environment):
+
+```text
+light → claude · claude-haiku-5-5 · medium (high confidence)
+  claude claude-haiku-5-5: weekly 20% used, 56% of window elapsed (headroom 60%) → on pace for 36% before reset in 3d
+  cost: light ($0.20/M blended, maker price)
+  effort: medium from tier default, passed as --effort
+orca orchestration worker-start --spec "<task>" --agent claude --model claude-haiku-5-5 --effort medium
+```
+
+The first word is the pick's cost tier. It is `light` here because a
+Light-cost model covers an everyday job and no other route had clearly more
+room; a cheaper covering tier is not a downgrade.
+
+If `status` says `evidence: snapshot`, run `orcacompass refresh`
+when online. If an agent you expect is `not used`, the verdict says why
+(`not installed`, `not enabled in Orca`, `excluded by config`, `not signed in`,
+`no models`). [Troubleshooting](troubleshooting.md) covers what to do for each.
+
+## More install options {#other-options}
+
+```sh
+npx orcacompass install --global  # user-wide Skill, across projects
+npx orcacompass install --local   # project Skill, explicitly (the default)
+npx orcacompass update           # latest CLI and this project's Skill
+npx orcacompass uninstall        # remove this project's Skill
+```
+
+### Scope and flags
+
+The CLI goes to npm's global folder in either scope.
+Without `--global`, the interactive Skill installer can ask Project or Global;
+Project is preselected. Keep Project for a local installation. `--local` is an
+alias for this default flow; it does not suppress that question. With `--yes`,
+the project default is accepted automatically.
+
+| Option | Effect |
+| --- | --- |
+| `-g`, `--global` | Manage the Skill for your user, across projects |
+| `-l`, `--local` | Manage this project's Skill; this is the default |
+| `-y`, `--yes` | Accept defaults; required without a terminal |
+| `-a`, `--agent <name>` | Select an agent such as `claude-code` or `codex`; repeatable |
+| `--skill-only` | Manage only the Skill; keep the shared CLI |
+
+`--global` and `--local` cannot be combined. The options apply to `install`,
+`update` and `uninstall`.
+
+For example, install for both agents across projects:
+
+```sh
+npx orcacompass install --global --agent claude-code --agent codex
+```
+
+### Update
+
+`update` checks npm for the latest release and runs that release's installer.
+It works even when an older installed CLI handles the command. Add `--global`
+to update the user-wide Skill. An already current CLI is kept and the Skill
+is refreshed. An older installer refuses to downgrade a newer CLI.
+
+If the CLI update fails, the Skill is left unchanged. If the Skill step
+fails, the updated CLI remains installed and you can retry the command.
+For a release that predates the `update` command, use
+`npx orcacompass@latest update` to download a current updater first.
+
+### Uninstall
+
+Local uninstall keeps the shared CLI because other projects may use it.
+`uninstall --global` removes the user-wide Skill and then the shared CLI.
+With `--skill-only` or a specific `--agent`, global uninstall keeps the CLI.
+Uninstall and updates preserve OrcaCompass preferences, caches and accounts.
+
+### Install the CLI, then the Skill
+
+From the project where you want the Skill, run:
+
+```sh
+npm install -g orcacompass@latest
+orcacompass install --skill-only
+```
+
+This installs the same published version in two steps: the CLI first, then
+its matching Skill for the current project. Keep Project if the installer
+asks for scope. The CLI's `-g` makes the CLI available across projects; it
+does not make the Skill global. Add `--global` to the second command for a
+user-wide Skill, or `--local` to spell out the project default. The other
+Skill options above also work with the second command.
+
+### From source
+
+To run the current `main` instead of the published package, build it with
+Node.js 24 and npm, then install the Skill from that checkout:
+
+```sh
+git clone https://github.com/manomilano/orca-compass.git
+cd orca-compass
+npm ci
+npm install -g .
+orcacompass install --skill-only --global
+```
+
+`npm ci` installs the build tools and compiles the CLI. `--skill-only` installs
+the Skill from the checkout and leaves the CLI you just installed alone.
+
 ## What runs on every call
 
 `route`, `status`, the `agents` listing, `setup`, setting a `prefer` entry,
@@ -264,31 +318,3 @@ needed); live model listings have 30 s each and usage has 20 s. These limits
 apply to individual operations, not the total call. See
 [The first call is slow](troubleshooting.md#the-first-call-is-slow) for how
 the concurrent operations affect waiting time.
-
-## Check that it works
-
-```sh
-orcacompass agents          # each agent: installed, enabled in Orca, usage, chosen, verdict
-orcacompass status          # usage pools, the pick per tier, metadata age
-orcacompass route --tier daily
-```
-
-Illustrative output, shortened (models, percentages and prices depend on
-your environment):
-
-```text
-light → claude · claude-haiku-5-5 · medium (high confidence)
-  claude claude-haiku-5-5: weekly 20% used, 56% of window elapsed (headroom 60%) → on pace for 36% before reset in 3d
-  cost: light ($0.20/M blended, maker price)
-  effort: medium from tier default, passed as --effort
-orca orchestration worker-start --spec "<task>" --agent claude --model claude-haiku-5-5 --effort medium
-```
-
-The first word is the pick's cost tier. It is `light` here because a
-Light-cost model covers an everyday job and no other route had clearly more
-room; a cheaper covering tier is not a downgrade.
-
-If `status` says `evidence: snapshot`, run `orcacompass refresh`
-when online. If an agent you expect is `not used`, the verdict says why
-(`not installed`, `not enabled in Orca`, `excluded by config`, `not signed in`,
-`no models`). [Troubleshooting](troubleshooting.md) covers what to do for each.

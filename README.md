@@ -96,7 +96,7 @@ The CLI is shared across projects; the Skill is installed for this project.
 Keep Project if the installer asks for scope. Add `--global` to the second
 command for a user-wide Skill, or `--local` to spell out the project default.
 
-See [Getting started](https://manomilano.github.io/orca-compass/getting-started.html#install) for all options and
+See [Getting started](https://manomilano.github.io/orca-compass/getting-started.html#other-options) for all options and
 building from source.
 To work on OrcaCompass itself, see [CONTRIBUTING.md](CONTRIBUTING.md).
 

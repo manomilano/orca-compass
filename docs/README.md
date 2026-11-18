@@ -10,45 +10,33 @@ OrcaCompass helps an Orca orchestrator choose the **agent**, **model** and
 Skill (`skills/orcacompass/SKILL.md`) backed by a small TypeScript CLI
 (`orcacompass`). It recommends; Orca launches.
 
+New here? Start with [Getting started](getting-started.md): install with
+`npx orcacompass install`, then set up and check your first route.
+
 ## Pages
 
 | Page | Read it for |
 | --- | --- |
 | [Getting started](getting-started.md) | Install, first-time setup (terminal or chat), what runs on every call |
-| [Skill workflow](skill-workflow.md) | How the orchestrator uses the Skill: rate, route, launch, verify, handle the result |
 | [How it works, end to end](how-it-works.md) | One job followed through every step: needs, evidence, cost tier, usage, launch |
-| [Tiers and routing](tiers-and-routing.md) | The four tiers, how a model gets its tier, the capability score, headroom ranking, preferences, bans, fallbacks |
-| [Effort](effort.md) | Effort demand, effort policies, snapping, how effort reaches each agent |
+| [Skill workflow](skill-workflow.md) | How the orchestrator uses the Skill: rate, route, launch, verify, handle the result |
+| [Examples](examples.md) | Worked examples of routing and verification |
+| [Verify and rejections](verify-and-rejections.md) | Checking that a worker's agent accepted its model, and routing around refusals |
 | [Commands](commands.md) | Every CLI command, flag, exit code and JSON field |
 | [Configuration](configuration.md) | Config and cache paths, every key with its default, data sources, privacy |
-| [Verify and rejections](verify-and-rejections.md) | Checking that a worker's agent accepted its model, and routing around refusals |
 | [Troubleshooting](troubleshooting.md) | Install failures, agents not used, unknown usage, `wait`/`none`, refused models, stale metadata, config errors |
+| [Tiers and routing](tiers-and-routing.md) | The four tiers, how a model gets its tier, the capability score, headroom ranking, preferences, bans, fallbacks |
+| [Effort](effort.md) | Effort demand, effort policies, snapping, how effort reaches each agent |
 | [Models and agents](models-and-agents.md) | The agents OrcaCompass routes to, their model sources, and how to inspect available models |
-| [Model data](model-data.md) | Data sources, cache timing, snapshot dates, and maintaining shared scores |
 | [Orca agents](orca-agents.md) | Every agent id Orca can launch and what OrcaCompass does with each one |
+| [Model data](model-data.md) | Data sources, cache timing, snapshot dates, and maintaining shared scores |
 | [Roadmap](roadmap.md) | Areas for future work and known limitations |
-| [Examples](examples.md) | Worked examples of routing and verification |
-| [Contributing](contributing.md) | Development setup, checks, and contribution guidelines |
 | [Changelog](changelog.md) | Changes by release |
+| [Contributing](contributing.md) | Development setup, checks, and contribution guidelines |
 | [Community and support](community.md) | Where to ask questions, report bugs, and get help |
 
 To build, test or change OrcaCompass itself, see
 [CONTRIBUTING.md](https://github.com/manomilano/orca-compass/blob/main/CONTRIBUTING.md).
-
-## Quick tour
-
-```sh
-npx orcacompass install            # shared CLI and project Skill
-orcacompass setup                   # three questions, then a summary
-orcacompass route --tier daily --demand moderate --json
-```
-
-See [Getting started](getting-started.md) for requirements and install options.
-
-The orchestrator does the last step for you once the Skill is installed: it
-rates the job, calls `orcacompass route`, launches the worker with the returned
-`launchArgs`, then runs `orcacompass verify` to make sure the agent accepted the
-model.
 
 ## Vocabulary
 
