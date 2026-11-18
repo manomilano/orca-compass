@@ -435,6 +435,34 @@
         }
       ],
       "derivedFrom": "hero"
+    },
+    "flow-orchestrator": {
+      "intendedUse": "Orchestrator node portrait in the landing page hero flow diagram.",
+      "alt": "A black-and-white orca raises a gold conductor's baton against deep blue.",
+      "files": [
+        {
+          "file": "flow-orchestrator.webp",
+          "width": 192,
+          "height": 192,
+          "format": "webp",
+          "bytes": 7702,
+          "quality": 95
+        }
+      ]
+    },
+    "flow-compass": {
+      "intendedUse": "OrcaCompass node portrait in the landing page hero flow diagram.",
+      "alt": "A gold compass with an ivory face and a bold four-point rose against navy.",
+      "files": [
+        {
+          "file": "flow-compass.webp",
+          "width": 192,
+          "height": 192,
+          "format": "webp",
+          "bytes": 13790,
+          "quality": 95
+        }
+      ]
     }
   }
 }

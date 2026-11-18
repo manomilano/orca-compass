@@ -7,53 +7,87 @@
  * answers with an agent, model and effort, the orchestrator launches the worker with them
  * (`orca orchestration worker-start`), and `orcacompass verify` reports `started`.
  *
+ * Two colours carry the two halves of the request through the picture: blue for the split
+ * into workers, gold for what OrcaCompass picks.
+ *
  * Plain SVG in a viewBox, so the server-rendered page already holds the finished picture: all
  * three workers launched. The motion is CSS only and runs only when the reader allows motion.
- * The three workers are parts of the one job the request names. Their routes are illustrative;
- * the model ids follow docs/examples.md.
+ * The three workers are parts of the one job the request names, from hardest to easiest.
+ * Their routes are illustrative; the model ids follow README.md and docs/examples.md.
  */
 import { withBase } from 'vitepress'
 
+/** Width of one character in the mono face, as a share of the font size. */
+const MONO = 0.6
+
+/** The two actors: small round portraits joined by an ask lane and an answer lane. */
+const orchestrator = { x: 31, y: 149, r: 30, art: withBase('/art/flow-orchestrator.webp') }
+const compass = { x: 409, y: 149, r: 30, art: withBase('/art/flow-compass.webp') }
+const ASK = `M${orchestrator.x + 33},141 H${compass.x - 33}`
+const ANSWER = `M${compass.x - 33},157 H${orchestrator.x + 33}`
+/** Centre of the lanes, where the question and the answer are written. */
+const MID = (orchestrator.x + compass.x) / 2
+
 const workers = [
-  { job: 'Build the export endpoint', agent: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' },
-  { job: 'Stream million-row exports', agent: 'codex', model: 'gpt-6.1-sol', effort: 'high' },
-  { job: 'Add the download button', agent: 'claude', model: 'claude-haiku-5-5', effort: 'low' },
+  { job: 'Design the sync engine', agent: 'claude', model: 'claude-opus-5-5', effort: 'high' },
+  { job: 'Build live cursors', agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium' },
+  { job: 'Update the docs', agent: 'claude', model: 'claude-haiku-5-5', effort: 'low' },
 ].map((worker, i) => {
-  const y = 265 + i * 58
+  const y = 251 + i * 58
+  const pick = `${worker.model} · ${worker.effort}`
+  const route = `${worker.agent} · ${pick}`
   return {
     ...worker,
     y,
+    pick,
+    pickWidth: pick.length * 11.5 * MONO,
+    route,
+    routeWidth: route.length * 11 * MONO,
     /** From the orchestrator down the trunk and into this worker's box. */
-    launch: `M22,176 V${y - 8} Q22,${y} 30,${y} H44`,
+    launch: `M${orchestrator.x},${orchestrator.y + orchestrator.r} V${y - 8} Q${orchestrator.x},${y} ${orchestrator.x + 8},${y} H56`,
   }
 })
 
+/**
+ * The request, in three runs. Widths are the runs' measured widths in the text face at 13.5px;
+ * `textLength` holds each run to its width so the highlight behind it fits in any fallback font.
+ */
+const say = {
+  job: { text: 'Make the editor multiplayer.', x: 14, y: 47, width: 164.8 },
+  split: { text: 'Split it across Orca workers.', x: 187, y: 47, width: 177.7 },
+  pick: { text: 'Use OrcaCompass to pick each model.', x: 18, y: 68, width: 244.2 },
+}
+
 const label =
-  'You give the orchestrator one sentence. For each job it asks OrcaCompass, gets back an agent, ' +
-  `model and effort, and launches an Orca worker with them: ${workers
+  `You tell the orchestrator: ${say.job.text} ${say.split.text} ${say.pick.text} ` +
+  'For each job it asks OrcaCompass, gets back an agent, model and effort, and launches an Orca ' +
+  `worker with them: ${workers
     .map((w) => `${w.job} runs on ${w.agent} with ${w.model} at ${w.effort} effort`)
     .join('; ')}.`
-
-const mark = withBase('/brand/mark.svg')
-const ASK = 'M151,141 H360'
-const ANSWER = 'M360,157 H151'
 </script>
 
 <template>
-  <svg class="flow" viewBox="0 0 440 408" role="img" :aria-label="label" focusable="false">
+  <svg class="flow" viewBox="0 0 440 396" role="img" :aria-label="label" focusable="false">
+    <defs>
+      <clipPath id="flow-clip-orchestrator"><circle :cx="orchestrator.x" :cy="orchestrator.y" :r="orchestrator.r" /></clipPath>
+      <clipPath id="flow-clip-compass"><circle :cx="compass.x" :cy="compass.y" :r="compass.r" /></clipPath>
+    </defs>
+
     <!-- The request -->
     <rect class="flow__shadow" x="6" y="17" width="432" height="70" rx="2" />
     <rect class="flow__box flow__box--ink" x="1" y="12" width="432" height="70" rx="2" />
     <rect class="flow__tag" x="1" y="12" width="74" height="21" />
     <text class="flow__tag-text" x="38" y="23" text-anchor="middle">You say</text>
-    <text class="flow__say" x="14" y="50">Add CSV export to reports. <tspan class="flow__strong">Split it across Orca</tspan></text>
-    <text class="flow__say flow__strong" x="14" y="68">workers and use OrcaCompass to pick each model.</text>
+    <text class="flow__say" :x="say.job.x" :y="say.job.y" :textLength="say.job.width">{{ say.job.text }}</text>
+    <rect class="flow__mark flow__mark--split" :x="say.split.x - 4" :y="say.split.y - 9" :width="say.split.width + 8" height="18" rx="2" />
+    <text class="flow__marked" :x="say.split.x" :y="say.split.y" :textLength="say.split.width">{{ say.split.text }}</text>
+    <rect class="flow__mark flow__mark--pick" :x="say.pick.x - 4" :y="say.pick.y - 9" :width="say.pick.width + 8" height="18" rx="2" />
+    <text class="flow__marked" :x="say.pick.x" :y="say.pick.y" :textLength="say.pick.width">{{ say.pick.text }}</text>
 
-    <!-- Fixed lines: request to orchestrator, the two lanes to OrcaCompass, the trunk to the workers -->
-    <path class="flow__line" d="M75,82 V122" />
+    <!-- Fixed lines: the two lanes to OrcaCompass, the trunk to the workers -->
     <path class="flow__line" :d="ASK" />
     <path class="flow__line" :d="ANSWER" />
-    <path class="flow__line" d="M353,136 L360,141 L353,146 M158,152 L151,157 L158,162" />
+    <path class="flow__line" :d="`M${compass.x - 40},136 l7,5 l-7,5 M${orchestrator.x + 40},152 l-7,5 l7,5`" />
     <path v-for="worker in workers" :key="`line-${worker.job}`" class="flow__line" :d="worker.launch" />
 
     <!-- One round per worker: ask, answer, launch -->
@@ -62,70 +96,89 @@ const ANSWER = 'M360,157 H151'
       <circle class="flow__dot flow__dot--ask" :style="{ offsetPath: `path('${ASK}')` }" r="5.5" />
       <circle class="flow__dot flow__dot--answer" :style="{ offsetPath: `path('${ANSWER}')` }" r="5.5" />
       <circle class="flow__dot flow__dot--launch" :style="{ offsetPath: `path('${worker.launch}')` }" r="5.5" />
-      <text class="flow__ask" :class="{ 'flow__first': i === 0 }" x="255" y="127" text-anchor="middle">{{ worker.job }}?</text>
-      <text class="flow__answer" :class="{ 'flow__first': i === 0 }" x="255" y="174" text-anchor="middle">{{ worker.model }} · {{ worker.effort }}</text>
+      <text class="flow__ask" :class="{ 'flow__first': i === 0 }" :x="MID" y="127" text-anchor="middle">{{ worker.job }}?</text>
+      <g class="flow__answer" :class="{ 'flow__first': i === 0 }">
+        <rect class="flow__mark flow__mark--pick" :x="MID - worker.pickWidth / 2 - 5" y="165" :width="worker.pickWidth + 10" height="18" rx="2" />
+        <text class="flow__pick" :x="MID" y="174" text-anchor="middle" :textLength="worker.pickWidth">{{ worker.pick }}</text>
+      </g>
     </g>
 
     <!-- Orchestrator -->
-    <rect class="flow__box" x="1" y="122" width="150" height="54" rx="2" />
-    <text class="flow__heading" x="14" y="141">Orchestrator</text>
-    <text class="flow__sub" x="14" y="160">rates each job</text>
+    <text class="flow__heading" :x="orchestrator.x - orchestrator.r" y="104">Orchestrator</text>
+    <image :href="orchestrator.art" :x="orchestrator.x - orchestrator.r" :y="orchestrator.y - orchestrator.r" :width="orchestrator.r * 2" :height="orchestrator.r * 2" clip-path="url(#flow-clip-orchestrator)" preserveAspectRatio="xMidYMid slice" />
+    <circle class="flow__ring" :cx="orchestrator.x" :cy="orchestrator.y" :r="orchestrator.r" />
 
     <!-- OrcaCompass -->
-    <text class="flow__heading" x="390" y="108" text-anchor="middle">OrcaCompass</text>
-    <circle class="flow__pulse" cx="390" cy="149" r="30" />
-    <image :href="mark" x="360" y="119" width="60" height="60" />
-    <text class="flow__sub" x="390" y="196" text-anchor="middle">evidence · usage</text>
+    <text class="flow__heading" :x="compass.x + compass.r" y="104" text-anchor="end">OrcaCompass</text>
+    <circle class="flow__pulse" :cx="compass.x" :cy="compass.y" :r="compass.r" />
+    <image :href="compass.art" :x="compass.x - compass.r" :y="compass.y - compass.r" :width="compass.r * 2" :height="compass.r * 2" clip-path="url(#flow-clip-compass)" preserveAspectRatio="xMidYMid slice" />
+    <circle class="flow__ring" :cx="compass.x" :cy="compass.y" :r="compass.r" />
 
     <!-- Workers -->
-    <text class="flow__heading" x="44" y="228">Orca workers</text>
-    <text class="flow__command" x="433" y="228" text-anchor="end">orca orchestration worker-start</text>
+    <text class="flow__heading flow__heading--split" x="56" y="212">Orca workers</text>
+    <text class="flow__command" x="438" y="212" text-anchor="end">orca orchestration worker-start</text>
     <g v-for="(worker, i) in workers" :key="`worker-${worker.job}`">
-      <rect class="flow__slot" x="44" :y="worker.y - 25" width="389" height="50" rx="2" />
+      <rect class="flow__slot" x="56" :y="worker.y - 25" width="382" height="50" rx="2" />
       <g class="flow__worker" :style="{ '--i': i }">
-        <rect class="flow__box" x="44" :y="worker.y - 25" width="389" height="50" rx="2" />
-        <text class="flow__job" x="58" :y="worker.y - 9">{{ worker.job }}</text>
-        <text class="flow__route" x="58" :y="worker.y + 11">{{ worker.agent }} · {{ worker.model }} · {{ worker.effort }}</text>
-        <rect class="flow__chip" x="349" :y="worker.y - 11" width="74" height="22" rx="2" />
-        <path class="flow__check" :d="`M357,${worker.y} l3.5,3.5 l6,-7`" />
-        <text class="flow__chip-text" x="372" :y="worker.y">started</text>
+        <rect class="flow__box flow__box--split" x="56" :y="worker.y - 25" width="382" height="50" rx="2" />
+        <text class="flow__job" x="70" :y="worker.y - 10">{{ worker.job }}</text>
+        <rect class="flow__mark flow__mark--pick" x="66" :y="worker.y + 2" :width="worker.routeWidth + 8" height="17" rx="2" />
+        <text class="flow__route" x="70" :y="worker.y + 10.5" :textLength="worker.routeWidth">{{ worker.route }}</text>
+        <rect class="flow__chip" x="354" :y="worker.y - 11" width="74" height="22" rx="2" />
+        <path class="flow__check" :d="`M362,${worker.y} l3.5,3.5 l6,-7`" />
+        <text class="flow__chip-text" x="377" :y="worker.y">started</text>
       </g>
     </g>
   </svg>
 </template>
 
 <style scoped>
-.flow { --flow-loop: 12s; display: block; width: 100%; height: auto; overflow: visible; }
+.flow {
+  --flow-loop: 12s;
+  /* Lines and frames; the highlights behind text are fixed so ink stays readable on them. */
+  --flow-split: var(--oc-color-link);
+  --flow-pick: var(--oc-color-route);
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
 
 .flow text { dominant-baseline: central; fill: var(--oc-color-text); }
 .flow__box { fill: var(--oc-color-surface); stroke: var(--oc-color-line); stroke-width: 2; }
 .flow__box--ink { stroke-width: 3; }
+.flow__box--split { stroke: var(--flow-split); }
 .flow__shadow { fill: var(--oc-color-shadow); }
+.flow__ring { fill: none; stroke: var(--oc-color-line); stroke-width: 2.5; }
 /* Fixed colours, like every caption box. */
 .flow__tag { fill: var(--oc-caption); stroke: var(--oc-ink); stroke-width: 2; }
 .flow .flow__tag-text { fill: var(--oc-ink); font: 700 10.5px var(--oc-font-caption); letter-spacing: 0.04em; text-transform: uppercase; }
 .flow .flow__say { fill: var(--oc-color-text-muted); font: 13.5px var(--oc-font-text); }
-.flow .flow__strong { fill: var(--oc-color-text); font-weight: 700; }
+.flow__mark--split { fill: var(--oc-sky); }
+.flow__mark--pick { fill: var(--oc-gold); }
+.flow .flow__marked { fill: var(--oc-ink); font: 700 13.5px var(--oc-font-text); }
 
 .flow__line { fill: none; stroke: var(--oc-color-text-subtle); stroke-width: 1.25; opacity: 0.55; }
-.flow__trail { fill: none; stroke: var(--oc-color-route); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 1; }
+.flow__trail { fill: none; stroke: var(--flow-split); stroke-width: 3; stroke-dasharray: 1; }
 /* Shown only while travelling; without motion the finished picture says it all. */
-.flow__dot { fill: var(--oc-color-route); stroke: var(--oc-color-text); stroke-width: 1.5; opacity: 0; }
-.flow__pulse { fill: none; stroke: var(--oc-color-route); stroke-width: 3; opacity: 0; transform-box: fill-box; transform-origin: center; }
+.flow__dot { fill: var(--flow-pick); stroke: var(--oc-color-text); stroke-width: 1.5; opacity: 0; }
+.flow__dot--launch { fill: var(--flow-split); }
+.flow__pulse { fill: none; stroke: var(--flow-pick); stroke-width: 3; opacity: 0; transform-box: fill-box; transform-origin: center; }
 
 .flow .flow__heading { fill: var(--oc-color-text-subtle); font: 700 11px var(--oc-font-mono); letter-spacing: 0.14em; text-transform: uppercase; }
-.flow .flow__sub { fill: var(--oc-color-text-muted); font: 12px var(--oc-font-text); }
+.flow .flow__heading--split { fill: var(--flow-split); }
 .flow .flow__command { fill: var(--oc-color-text-subtle); font: 10px var(--oc-font-mono); }
 .flow .flow__ask { font: 600 12.5px var(--oc-font-text); opacity: 0; }
-.flow .flow__answer { font: 700 11.5px var(--oc-font-mono); opacity: 0; }
+.flow__answer { opacity: 0; }
+.flow .flow__pick { fill: var(--oc-ink); font: 700 11.5px var(--oc-font-mono); }
 .flow .flow__first { opacity: 1; }
 
 .flow__slot { fill: none; stroke: var(--oc-color-text-subtle); stroke-width: 1.25; stroke-dasharray: 4 4; opacity: 0.55; }
 .flow .flow__job { font: 600 13.5px var(--oc-font-text); }
-.flow .flow__route { fill: var(--oc-color-text-muted); font: 11px var(--oc-font-mono); }
-.flow__chip { fill: var(--oc-color-accent); }
-.flow__check { fill: none; stroke: var(--oc-color-on-accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.flow .flow__chip-text { fill: var(--oc-color-on-accent); font: 700 11px var(--oc-font-mono); }
+.flow .flow__route { fill: var(--oc-ink); font: 11px var(--oc-font-mono); }
+.flow__chip { fill: none; stroke: var(--oc-color-text-subtle); stroke-width: 1.25; }
+.flow__check { fill: none; stroke: var(--oc-color-text); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.flow .flow__chip-text { font: 700 11px var(--oc-font-mono); }
 
 /*
  * One 12 s loop per worker, each starting 4 s after the one before: ask, answer, launch, then
