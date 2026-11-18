@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.5
 
 - Added the OrcaCompass website with a landing page, user guide, examples,
   contributing, changelog and community pages, a custom theme, and site
