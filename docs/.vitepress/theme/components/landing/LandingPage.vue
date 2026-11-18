@@ -9,7 +9,6 @@ import LandingCommunity from './LandingCommunity.vue'
 import LandingDocsMap from './LandingDocsMap.vue'
 import LandingHero from './LandingHero.vue'
 import LandingInstall from './LandingInstall.vue'
-import LandingQuickStart from './LandingQuickStart.vue'
 import LandingRouteDemo from './LandingRouteDemo.vue'
 import LandingStory from './LandingStory.vue'
 import LandingWorkflow from './LandingWorkflow.vue'
@@ -19,7 +18,6 @@ import LandingWorkflow from './LandingWorkflow.vue'
   <div class="landing">
     <LandingHero />
     <LandingStory />
-    <LandingQuickStart />
     <LandingDocsMap />
     <LandingWorkflow />
     <LandingRouteDemo />
