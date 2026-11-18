@@ -47,7 +47,7 @@ const workers = [
   { job: 'Add the start screen', agent: 'cursor', model: 'grok-4.7-low', effort: null },
   { job: 'Write the enemy AI', agent: 'claude', model: 'claude-sonnet-5-5', effort: 'high' },
   { job: 'Add keyboard controls', agent: 'cursor', model: 'grok-4.7-medium', effort: null },
-  { job: 'Save the high scores', agent: 'claude', model: 'claude-haiku-5-5', effort: 'low' },
+  { job: 'Save the high scores', agent: 'codex', model: 'gpt-6.1-terra', effort: 'low' },
 ].map((worker, i) => {
   const y = 251 + (i % SLOTS) * 58
   const pick = worker.effort ? `${worker.model} · ${worker.effort}` : worker.model
