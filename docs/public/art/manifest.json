@@ -452,14 +452,14 @@
     },
     "flow-compass": {
       "intendedUse": "OrcaCompass node portrait in the landing page hero flow diagram.",
-      "alt": "A gold compass with an ivory face and a bold four-point rose against navy.",
+      "alt": "An orca flipper holds a brass compass with a red dorsal-fin north point.",
       "files": [
         {
           "file": "flow-compass.webp",
           "width": 192,
           "height": 192,
           "format": "webp",
-          "bytes": 13790,
+          "bytes": 7424,
           "quality": 95
         }
       ]
