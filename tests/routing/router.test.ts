@@ -470,9 +470,11 @@ describe('route with synthetic usage', () => {
     expect(light.effort).toMatchObject({ source: 'demand', demand: 'high', policy: 'balanced', target: 'high', resolved: 'high', applied: 'flag' });
     expect(light.reasons).toContain('effort: high from high reasoning demand (balanced policy), passed as --effort');
     expect(route({ tier: 'frontier', demand: 'low' }, env, DEFAULT_CONFIG).effort).toMatchObject({ target: 'low', resolved: 'low' });
-    expect(route({ tier: 'daily', demand: 'exceptional' }, env, DEFAULT_CONFIG).route?.effort).toBe('high');
+    expect(route({ tier: 'daily', demand: 'exceptional' }, env, DEFAULT_CONFIG).route?.effort).toBe('xhigh');
     const quality: Config = { ...DEFAULT_CONFIG, effortPolicy: 'quality' };
-    expect(route({ tier: 'daily', demand: 'exceptional' }, env, quality).route?.effort).toBe('xhigh');
+    expect(route({ tier: 'daily', demand: 'high' }, env, quality).route?.effort).toBe('xhigh');
+    const efficient: Config = { ...DEFAULT_CONFIG, effortPolicy: 'efficient' };
+    expect(route({ tier: 'daily', demand: 'exceptional' }, env, efficient).route?.effort).toBe('high');
     expect(route({ tier: 'daily', demand: 'low' }, env, quality).route?.effort).toBe('low');
     // An explicit effort wins over the demand.
     expect(route({ tier: 'daily', demand: 'low', effort: 'high' }, env, DEFAULT_CONFIG).effort).toMatchObject({ source: 'explicit', target: 'high' });

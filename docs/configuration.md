@@ -123,8 +123,8 @@ present they produce a warning and are ignored; use `costBands` and
 | Policy | low | moderate | high | exceptional |
 | --- | --- | --- | --- | --- |
 | `efficient` | low | low | medium | high |
-| `balanced` | low | medium | high | high |
-| `quality` | low | medium | high | xhigh |
+| `balanced` | low | medium | high | xhigh |
+| `quality` | low | medium | xhigh | xhigh |
 
 No demand maps to `max`; it takes an explicit `--effort max`. Efforts are
 `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; the config requires
@@ -162,7 +162,7 @@ This config:
 - prefers Codex for everyday jobs unless it is on pace for more than 120% of
   a window and a within-limit alternative is available;
 - treats a local Gemma model as Light;
-- lets exceptional demand reach `xhigh`.
+- gives high as well as exceptional demand `xhigh`.
 
 ::: details The shipped config.example.json
 [`config.example.json`](https://github.com/manomilano/orca-compass/blob/main/config.example.json)

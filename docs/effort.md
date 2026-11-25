@@ -68,14 +68,15 @@ demand. Route output calls it the *reasoning demand*.
 | --- | --- | --- | --- |
 | `low` | `low` | `low` | `low` |
 | `moderate` | `low` | `medium` | `medium` |
-| `high` | `medium` | `high` | `high` |
-| `exceptional` | `high` | `high` | `xhigh` |
+| `high` | `medium` | `high` | `xhigh` |
+| `exceptional` | `high` | `xhigh` | `xhigh` |
 
 ::: tip
 No policy maps to `max`; that takes an explicit `--effort max`. The mapping is
-a starting heuristic, not a measured optimum: `balanced` keeps exceptional work
-at `high`, `quality` allows `xhigh` for it only, `efficient` saves effort on
-moderate and high work. Measuring it is on the [roadmap](roadmap.md).
+a starting heuristic, not a measured optimum: `balanced` gives each demand its
+own effort, `low` to `xhigh`; `quality` also gives high work `xhigh`;
+`efficient` saves effort on moderate and high work and keeps exceptional work
+at `high`. Measuring it is on the [roadmap](roadmap.md).
 :::
 
 ## Checking the target against the model
@@ -86,7 +87,7 @@ from (`supportSource`), most trusted first:
 | `supportSource` | Meaning | Agents |
 | --- | --- | --- |
 | `provider` | The agent CLI's own model list or cache | Claude Code (its cached account catalog), Codex (`models_cache.json`), Cursor (effort variants in `cursor-agent models`), Grok (`models_cache.json`), Antigravity ids with an effort suffix (Gemini) |
-| `orca` | Orca's effort menu or catalog for that agent | Claude Code and Codex (Orca's model catalog, their first source), Grok (from `grok models`, with Orca's ceilings), Antigravity ids without an effort suffix (`low`/`medium`/`high`), Muse (`minimal` to `max`; Orca's `ultra` has no rung here), OpenCode (none) |
+| `orca` | Orca's effort menu or catalog for that agent | Claude Code and Codex (Orca's model catalog, their first source), Grok (from `grok models`, with Orca's ceilings), Antigravity ids without an effort suffix (Orca's catalog, else `low`/`medium`/`high`), Muse (`minimal` to `max`; Orca's `ultra` has no rung here), OpenCode (none) |
 | `assumed` | A built-in guess | Claude Code and Codex when neither Orca's catalog nor the agent's own cache lists any model, so models come from the evidence catalog: `low`, `medium`, `high`, `xhigh`, `max` |
 
 `supportSource` is `unknown` when a model carries no source.
@@ -165,10 +166,11 @@ When the supported levels are `assumed`, the effort reason ends with
   `~/.grok/models_cache.json`. Multi-agent models get no effort (on them effort
   sets how many agents run). From `grok models`: `low` to `xhigh`, capped as in
   Orca's seed (`grok-4.5` up to `high`).
-- **Antigravity**: ids ending in `-low`, `-medium` or `-high` (the Gemini
-  models, `gemini-3.8-flash-low|medium|high`) are grouped like Cursor's, with
-  the unsuffixed id filling a missing `medium`; other ids (Claude, GPT-OSS)
-  take Orca's `--effort` `low`/`medium`/`high`.
+- **Antigravity**: ids ending in `-low`, `-medium`, `-high` or `-xhigh` (the
+  Gemini models, `gemini-4-neon-low|medium|high|xhigh`) are grouped like
+  Cursor's, with the unsuffixed id filling a missing `medium`; other ids
+  (Claude, GPT-OSS) take Orca's `--effort`, with the efforts Orca's catalog
+  lists for them, else `low`/`medium`/`high`.
 - **Muse**: Orca's menu, `minimal` to `max`, passed as `--effort`; the
   default is `high`.
 - **OpenCode**: no effort; Orca does not support it for OpenCode.
