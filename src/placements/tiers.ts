@@ -28,7 +28,7 @@ export function knownModelVersion(modelId: string): { family: string; version: n
 /** Catalog family when available, otherwise a narrowly recognized versioned model family. */
 export const modelFamily = (modelId: string, meta?: ModelMeta): string | undefined => meta?.family ?? knownModelVersion(modelId)?.family;
 
-/** Model lines matched by id, where the family is too broad: Models.dev files Gemini Argon under `gemini` and every Grok under `grok`. */
+/** Model lines matched by id, where the family alone does not set the tier: Gemini Argon, and Grok releases that share the `grok` family. */
 export const MODEL_LINE_TIERS: readonly { pattern: RegExp; tier: Tier }[] = [
   { pattern: /^gemini(-\d+)+-argon(-|$)/, tier: 'frontier' },
   // Grok 4.7 to 4.9 and 5+; older releases (4.20 is from early 2026) and Grok Build need snapshot evidence.

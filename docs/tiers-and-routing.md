@@ -144,7 +144,10 @@ short axis is listed under `skipped` as `below need on <axis> (<score> < <cut>)`
 Within one agent, only the newest release of a family competes per cost tier.
 Sonnet 4.6 (Advanced cost) can remain beside Sonnet 5.5 (Daily cost). If both
 qualify and draw on the same pools, the lower price favors Sonnet 5.5. Grok
-4.5 and 4.7 are both Daily cost, so only 4.7 competes.
+4.5 and 4.7 are both Daily cost, so only 4.7 competes. Gemini's family is its
+line, the word after the version: Gemini 4 Carbon, Argon and Hydrogen are three
+families, so a newer Hydrogen does not hide Carbon, while Gemini 3.8 Flash
+replaces 3.5 Flash.
 
 ### Order of decisions {#order-of-decisions}
 
