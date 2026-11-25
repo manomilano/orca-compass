@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- `--demand` gives each reasoning demand its own effort under the default
+  `balanced` policy: `exceptional` now maps to `xhigh` (was `high`). `quality`
+  maps `high` and `exceptional` to `xhigh`; `efficient` is unchanged. A model
+  without `xhigh` still snaps to its nearest lower effort.
+- Antigravity's `-xhigh` model ids (Gemini 4 Neon and Hydrogen) are grouped
+  with their model as its `xhigh` effort instead of being listed as unknown
+  models that were never routed. Claude and GPT models in Antigravity take
+  their efforts from Orca's model catalog when it lists them.
+
 ## 0.2.5
 
 - Added the OrcaCompass website with a landing page, user guide, examples,
