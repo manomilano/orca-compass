@@ -1,15 +1,15 @@
 name: Refresh evidence snapshot
 
-# Checks that the committed snapshot matches the committed LLMBenchmark dataset. A change to the
+# Checks that the committed snapshot and archive match the committed LLMBenchmark dataset. A change to the
 # dataset must ship with its rebuilt snapshot in the same pull request (npm run refresh-evidence);
 # this fails the pull request when it does not, before the stale snapshot reaches users from main.
 on:
   workflow_dispatch:
   pull_request:
-    paths: [data/llmbenchmark/dataset.json, data/evidence-curated.json, data/evidence-snapshot.json, src/evidence/**, scripts/refresh-evidence.mjs, .github/workflows/refresh-evidence.yml]
+    paths: [data/llmbenchmark/dataset.json, data/evidence-curated.json, data/evidence-archive.json, data/evidence-snapshot.json, src/evidence/**, scripts/refresh-evidence.mjs, .github/workflows/refresh-evidence.yml]
   push:
     branches: [main]
-    paths: [data/llmbenchmark/dataset.json, data/evidence-curated.json]
+    paths: [data/llmbenchmark/dataset.json, data/evidence-curated.json, data/evidence-archive.json]
 
 permissions:
   contents: read
@@ -25,7 +25,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      # Reads the committed data/llmbenchmark/dataset.json; nothing is downloaded here.
+      # Reads the committed data/llmbenchmark/dataset.json and evidence archive; nothing is downloaded here.
       - run: node scripts/refresh-evidence.mjs --diff /tmp/evidence-diff.md --check-methodology
       - name: Fail when the snapshot is out of date
         run: |
@@ -35,5 +35,5 @@ jobs:
           fi
           cat /tmp/evidence-diff.md >> "$GITHUB_STEP_SUMMARY"
           git status --short data/
-          echo "::error::The evidence snapshot does not match the dataset. Run npm run build && npm run refresh-evidence, then commit data/evidence-snapshot.json and data/evidence-manifest.json."
+          echo "::error::The evidence snapshot does not match the dataset. Run npm run build && npm run refresh-evidence, then commit data/evidence-snapshot.json, data/evidence-manifest.json and data/evidence-archive.json."
           exit 1

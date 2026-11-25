@@ -39,6 +39,16 @@ maintainer. `npm run refresh-evidence` reads it and rebuilds the snapshot and
 manifest. It refuses to write either file when a calibration check fails;
 calibration runs on every refresh, changed or not.
 
+Sources sometimes stop publishing a score, for example when they drop older
+models from a leaderboard. `data/evidence-archive.json` keeps the last known
+value of every axis score row the dataset has carried, and the refresh updates
+it from each dataset. When the dataset no longer has a row, the refresh adds
+it back from the archive, dated to the last committed dataset that had it, for
+180 days.
+After that the row stays in the archive but no longer counts. The archive never
+deletes rows, so older values remain available if a source drops them for
+good. The refresh diff says how many rows it kept this way.
+
 When the rebuilt evidence matches the committed snapshot, the refresh keeps
 that snapshot. A new build time or dataset date alone is not a change. It
 rewrites the manifest only if it no longer matches the snapshot's hash, size

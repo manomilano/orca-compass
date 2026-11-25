@@ -29,6 +29,8 @@ jobs:
       - run: npm ci
       - run: npm run build
       # Downloads the dataset; refuses to write when calibration fails. Unchanged scores write nothing.
+      # Score rows the dataset dropped come back from data/evidence-archive.json for 180 days. The
+      # archive alone changes on every run (its date), so only the snapshot decides whether to open a PR.
       - run: node scripts/refresh-evidence.mjs --fetch --diff /tmp/evidence-diff.md --check-methodology
       - name: Check for changed scores
         id: changes
@@ -54,7 +56,7 @@ jobs:
           git switch -c "$branch"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/llmbenchmark/dataset.json data/evidence-snapshot.json data/evidence-manifest.json
+          git add data/llmbenchmark/dataset.json data/evidence-snapshot.json data/evidence-manifest.json data/evidence-archive.json
           git commit -m "chore(data): update evidence from LLMBenchmark ($(date -u +%F))"
           git push --set-upstream origin "$branch"
           {
