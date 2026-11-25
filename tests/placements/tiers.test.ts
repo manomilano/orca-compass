@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG } from '../../src/config.js';
 import { hintFor } from '../../src/placements/profiles.js';
-import { lineupTier } from '../../src/placements/tiers.js';
+import { knownModelVersion, lineupTier } from '../../src/placements/tiers.js';
 import type { ModelMeta } from '../../src/types.js';
 
 const meta = (family?: string): ModelMeta => ({ id: 'x', provider: 'p', name: 'X', family });
@@ -58,4 +58,24 @@ describe('lineupTier', () => {
     ['Fastest for quick answers', 'light'], ['Fast and affordable model for easier tasks.', 'light'], ['Older fast and efficient model.', 'light'],
     ['GPT-6.1 Terra Codex model.', undefined], ['', undefined], [undefined, undefined],
   ])('reads %s', (description, tier) => expect(lineupTier(description)).toBe(tier));
+});
+
+describe('knownModelVersion', () => {
+  it.each([
+    ['gemini-4-neon', 'gemini-neon', [4]],
+    ['gemini-5-neon', 'gemini-neon', [5]],
+    ['gemini-3.8-flash', 'gemini-flash', [3, 8]],
+    ['google/gemini-3-1-flash-lite-preview', 'gemini-flash-lite', [3, 1]],
+    ['gemini-2-0-flash-001', 'gemini-flash', [2, 0]],
+    ['claude-fable-5-2', 'claude-fable', [5, 2]],
+    ['gpt-6.2-astra', 'gpt-astra', [6, 2]],
+  ])('reads %s as %s %j', (id, family, version) => {
+    expect(knownModelVersion(id)).toEqual({ family, version });
+  });
+
+  it('leaves ids without a version before the line alone', () => {
+    expect(knownModelVersion('gemini-pro-orchestrator-neon')).toBeUndefined();
+    expect(knownModelVersion('gemini-omni-1-2-flash')).toBeUndefined();
+    expect(knownModelVersion('grok-4-7')).toBeUndefined();
+  });
 });

@@ -1,7 +1,7 @@
 import { AXES, type Axis, type EvidenceSnapshot, type SnapshotModel, type SnapshotPricing, type SnapshotScore } from '../evidence/snapshot.js';
 import { TIERS, type AgentDiscovery, type Classification, type Config, type ModelMeta, type PlacedAgent, type Tier } from '../types.js';
 import { compact, normalizeModelId, stripVersion } from './ids.js';
-import { FAMILY_TIERS, lineupTier, MODEL_LINE_TIERS, modelFamily } from './tiers.js';
+import { FAMILY_TIERS, knownModelVersion, lineupTier, MODEL_LINE_TIERS, modelFamily } from './tiers.js';
 
 export type EvidenceLabel = 'measured' | 'partial' | 'estimated' | 'assumed' | 'unranked';
 export interface AxisProfile {
@@ -99,6 +99,29 @@ function inherit(axis: Axis, family: string | undefined, vendor: string | undefi
     || a.id.localeCompare(b.id))[0];
 }
 
+const compareVersions = (a: number[], b: number[]): number => {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const difference = (a[i] ?? 0) - (b[i] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+};
+
+/**
+ * For a versioned model with no tier hint (a Gemini line), the latest earlier or equal release of its family
+ * that has scores: gemini-5-neon borrows from gemini-4-neon until it has evidence of its own.
+ */
+function previousRelease(modelId: string, family: string | undefined, vendor: string | undefined, snapshot: EvidenceSnapshot): SnapshotModel | undefined {
+  const own = knownModelVersion(modelId);
+  if (!own || own.family !== family || vendor === undefined) return undefined;
+  const id = normalizeModelId(modelId);
+  return snapshot.models
+    .map((model) => ({ model, version: knownModelVersion(model.id) }))
+    .filter(({ model, version }) => model.provider === vendor && version?.family === family && normalizeModelId(model.id) !== id &&
+      compareVersions(version.version, own.version) <= 0 && AXES.some((axis) => model.scores[axis]))
+    .sort((a, b) => compareVersions(b.version!.version, a.version!.version) || (b.model.releasedAt ?? '').localeCompare(a.model.releasedAt ?? ''))[0]?.model;
+}
+
 /** A model's raw independent evidence and its separate cost tier. */
 export function buildProfile(modelId: string, meta: ModelMeta | undefined, lineup: string | undefined, snapshot: EvidenceSnapshot, config: Config): Profile {
   const matched = findSnapshotModel(modelId, snapshot);
@@ -108,9 +131,10 @@ export function buildProfile(modelId: string, meta: ModelMeta | undefined, lineu
   const vendor = identity?.provider ?? vendorOfFamily(family);
   const profile = emptyProfile();
   profile.hint = hint ?? null;
+  const previous = hint ? undefined : previousRelease(modelId, family, vendor, snapshot);
   for (const axis of AXES) {
     const direct = matched?.scores[axis];
-    const inherited = !direct && hint ? inherit(axis, family, vendor, hint, snapshot, config) : undefined;
+    const inherited = direct ? undefined : hint ? inherit(axis, family, vendor, hint, snapshot, config) : previous?.scores[axis] ? previous : undefined;
     const evidence: SnapshotScore | undefined = direct ?? inherited?.scores[axis];
     const score = evidence?.score ?? null;
     // A score copied from a curated fallback model is another model's evidence, like an inherited one.
@@ -124,6 +148,11 @@ export function buildProfile(modelId: string, meta: ModelMeta | undefined, lineu
   }
   profile.class = [...TIERS].reverse().find((tier) => AXES.some((axis) => profile.axes[axis].band === tier)) ?? null;
   profile.cost = costTierFor(modelId, identity, lineup, matched, profile.class, config);
+  // Without a price of its own, a release that borrows its predecessor's scores also takes its cost tier.
+  const borrowed = previous && AXES.some((axis) => profile.axes[axis].inheritedFrom === previous.id);
+  if (borrowed && profile.cost?.source === 'evidence' && previous.pricing) {
+    profile.cost = { tier: bandOf(blendedPrice(previous.pricing), config.costBands), blended: null, source: 'family' };
+  }
   return profile;
 }
 

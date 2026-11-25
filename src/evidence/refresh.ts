@@ -46,24 +46,9 @@ export const VENDOR_BRIDGE: Record<string, string> = {
   'frontierswe-v2': 'epoch_frontierswe',
 };
 
-/** Words after a Gemini line that mark a release of it, not another line. */
-const RELEASE_QUALIFIER = /^(preview|exp|experimental|latest|customtools|\d+)$/;
-
-/**
- * Gemini ids put the line after the version: gemini-4-carbon and gemini-4-hydrogen are different lines,
- * not releases of one `gemini` family, and gemini-3-1-flash-lite-preview belongs to `gemini-flash-lite`.
- */
-function geminiLine(slug: string): string | undefined {
-  const match = /^gemini-\d+(?:-\d+)*-([a-z][a-z0-9-]*)$/.exec(slug);
-  if (!match) return undefined;
-  const words = match[1].split('-');
-  while (words.length > 1 && RELEASE_QUALIFIER.test(words[words.length - 1])) words.pop();
-  return `gemini-${words.join('-')}`;
-}
-
 export function familyOfSlug(slug: string): string | undefined {
   if (/^\d/.test(slug)) return undefined;
-  return knownModelVersion(slug)?.family ?? geminiLine(slug) ?? (slug.split(/-\d/)[0] || undefined);
+  return knownModelVersion(slug)?.family ?? (slug.split(/-\d/)[0] || undefined);
 }
 
 export function displayName(raw: string): string {

@@ -161,6 +161,26 @@ describe('assumed inheritance', () => {
     expect(buildProfile(meta.id, { ...meta, provider: 'openai' }, 'For your toughest challenges', snap, DEFAULT_CONFIG).axes.coding.inheritedFrom).toBe('gpt-6-astra');
   });
 
+  it("gives a new Gemini release its previous release's scores and cost tier until it has its own", () => {
+    const snapshot = structuredClone(snap);
+    const row = (id: string, releasedAt: string, score?: number) => ({
+      id, aliases: [], provider: 'google', name: id, family: 'gemini-neon', releasedAt, results: [],
+      pricing: { inputPerM: 2, outputPerM: 10 },
+      scores: score === undefined ? {} : { coding: { score, benchmarks: 3, kind: 'measured' as const }, agentic: { score, benchmarks: 3, kind: 'measured' as const }, reasoning: { score, benchmarks: 3, kind: 'measured' as const } },
+    });
+    snapshot.models.push(row('gemini-3-neon', '2026-05-01', 70), row('gemini-4-neon', '2026-11-18', 88));
+    const day0 = buildProfile('gemini-5-neon', undefined, undefined, snapshot, DEFAULT_CONFIG);
+    expect(day0.axes.coding).toMatchObject({ score: 88, label: 'assumed', inheritedFrom: 'gemini-4-neon' });
+    expect(day0.cost).toEqual({ tier: 'daily', blended: null, source: 'family' });
+    // Only an earlier release lends its scores; another line or a later release does not.
+    expect(buildProfile('gemini-3-5-neon', undefined, undefined, snapshot, DEFAULT_CONFIG).axes.coding.inheritedFrom).toBe('gemini-3-neon');
+    expect(buildProfile('gemini-2-neon', undefined, undefined, snapshot, DEFAULT_CONFIG).class).toBeNull();
+    expect(buildProfile('gemini-5-carbon', undefined, undefined, snapshot, DEFAULT_CONFIG).class).toBeNull();
+    // A listed release without scores borrows too, and keeps its own price.
+    snapshot.models.push(row('gemini-5-neon', '2027-02-01'));
+    expect(buildProfile('gemini-5-neon', undefined, undefined, snapshot, DEFAULT_CONFIG)).toMatchObject({ axes: { coding: { inheritedFrom: 'gemini-4-neon' } }, cost: { source: 'price' } });
+  });
+
   it('uses same-family references regardless of their hint class', () => {
     const config = { ...DEFAULT_CONFIG, tierOverrides: { 'claude-opus-5-6': 'light' as const } };
     expect(buildProfile('claude-opus-5-6', undefined, undefined, snap, config).axes.coding.inheritedFrom).toBe('claude-opus-5-5');

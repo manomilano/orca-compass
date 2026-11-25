@@ -14,9 +14,27 @@ export const FAMILY_TIERS: Record<string, Tier> = {
   'gemini-flash-lite': 'light',
 };
 
-/** Numeric releases of known Claude/GPT families; unrelated names and moving aliases are not inferred. */
+/** Words after a Gemini line that mark a release of it, not another line. */
+const RELEASE_QUALIFIER = /^(preview|exp|experimental|latest|customtools|\d+)$/;
+
+/**
+ * Gemini ids put the line after the version: gemini-4-carbon and gemini-4-hydrogen are different lines,
+ * gemini-5-neon is the release after gemini-4-neon, and gemini-3-1-flash-lite-preview is Flash Lite 3.1.
+ */
+function geminiVersion(id: string): { family: string; version: number[] } | undefined {
+  const match = /^gemini-(\d+(?:-\d+)*)-([a-z][a-z0-9-]*)$/.exec(id);
+  if (!match) return undefined;
+  const words = match[2].split('-');
+  while (words.length > 1 && RELEASE_QUALIFIER.test(words[words.length - 1])) words.pop();
+  const version = match[1].split('-').map(Number);
+  return version.every(Number.isSafeInteger) ? { family: `gemini-${words.join('-')}`, version } : undefined;
+}
+
+/** Numeric releases of known Claude/GPT families and of every Gemini line; unrelated names and moving aliases are not inferred. */
 export function knownModelVersion(modelId: string): { family: string; version: number[] } | undefined {
   const id = normalizeModelId(modelId).replace(/-\d{8}$/, '');
+  const gemini = geminiVersion(id);
+  if (gemini) return gemini;
   const claude = /^claude-([a-z]+)-(\d+(?:-\d+)*)$/.exec(id);
   const gpt = /^gpt-(\d+(?:-\d+)*)-([a-z]+)$/.exec(id);
   const family = claude ? `claude-${claude[1]}` : gpt ? `gpt-${gpt[2]}` : undefined;

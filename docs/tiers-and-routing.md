@@ -147,7 +147,9 @@ qualify and draw on the same pools, the lower price favors Sonnet 5.5. Grok
 4.5 and 4.7 are both Daily cost, so only 4.7 competes. Gemini's family is its
 line, the word after the version: Gemini 4 Carbon, Argon and Hydrogen are three
 families, so a newer Hydrogen does not hide Carbon, while Gemini 3.8 Flash
-replaces 3.5 Flash.
+replaces 3.5 Flash. A release that is not in the evidence yet borrows its
+predecessor's scores, so Gemini 5 Neon replaces Gemini 4 Neon on the day it
+appears.
 
 ### Order of decisions {#order-of-decisions}
 
