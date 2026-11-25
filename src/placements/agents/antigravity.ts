@@ -1,13 +1,14 @@
 import { join } from 'node:path';
 import { homeDir } from '../../paths.js';
-import { EFFORT_LADDER } from '../../routing/effort.js';
+import { EFFORT_LADDER, parseEffort } from '../../routing/effort.js';
 import type { AgentDiscovery, Effort, LaunchModel } from '../../types.js';
 import type { AgentDeps, Locator } from './deps.js';
 import { listModels, savedNote } from './list-cache.js';
+import { orcaModels, withSkipped } from './orca-catalog.js';
 
-// Orca's effort choices for every Antigravity model (it passes them on as agy --effort).
+// Orca's effort choices for an Antigravity model its catalog does not list (it passes them on as agy --effort).
 const EFFORTS: Effort[] = ['low', 'medium', 'high'];
-const EFFORT_SUFFIX = /-(low|medium|high)$/;
+const EFFORT_SUFFIX = /-(low|medium|high|xhigh)$/;
 // agy bills each quota group separately (Orca's bucket groups); these are the labels agy 1.4 reports.
 const GEMINI_GROUP = 'Gemini Models';
 const OTHER_GROUP = 'Claude and GPT models';
@@ -37,8 +38,11 @@ interface Group {
   plain?: string;
 }
 
-/** agy bakes effort into Gemini ids (gemini-3.8-flash-high); other ids take Orca's --effort. */
-function toLaunchModels(ids: string[], deps: AgentDeps): LaunchModel[] {
+/**
+ * agy bakes effort into Gemini ids (gemini-3.8-flash-high); other ids take Orca's --effort, with the efforts
+ * Orca's catalog lists for them (`orcaEfforts`, by agy id or catalog id) or else Orca's default menu.
+ */
+function toLaunchModels(ids: string[], deps: AgentDeps, orcaEfforts: Map<string, Effort[]> = new Map()): LaunchModel[] {
   const groups = new Map<string, Group>();
   for (const id of ids) {
     const m = EFFORT_SUFFIX.exec(id);
@@ -59,7 +63,10 @@ function toLaunchModels(ids: string[], deps: AgentDeps): LaunchModel[] {
       poolNames: poolsOf(base),
     };
     // A plain id takes Orca's effort menu; agy does not say which efforts it honors.
-    if (Object.keys(g.ids).length === 0) return { ...common, efforts: EFFORTS, effortSource: 'orca', launch: { kind: 'flag', model: g.plain! } };
+    if (Object.keys(g.ids).length === 0) {
+      const efforts = orcaEfforts.get(base) ?? orcaEfforts.get(modelId) ?? EFFORTS;
+      return { ...common, efforts, effortSource: 'orca', launch: { kind: 'flag', model: g.plain! } };
+    }
     // An unsuffixed sibling is agy's default, so it stands in for a missing medium.
     if (g.plain && !g.ids.medium) g.ids.medium = g.plain;
     return {
@@ -90,6 +97,10 @@ export async function discoverAntigravity(deps: AgentDeps): Promise<AgentDiscove
     const note = listing.signedOut ? `not signed in: ${listing.error}` : `agy models gave no model ids: ${listing.error}`;
     return { agent: 'antigravity', installed: true, models: [], note, ...(listing.signedOut ? { signedOut: true } : {}) };
   }
-  const note = savedNote('agy models', listing, deps.now);
-  return { agent: 'antigravity', installed: true, models: toLaunchModels(listing.items.map((m) => m.id), deps), ...(note ? { note } : {}) };
+  const orca = await orcaModels(deps, 'antigravity');
+  const orcaEfforts = new Map(orca.models.filter((m) => m.efforts.length > 0)
+    .map((m) => [m.id, EFFORT_LADDER.filter((e) => m.efforts.map(parseEffort).includes(e))]));
+  const saved = savedNote('agy models', listing, deps.now);
+  const note = orca.skipped ? withSkipped(saved ?? 'agy models', orca) : saved;
+  return { agent: 'antigravity', installed: true, models: toLaunchModels(listing.items.map((m) => m.id), deps, orcaEfforts), ...(note ? { note } : {}) };
 }

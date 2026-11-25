@@ -13,8 +13,11 @@ export interface RawModel {
   description?: string;
 }
 
-/** The agents whose model lists Orca saves in its catalog; it lists the others live and keeps them in memory. */
-export type OrcaCatalogAgent = 'claude' | 'codex';
+/**
+ * The agents whose catalog entries are read: Claude Code's and Codex's model lists, and Antigravity's effort menus
+ * (its models still come from agy, which names the ids it launches).
+ */
+export type OrcaCatalogAgent = 'claude' | 'codex' | 'antigravity';
 
 export const description = (v: unknown): { description: string } | Record<string, never> =>
   typeof v === 'string' && v.trim() !== '' ? { description: v.trim() } : {};
@@ -95,7 +98,7 @@ export interface OrcaModels {
 }
 
 /**
- * Claude Code's or Codex's models as Orca lists them for its model picker, with each model's efforts: Orca's
+ * An agent's models as Orca lists them for its model picker, with each model's efforts: Orca's
  * catalog database, then the JSON file older Orca versions wrote. These are the models Orca can launch, so they
  * come first.
  */
