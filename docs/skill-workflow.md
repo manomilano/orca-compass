@@ -76,12 +76,14 @@ Use `--tier` only for a job with equal needs on all axes: `light`, `daily`,
 `advanced`, and `frontier` map to `min`, `low`, `mid`, and `high`. There is no
 tier for `top`; use `--need`.
 
-Rate effort demand independently: `low` for known steps with easy checking,
-`moderate` for local choices or a little diagnosis, `high` for ambiguity,
-unknown causes, trade-offs or planning, and `exceptional` for several of
-those with costly failure. A rename across fifty files can be `low`; a
-subtle race in one file can be `high`. Costly failure also calls for tests
-and review in the task spec.
+Rate effort demand independently, by how likely a direct first attempt is to
+be wrong and how hard that would be to notice: `low` for known steps whose
+mistakes are obvious, `moderate` for a clear path with a few local choices,
+`high` when the worker must work out what to do and a wrong answer can look
+right, and `exceptional` for several of those with a costly or hard-to-detect
+mistake, or after a `high` attempt failed. When unsure, `moderate`. A rename
+across fifty files can be `low`; a subtle race in one file can be `high`.
+Costly failure also calls for tests and review in the task spec.
 
 Full tier and demand tables: [Tiers and routing](tiers-and-routing.md#the-four-tiers)
 and [Effort](effort.md#reasoning-demand).

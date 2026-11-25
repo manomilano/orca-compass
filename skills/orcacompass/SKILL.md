@@ -129,21 +129,37 @@ short explanation with `--tier-reason`; explain it in chat when asked.
 
 ## Rate the effort demand separately
 
-The needs describe the abilities required; the effort demand picks how
-much it should think. Rate it from the work, never from the tier or the model:
+The needs pick how capable the model must be; the effort demand picks how much
+it should think before acting. More effort buys exploring alternatives and
+checking its own reasoning; it costs time and usage, and adds nothing on simple
+work. Rate it from the work, never from the tier or the model, with one
+question: **how likely is a direct first attempt to be wrong, and how hard
+would that be to notice?**
 
-| Demand | Signals |
-| --- | --- |
-| low | The steps are known; checking the result is easy. |
-| moderate | Some local choices or a little diagnosis. |
-| high | Ambiguity, an unknown cause, trade-offs, constraints across components, or a plan to make. |
-| exceptional | Several of those at once, with costly failure. |
+| Demand | The job | Typical work |
+| --- | --- | --- |
+| `low` | The steps are known before starting, and a wrong result is obvious (a test, the compiler, the diff). | Rename, formatting, dependency bump, boilerplate, one step of a written plan. |
+| `moderate` | The path is clear but has a few local choices, or a failure whose message points at the cause. | A feature that follows an existing pattern, a bug with a stack trace, tests for known behaviour. |
+| `high` | The worker must work out *what* to do: an unknown cause, unclear requirements, a trade-off, constraints across components, or a plan to make. A wrong answer can look right. | A bug with no repro, a race, a design or migration plan, a refactor that must keep an invariant. |
+| `exceptional` | Several `high` signals at once, and a mistake is costly or hard to detect; or a `high` attempt already failed. | An intermittent failure across services, an irreversible data migration, a security-sensitive design. |
 
-The amount of work is not the demand: a rename across fifty files is `low`; a
-subtle race in one file is `high`. Pass `--demand <d>`; OrcaCompass maps it to
-an effort the chosen model supports and reports what it applied. A Light model
-can get `high` and a Frontier model `low`. Costly failure calls for tests and
-review in the task spec, not only more thinking.
+Between two levels:
+
+- Unsure: `moderate`. Most jobs are `low` or `moderate`; `exceptional` is rare.
+- Good tests or an easy check: the lower level. A wrong answer that would pass
+  a quick look: the higher.
+- Only part of the job is hard: split it and rate the parts separately.
+- The worker's answer was shallow or missed something: retry one level higher.
+  If it lacked the ability, raise the need instead.
+
+Do not raise the demand for size (a rename across fifty files is `low`; a
+subtle race in one file is `high`), for importance alone (costly failure calls
+for tests and review in the task spec, not only more thinking), or to make up
+for a weaker model. Do not lower it because the model is strong: a Light model
+can get `high` and a Frontier model `low`.
+
+Pass `--demand <d>`; OrcaCompass maps it to an effort the chosen model
+supports and reports what it applied.
 
 Pass `--effort <e>` only when the user asked for a specific effort. Valid
 levels are `none`, `minimal`, `low`, `medium`, `high`, `xhigh` (also spelled
