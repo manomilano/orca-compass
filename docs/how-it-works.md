@@ -119,7 +119,9 @@ Each model that falls short is listed under `skipped` with the reason, for
 example `below need on agentic (69.1 < 70)`. A model with no evidence at all is
 `unranked` and skipped. A new release with no scores of its own inherits, per
 axis, the best score of its family or of the same vendor's models at or below
-its hinted tier, labelled `assumed`, until its own data arrives. For Composer
+its hinted tier, labelled `assumed`, until its own data arrives. A Gemini
+line has no hinted tier: a new release (Gemini 5 Neon) takes the scores and
+cost tier of the latest earlier release of its line (Gemini 4 Neon). For Composer
 2.5, the snapshot uses Kimi K2.5 as an explicit fallback on all three axes.
 See [Model data](model-data.md).
 

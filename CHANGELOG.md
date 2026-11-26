@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Each Gemini line is its own family (Gemini 4 Neon, Carbon, Argon and
+  Hydrogen). Before, all Gemini models shared one family, so the newest one in
+  a cost tier hid the others: Gemini 4 Hydrogen hid the stronger Carbon and
+  Argon. This takes effect from the evidence snapshot, without an update.
+- A new Gemini release that has no evidence yet takes the scores and cost tier
+  of the previous release of its line, labelled `assumed`, as new Claude and
+  GPT releases already did: Gemini 5 Neon replaces Gemini 4 Neon on the day it
+  appears.
+
 ## 0.2.5
 
 - Added the OrcaCompass website with a landing page, user guide, examples,

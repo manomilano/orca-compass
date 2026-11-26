@@ -303,6 +303,47 @@ describe('route with synthetic usage', () => {
     expect(pinned).toMatchObject({ tier: 'advanced', route: { model: 'claude-sonnet-4-6' } });
   });
 
+  it('keeps every Gemini line in a cost tier: a newer Hydrogen does not hide Carbon', () => {
+    const geminiModel = (id: string, family: string, releaseDate: string): LaunchModel => ({
+      agent: 'cursor', modelId: id, efforts: ['low', 'medium', 'high'],
+      meta: { id, provider: 'google', name: id, family, releaseDate },
+      launch: { kind: 'variant', ids: { low: `${id}-low`, medium: `${id}-medium`, high: `${id}-high` } },
+      poolNames: ['monthly', 'bucket:Cursor Models'],
+    });
+    const row = (id: string, family: string, releasedAt: string, coding: number, agentic: number, reasoning: number): SnapshotModel => ({
+      id, aliases: [], provider: 'google', name: id, family, releasedAt, results: [],
+      pricing: { inputPerM: 2, outputPerM: 10 },
+      scores: Object.fromEntries(Object.entries({ coding, agentic, reasoning }).map(([axis, score]) => [axis, { score, benchmarks: 3, kind: 'measured' }])) as SnapshotModel['scores'],
+    });
+    const snapshot = parseSnapshot(fixture('evidence-mini.json'))!;
+    // Same price, so the same cost tier. Hydrogen is newer but falls short of an Advanced job; Carbon covers it.
+    snapshot.models.push(row('gemini-4-carbon', 'gemini-carbon', '2026-11-10', 86.6, 78.5, 93), row('gemini-4-hydrogen', 'gemini-hydrogen', '2026-11-12', 77.9, 69.5, 86.9));
+    const models = [geminiModel('gemini-4-carbon', 'gemini-carbon', '2026-11-10'), geminiModel('gemini-4-hydrogen', 'gemini-hydrogen', '2026-11-12')];
+    const e = onlyModels(placed(withCursorModels(env, models, 0.1), { snapshot }), 'cursor', ['gemini-4-carbon', 'gemini-4-hydrogen']);
+    const advanced = route({ tier: 'advanced', agents: ['cursor'] }, e, DEFAULT_CONFIG);
+    expect(advanced.route?.model).toBe('gemini-4-carbon-medium');
+    expect(advanced.skipped).toContainEqual(expect.objectContaining({ model: 'gemini-4-hydrogen', reason: expect.stringMatching(/^below need/) }));
+  });
+
+  it('routes a day-0 Gemini release in place of its predecessor, with borrowed scores', () => {
+    const neon = (id: string): LaunchModel => ({
+      agent: 'cursor', modelId: id, efforts: ['low', 'medium', 'high'],
+      launch: { kind: 'variant', ids: { low: `${id}-low`, medium: `${id}-medium`, high: `${id}-high` } },
+      poolNames: ['monthly', 'bucket:Cursor Models'],
+    });
+    const snapshot = parseSnapshot(fixture('evidence-mini.json'))!;
+    snapshot.models.push({
+      id: 'gemini-4-neon', aliases: [], provider: 'google', name: 'Gemini 4 Neon', family: 'gemini-neon', releasedAt: '2026-11-18', results: [],
+      pricing: { inputPerM: 2, outputPerM: 10 },
+      scores: { coding: { score: 86.9, benchmarks: 4, kind: 'measured' }, agentic: { score: 85.7, benchmarks: 3, kind: 'measured' }, reasoning: { score: 93.5, benchmarks: 3, kind: 'measured' } },
+    });
+    const e = onlyModels(placed(withCursorModels(env, [neon('gemini-4-neon'), neon('gemini-5-neon')], 0.1), { snapshot }), 'cursor', ['gemini-4-neon', 'gemini-5-neon']);
+    const d = route({ tier: 'frontier', agents: ['cursor'] }, e, DEFAULT_CONFIG);
+    expect(d.route?.model).toBe('gemini-5-neon-high');
+    expect(d.quality?.axes.coding).toMatchObject({ score: 86.9, evidence: 'assumed' });
+    expect(d.alternatives.map((a) => a.model)).not.toContain('gemini-4-neon-high');
+  });
+
   it('hides older Grok releases in the same cost tier before checking evidence', () => {
     const grokModel = (id: string, releaseDate: string): LaunchModel => ({
       agent: 'cursor', modelId: id, efforts: ['low', 'medium', 'high'],
