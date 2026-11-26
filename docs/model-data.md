@@ -58,7 +58,7 @@ such pull requests and on `main`, and fails with the profile diff when the
 committed snapshot does not match the dataset.
 
 The npm package includes the trimmed snapshot, manifest and curated rows,
-but omits the raw dataset. The dataset and transformed snapshot are licensed
+but omits the raw dataset and the evidence archive. The dataset and transformed snapshot are licensed
 CC BY 4.0; see the repository
 NOTICE and `data/llmbenchmark/README.md`.
 

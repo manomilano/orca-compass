@@ -91,4 +91,51 @@ describe('evidence archive', () => {
     expect(broken((a) => { a.rows[0].lastSeen = 'yesterday'; })).toThrow('invalid row');
     expect(broken((a) => { a.rows.push({ ...a.rows[0] }); })).toThrow('duplicate row');
   });
+
+  it('keeps a metric the refresh no longer reads archived without adding it back as a duplicate', () => {
+    const archive = structuredClone(first);
+    const row = archive.rows.find((r) => r.metric === 'aa_agentic_index')!;
+    // An archived row of a metric that is no longer mapped, which the dataset still carries.
+    archive.rows.push({ ...row, metric: 'retired_metric', lastSeen: undefined });
+    const next = later('2026-11-25', () => true);
+    next.scores.push({ ...next.scores[0], modelId: row.modelId, metric: 'retired_metric', value: 1, unit: 'ratio' });
+    const merge = mergeArchive(archive, next);
+    expect(merge.retained.some((r) => r.metric === 'retired_metric')).toBe(false);
+    expect(merge.archive.rows.some((r) => r.metric === 'retired_metric')).toBe(true);
+    expect(() => buildSnapshot(merge.dataset, { now: '2026-11-25T05:00:00Z', bands: DEFAULT_BANDS, sourceFetchedAt: '2026-11-25' })).not.toThrow();
+  });
+
+  it('stores an empty setting or a timestamp in a form the next refresh can read', () => {
+    const next = later('2026-11-25', () => true);
+    const odd = next.scores.find((r: Score) => r.metric === 'aa_agentic_index')!;
+    odd.setting = '';
+    odd.observedAt = '2026-11-25T04:00:00.000Z';
+    const bad = next.scores.find((r: Score) => r.metric === 'vals_terminal_bench_4')!;
+    bad.observedAt = 'yesterday';
+    const merge = mergeArchive(first, next);
+    const text = serializeArchive(merge.archive);
+    expect(() => parseArchive(text)).not.toThrow();
+    const stored = merge.archive.rows.find((r) => r.modelId === odd.modelId && r.metric === 'aa_agentic_index')!;
+    expect(stored.setting).toBeUndefined();
+    // Same value as in the first archive, so the first date it was seen is kept.
+    expect(stored.observedAt).toBe('2026-11-10');
+    // The empty setting is the same row as the archived one without a setting, so nothing is reported missing.
+    expect(merge.retained).toEqual([]);
+    expect(merge.archive.rows.find((r) => r.modelId === bad.modelId && r.metric === 'vals_terminal_bench_4')!.observedAt).toMatch(/^2026-11-(10|25)$/);
+  });
+
+  it('rejects impossible calendar dates', () => {
+    const text = serializeArchive({ ...first, dataDate: '2026-02-31' });
+    expect(() => parseArchive(text)).toThrow('invalid header');
+    expect(() => mergeArchive(undefined, { ...dataset, generatedAt: '2026-13-01T00:00:00Z' })).toThrow('expected generatedAt');
+  });
+
+  it('does not add back or count rows of a model the dataset no longer lists', () => {
+    const gone = 'openai/gpt-6-astra';
+    const next = later('2026-11-25', (row) => row.modelId !== gone);
+    next.models = next.models.filter((m: { id: string }) => m.id !== gone);
+    const merge = mergeArchive(first, next);
+    expect(merge.retained.some((r) => r.modelId === gone)).toBe(false);
+    expect(merge.archive.rows.some((r) => r.modelId === gone)).toBe(true);
+  });
 });

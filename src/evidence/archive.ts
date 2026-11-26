@@ -25,21 +25,25 @@ interface ScoreRow { modelId: string; metric: string; value: number; unit: strin
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const text = (value: unknown): value is string => typeof value === 'string' && value !== '';
-const key = (row: { modelId: string; metric: string; setting?: string | null }): string => JSON.stringify([row.modelId, row.metric, row.setting ?? null]);
+/** An empty setting is no setting, so the dataset and the archive name the same row the same way. */
+const key = (row: { modelId: string; metric: string; setting?: string | null }): string => JSON.stringify([row.modelId, row.metric, row.setting || null]);
 const days = (date: string): number => Date.parse(`${date}T00:00:00Z`) / 86_400_000;
+/** A real calendar day as YYYY-MM-DD; Date.parse would roll 2026-02-31 over to March. */
+const validDate = (value: unknown): value is string =>
+  typeof value === 'string' && DATE.test(value) && Number.isFinite(days(value)) && new Date(days(value) * 86_400_000).toISOString().slice(0, 10) === value;
 
 export function parseArchive(source: string | undefined): EvidenceArchive | undefined {
   if (source === undefined) return undefined;
   const value: unknown = JSON.parse(source);
-  if (!object(value) || value.schemaVersion !== ARCHIVE_SCHEMA || typeof value.dataDate !== 'string' || !DATE.test(value.dataDate) ||
+  if (!object(value) || value.schemaVersion !== ARCHIVE_SCHEMA || !validDate(value.dataDate) ||
     !Array.isArray(value.rows)) throw new Error('evidence archive: invalid header');
   const seen = new Set<string>();
   for (const row of value.rows as unknown[]) {
     if (!object(row) || !text(row.modelId) || !text(row.metric) || !text(row.unit) || !text(row.source) || !text(row.sourceUrl) ||
       typeof row.value !== 'number' || !Number.isFinite(row.value) ||
-      typeof row.observedAt !== 'string' || !DATE.test(row.observedAt) ||
+      !validDate(row.observedAt) ||
       (row.setting !== undefined && !text(row.setting)) ||
-      (row.lastSeen !== undefined && (typeof row.lastSeen !== 'string' || !DATE.test(row.lastSeen)))) throw new Error('evidence archive: invalid row');
+      (row.lastSeen !== undefined && !validDate(row.lastSeen))) throw new Error('evidence archive: invalid row');
     const id = key(row as unknown as ArchiveRow);
     if (seen.has(id)) throw new Error(`evidence archive: duplicate row ${id}`);
     seen.add(id);
@@ -68,9 +72,13 @@ export interface ArchiveMerge {
  * again on the same dataset and archive changes nothing.
  */
 export function mergeArchive(previous: EvidenceArchive | undefined, dataset: unknown): ArchiveMerge {
-  if (!object(dataset) || typeof dataset.generatedAt !== 'string' || !DATE.test(dataset.generatedAt.slice(0, 10)) ||
+  if (!object(dataset) || typeof dataset.generatedAt !== 'string' || !validDate(dataset.generatedAt.slice(0, 10)) ||
     !Array.isArray(dataset.scores)) throw new Error('dataset: expected generatedAt and scores');
   const date = dataset.generatedAt.slice(0, 10);
+  // Rows of models the dataset no longer lists are kept in the archive but not added back: nothing would use them.
+  const listed = Array.isArray(dataset.models)
+    ? new Set((dataset.models as unknown[]).filter(object).map((model) => model.id).filter((id): id is string => typeof id === 'string'))
+    : undefined;
   if (previous && date < previous.dataDate) throw new Error(`dataset from ${date} is older than the evidence archive (${previous.dataDate})`);
   const rows = new Map((previous?.rows ?? []).map((row) => [key(row), row]));
   const present = new Set<string>();
@@ -80,10 +88,12 @@ export function mergeArchive(previous: EvidenceArchive | undefined, dataset: unk
     present.add(id);
     const old = rows.get(id);
     const same = old && old.value === raw.value && old.unit === raw.unit && old.source === raw.source && old.sourceUrl === raw.sourceUrl;
+    // Store only what parseArchive accepts, so one odd dataset row cannot make the next refresh refuse the archive.
+    const observed = typeof raw.observedAt === 'string' ? raw.observedAt.slice(0, 10) : '';
     rows.set(id, {
-      modelId: raw.modelId, metric: raw.metric, ...(raw.setting != null ? { setting: raw.setting } : {}),
+      modelId: raw.modelId, metric: raw.metric, ...(raw.setting ? { setting: raw.setting } : {}),
       value: raw.value, unit: raw.unit, source: raw.source, sourceUrl: raw.sourceUrl,
-      observedAt: same ? old.observedAt : raw.observedAt,
+      observedAt: same ? old.observedAt : validDate(observed) ? observed : date,
     });
   }
   const retained: ArchiveRow[] = [];
@@ -91,6 +101,8 @@ export function mergeArchive(previous: EvidenceArchive | undefined, dataset: unk
     if (present.has(id)) continue;
     const missing = row.lastSeen === undefined ? { ...row, lastSeen: previous!.dataDate } : row;
     rows.set(id, missing);
+    // A metric the refresh no longer reads stays archived; adding it back would duplicate the dataset's own row.
+    if (!Object.hasOwn(METRIC_MAP, row.metric) || (listed && !listed.has(row.modelId))) continue;
     if (days(date) - days(missing.lastSeen!) <= RETAIN_DAYS) retained.push(missing);
   }
   const sorted = [...rows.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, row]) => row);

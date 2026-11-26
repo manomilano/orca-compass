@@ -89,8 +89,9 @@ async function main() {
     return;
   }
   console.log('Calibration checks passed');
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
   const retained = merged.retained.length ? [
-    `Kept ${merged.retained.length} score rows for ${new Set(merged.retained.map((row) => row.modelId)).size} models that the dataset no longer has, ` +
+    `Kept ${plural(merged.retained.length, 'score row')} for ${plural(new Set(merged.retained.map((row) => row.modelId)).size, 'model')} that the dataset no longer has, ` +
     `last seen ${merged.retained.map((row) => row.lastSeen).sort()[0]} or later (rows return for ${RETAIN_DAYS} days).`, ''] : [];
   const diff = ['# Evidence snapshot refresh', '', ...(plan.changed ? (plan.diff.length ? plan.diff : ['No model profile changes.']) : ['No changes.']), '', ...retained].join('\n');
   await mkdir(out, { recursive: true });
