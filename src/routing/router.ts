@@ -606,9 +606,9 @@ function supportedEfforts(m: LaunchModel): string {
   return efforts.length ? efforts.join('/') : 'provider-controlled';
 }
 
-/** e.g. "effort: high from high reasoning demand (balanced policy), passed as --effort". */
+/** e.g. "effort: high from high effort demand (balanced policy), passed as --effort". */
 function effortText(e: EffortResolution, c: Candidate): string {
-  const why = e.source === 'explicit' ? 'request' : e.source === 'demand' ? `${e.demand} reasoning demand (${e.policy} policy)` : 'tier default';
+  const why = e.source === 'explicit' ? 'request' : e.source === 'demand' ? `${e.demand} effort demand (${e.policy} policy)` : 'tier default';
   if (e.applied === 'provider-default') {
     const own = e.providerDefault ? ` (${e.providerDefault})` : '';
     const who = `${c.model.agent} uses its own default${own}`;

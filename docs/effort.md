@@ -72,8 +72,7 @@ Demand is independent of the needs and of the model: a Light model can get
 `high` (a tricky one-file fix) and a Frontier model `low` (a bulk edit that
 only a very strong model is trusted with). Size does not raise it (a rename
 across fifty files is `low`), nor does importance alone: costly failure calls
-for tests and review in the task spec. Route output calls it the *reasoning
-demand*.
+for tests and review in the task spec.
 
 ### Effort policies
 
@@ -225,14 +224,14 @@ When the supported levels are `assumed`, the effort reason ends with
 ```sh
 # everyday feature, a few local choices
 orcacompass route --tier daily --demand moderate
-#   effort: medium from moderate reasoning demand (balanced policy), passed as --effort
+#   effort: medium from moderate effort demand (balanced policy), passed as --effort
 
 # bulk rename across many files: cheap model, little thinking
 orcacompass route --tier light --demand low
 
 # one subtle race in one file: ordinary model, deep thinking
 orcacompass route --tier daily --demand high
-#   effort: high from high reasoning demand (balanced policy), passed as --effort
+#   effort: high from high effort demand (balanced policy), passed as --effort
 
 # the user asked for max on a Frontier job
 orcacompass route --tier frontier --effort max

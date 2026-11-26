@@ -499,11 +499,11 @@ describe('route with synthetic usage', () => {
     expect(d.alternatives[0]).toMatchObject({ agent: 'claude', model: 'claude-haiku-5-5', effort: 'low' });
   });
 
-  it('follows the reasoning demand through the effort policy, independent of the tier', () => {
+  it('follows the effort demand through the effort policy, independent of the tier', () => {
     const light = route({ tier: 'light', demand: 'high' }, env, DEFAULT_CONFIG);
     expect(light.route).toEqual({ agent: 'claude', model: 'claude-haiku-5-5', effort: 'high' });
     expect(light.effort).toMatchObject({ source: 'demand', demand: 'high', policy: 'balanced', target: 'high', resolved: 'high', applied: 'flag' });
-    expect(light.reasons).toContain('effort: high from high reasoning demand (balanced policy), passed as --effort');
+    expect(light.reasons).toContain('effort: high from high effort demand (balanced policy), passed as --effort');
     expect(route({ tier: 'frontier', demand: 'low' }, env, DEFAULT_CONFIG).effort).toMatchObject({ target: 'low', resolved: 'low' });
     expect(route({ tier: 'daily', demand: 'exceptional' }, env, DEFAULT_CONFIG).route?.effort).toBe('xhigh');
     const quality: Config = { ...DEFAULT_CONFIG, effortPolicy: 'quality' };

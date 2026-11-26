@@ -14,7 +14,7 @@ lists what every call reads and caches.
 ## Decision order {#decision-order}
 
 - **Describe the job.** Supply the minimum coding, agentic and reasoning levels
-  (or a tier shorthand). Optionally specify reasoning demand or an exact effort.
+  (or a tier shorthand). Optionally specify effort demand or an exact effort.
 - **Find eligible routes.** Apply agent restrictions, availability, model bans
   and recorded launch refusals. Keep the latest release per agent, family and
   cost tier. Defer last-resort agents such as OpenCode unless explicitly selected.
@@ -199,7 +199,7 @@ daily → codex · gpt-6.1-sol · medium (high confidence)
   needs coding=mid agentic=mid reasoning=low; covering routes: 7 across all cost tiers
   cost: daily ($4.00/M blended, maker price)
   coding 79.8 measured, agentic 75.5 measured, reasoning 88.7 measured
-  effort: medium from moderate reasoning demand (balanced policy), passed as --effort
+  effort: medium from moderate effort demand (balanced policy), passed as --effort
   selection: 62.00 ranked headroom points minus 2.50 price points = 59.50
   next best: codex gpt-6-astra (weekly headroom 62%, resets in 4d, $20.00/M blended)
   skipped: …

@@ -15,7 +15,7 @@ export function snapEffort(target: Effort, supported: Effort[]): Effort | null {
 }
 
 /**
- * Effort per reasoning demand. A starting heuristic, not a measured optimum: `balanced` gives each demand its
+ * Effort per effort demand. A starting heuristic, not a measured optimum: `balanced` gives each demand its
  * own effort, low to xhigh; `quality` also gives high work xhigh; `efficient` saves effort on moderate and high
  * work and keeps exceptional work at high. Nothing maps to max; that takes an explicit --effort.
  */
