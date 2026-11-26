@@ -194,9 +194,9 @@ repository setting "Allow GitHub Actions to create and approve pull requests".
 
 To update the benchmark data by hand, run `npm run build` and then
 `npm run refresh-evidence -- --fetch` (it downloads the dataset to
-`data/llmbenchmark/dataset.json`, rebuilds the snapshot and manifest, and
-refuses to write if calibration fails). Commit the dataset, snapshot and
-manifest together in one pull request. The **Refresh evidence snapshot**
+`data/llmbenchmark/dataset.json`, updates `data/evidence-archive.json`,
+rebuilds the snapshot and manifest, and refuses to write if calibration fails).
+Commit the dataset, archive, snapshot and manifest together in one pull request. The **Refresh evidence snapshot**
 workflow fails a pull request whose snapshot does not match its dataset.
 
 Do not delete, rename or change the format of these files. A new format gets a

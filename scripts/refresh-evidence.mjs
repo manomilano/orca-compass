@@ -3,11 +3,14 @@
 // data/llmbenchmark/dataset.json (or --from <file>; --fetch downloads a fresh copy
 // there first) and rebuilds data/evidence-snapshot.json and its manifest. Existing
 // snapshot bands are retained; to change the cuts, edit the previous snapshot's
-// bands before running this script.
+// bands before running this script. data/evidence-archive.json keeps every score row
+// the dataset has published; a benchmark a model lost entirely comes back from it and keeps
+// counting. The diff summary lists those rows per metric for the update pull request.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { archiveSummary, mergeArchive, parseArchive, serializeArchive } from '../dist/evidence/archive.js';
 import { planRefresh, serializeManifest } from '../dist/evidence/refresh.js';
 import { AXIS_WEIGHTS, BENCHMARKS } from '../dist/evidence/scoring.js';
 import { parseSnapshot } from '../dist/evidence/snapshot.js';
@@ -73,7 +76,10 @@ async function main() {
   }
   const datasetText = await optionalText(from);
   if (datasetText === undefined) throw new Error(`dataset not found: ${from} (commit it there, pass --from <file>, or use --fetch)`);
-  const dataset = JSON.parse(datasetText);
+  const archivePath = join(out, 'evidence-archive.json');
+  const archiveText = await optionalText(archivePath);
+  const merged = mergeArchive(parseArchive(archiveText), JSON.parse(datasetText));
+  const dataset = merged.dataset;
   const manifestPath = join(out, 'evidence-manifest.json');
   const plan = planRefresh({ dataset, now: new Date().toISOString(), previous, previousText,
     previousManifestText: await optionalText(manifestPath), curated });
@@ -84,8 +90,11 @@ async function main() {
     return;
   }
   console.log('Calibration checks passed');
-  const diff = ['# Evidence snapshot refresh', '', ...(plan.changed ? (plan.diff.length ? plan.diff : ['No model profile changes.']) : ['No changes.']), ''].join('\n');
+  const retained = archiveSummary(merged);
+  const diff = ['# Evidence snapshot refresh', '', ...(plan.changed ? (plan.diff.length ? plan.diff : ['No model profile changes.']) : ['No changes.']), '', ...retained].join('\n');
   await mkdir(out, { recursive: true });
+  const nextArchiveText = serializeArchive(merged.archive);
+  if (nextArchiveText !== archiveText?.replace(/\r\n/g, '\n')) await writeFile(archivePath, nextArchiveText);
   if (plan.writeSnapshot) await writeFile(snapshotPath, plan.text);
   if (plan.writeManifest) await writeFile(manifestPath, serializeManifest(plan.manifest));
   if (values.diff) await writeFile(values.diff, diff);

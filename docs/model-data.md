@@ -39,6 +39,21 @@ maintainer. `npm run refresh-evidence` reads it and rebuilds the snapshot and
 manifest. It refuses to write either file when a calibration check fails;
 calibration runs on every refresh, changed or not.
 
+Sources sometimes stop publishing a score, for example when they drop older
+models from a leaderboard. `data/evidence-archive.json` keeps the last known
+value of every axis score row the dataset has carried, and the refresh updates
+it from each dataset. When a model no longer has any live row of a benchmark,
+the refresh adds the archived rows back, dated to the last committed dataset
+that had them. A setting a source stopped reporting while it still reports
+others (a low-effort run beside the high-effort one), or a source of a
+benchmark another source still reports, is not added back. Restored rows keep
+counting however old they are. The refresh summary in the update pull request
+lists them per metric, says when a metric is no longer published at all, and
+calls out rows older than 180 days, so the maintainer sees what rests on old
+data. The refresh never deletes archive rows. To withdraw a wrong value, delete
+its line from `data/evidence-archive.json`, run `npm run refresh-evidence`, and
+commit both files.
+
 When the rebuilt evidence matches the committed snapshot, the refresh keeps
 that snapshot. A new build time or dataset date alone is not a change. It
 rewrites the manifest only if it no longer matches the snapshot's hash, size
@@ -48,7 +63,7 @@ such pull requests and on `main`, and fails with the profile diff when the
 committed snapshot does not match the dataset.
 
 The npm package includes the trimmed snapshot, manifest and curated rows,
-but omits the raw dataset. The dataset and transformed snapshot are licensed
+but omits the raw dataset and the evidence archive. The dataset and transformed snapshot are licensed
 CC BY 4.0; see the repository
 NOTICE and `data/llmbenchmark/README.md`.
 
