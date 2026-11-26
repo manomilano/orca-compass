@@ -15,14 +15,14 @@ export function snapEffort(target: Effort, supported: Effort[]): Effort | null {
 }
 
 /**
- * Effort per reasoning demand. A starting heuristic, not a measured optimum: `balanced` keeps exceptional
- * work at high, `quality` allows xhigh for it only, `efficient` saves effort on moderate and high work.
- * Nothing maps to max; that takes an explicit --effort.
+ * Effort per effort demand. A starting heuristic, not a measured optimum: `balanced` gives each demand its
+ * own effort, low to xhigh; `quality` also gives high work xhigh; `efficient` saves effort on moderate and high
+ * work and keeps exceptional work at high. Nothing maps to max; that takes an explicit --effort.
  */
 export const DEMAND_EFFORT: Record<EffortPolicy, Record<Demand, Effort>> = {
   efficient: { low: 'low', moderate: 'low', high: 'medium', exceptional: 'high' },
-  balanced: { low: 'low', moderate: 'medium', high: 'high', exceptional: 'high' },
-  quality: { low: 'low', moderate: 'medium', high: 'high', exceptional: 'xhigh' },
+  balanced: { low: 'low', moderate: 'medium', high: 'high', exceptional: 'xhigh' },
+  quality: { low: 'low', moderate: 'medium', high: 'xhigh', exceptional: 'xhigh' },
 };
 
 /** Accepts provider spellings such as "extra-high". "ultra" (Codex auto-delegation) is not an effort. */

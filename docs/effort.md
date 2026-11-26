@@ -44,21 +44,43 @@ to split the job or add checks instead.
 ## Effort demand
 
 The orchestrator (the agent coordinating workers) rates how much thinking the
-job requires, based on the work itself.
+job requires, based on the work itself. The needs pick how capable the model
+must be; the demand picks how much it should think before acting. More effort
+buys exploring alternatives and checking its own reasoning, at a cost in time
+and usage.
 
 ### Rating the demand {#reasoning-demand}
 
-| Demand | Signals |
-| --- | --- |
-| `low` | The steps are known; checking the result is easy |
-| `moderate` | Some local choices or a little diagnosis |
-| `high` | Ambiguity, an unknown cause, trade-offs, constraints across components, or a plan to make |
-| `exceptional` | Several of those at once, with costly failure |
+The rating answers one question: how much reasoning is required to reach a
+correct solution, and how difficult is it to detect an incorrect one with the
+checks available for this job?
+
+| Demand | The job | Typical work |
+| --- | --- | --- |
+| `low` | The approach is known, decisions are mechanical, and little independent reasoning or verification is needed | Rename, formatting, routine dependency bump, boilerplate, a straightforward step of a written plan |
+| `moderate` | The approach is mostly clear but requires local decisions, analysis, or routine investigation | A feature following an existing pattern, a bug whose cause is localized by the error, tests for known behaviour |
+| `high` | Finding or validating the right approach requires substantial investigation, non-obvious deductions, or resolving competing constraints | An unexplained bug with no repro, a subtle race, a migration plan with real trade-offs, a refactor with an invariant that is hard to preserve or verify |
+| `exceptional` | The job requires unusually deep reasoning, extensive exploration of competing explanations or solutions, or resolving complex interacting uncertainties beyond a normal `high` attempt | Tracing intermittent corruption across services with conflicting evidence, designing a novel security boundary with subtle failure modes |
+
+Between two adjacent levels, the orchestrator prefers the lower unless deeper
+reasoning would materially improve the solution or its validation, and falls
+back to `moderate` only when the task description is too sparse to rate. Most
+jobs are `low` or `moderate`; `exceptional` is rare. Good tests reduce
+verification uncertainty, not necessarily the reasoning needed to find a
+solution. A job that is only partly hard is split when practical and its parts
+rated separately. After a failed attempt the orchestrator reassesses first: it
+raises the demand one level when more thorough thinking is needed, the
+relevant need when more capability is needed, and both only when each is
+justified on its own. An unclear task spec or missing context, tools or access
+is fixed instead of escalating.
 
 Demand is independent of the needs and of the model: a Light model can get
 `high` (a tricky one-file fix) and a Frontier model `low` (a bulk edit that
-only a very strong model is trusted with). The amount of work does not determine
-demand. Route output calls it the *reasoning demand*.
+only a very strong model is trusted with). Size, topic, keywords, urgency or
+importance alone do not raise it: a rename across fifty files can be `low`,
+and security, migration, concurrency and production work follow the same
+rubric. Costly failure calls for tests and review in the task spec, not only
+more thinking.
 
 ### Effort policies
 
@@ -68,14 +90,15 @@ demand. Route output calls it the *reasoning demand*.
 | --- | --- | --- | --- |
 | `low` | `low` | `low` | `low` |
 | `moderate` | `low` | `medium` | `medium` |
-| `high` | `medium` | `high` | `high` |
-| `exceptional` | `high` | `high` | `xhigh` |
+| `high` | `medium` | `high` | `xhigh` |
+| `exceptional` | `high` | `xhigh` | `xhigh` |
 
 ::: tip
 No policy maps to `max`; that takes an explicit `--effort max`. The mapping is
-a starting heuristic, not a measured optimum: `balanced` keeps exceptional work
-at `high`, `quality` allows `xhigh` for it only, `efficient` saves effort on
-moderate and high work. Measuring it is on the [roadmap](roadmap.md).
+a starting heuristic, not a measured optimum: `balanced` gives each demand its
+own effort, `low` to `xhigh`; `quality` also gives high work `xhigh`;
+`efficient` saves effort on moderate and high work and keeps exceptional work
+at `high`. Measuring it is on the [roadmap](roadmap.md).
 :::
 
 ## Checking the target against the model
@@ -86,7 +109,7 @@ from (`supportSource`), most trusted first:
 | `supportSource` | Meaning | Agents |
 | --- | --- | --- |
 | `provider` | The agent CLI's own model list or cache | Claude Code (its cached account catalog), Codex (`models_cache.json`), Cursor (effort variants in `cursor-agent models`), Grok (`models_cache.json`), Antigravity ids with an effort suffix (Gemini) |
-| `orca` | Orca's effort menu or catalog for that agent | Claude Code and Codex (Orca's model catalog, their first source), Grok (from `grok models`, with Orca's ceilings), Antigravity ids without an effort suffix (`low`/`medium`/`high`), Muse (`minimal` to `max`; Orca's `ultra` has no rung here), OpenCode (none) |
+| `orca` | Orca's effort menu or catalog for that agent | Claude Code and Codex (Orca's model catalog, their first source), Grok (from `grok models`, with Orca's ceilings), Antigravity ids without an effort suffix (Orca's catalog, else `low`/`medium`/`high`), Muse (`minimal` to `max`; Orca's `ultra` has no rung here), OpenCode (none) |
 | `assumed` | A built-in guess | Claude Code and Codex when neither Orca's catalog nor the agent's own cache lists any model, so models come from the evidence catalog: `low`, `medium`, `high`, `xhigh`, `max` |
 
 `supportSource` is `unknown` when a model carries no source.
@@ -95,6 +118,9 @@ from (`supportSource`), most trusted first:
 
 A `demand` or `tier-default` target the model does not offer is **snapped**:
 the nearest **lower** supported effort, else the **lowest higher** one.
+Ranking counts each step snapped down against the route (2.5 points per step,
+see [ranking](tiers-and-routing.md#ranking-covering-routes)), so a route that
+can apply the target wins a near tie.
 
 | Target | Model supports | Resolved | Reported |
 | --- | --- | --- | --- |
@@ -165,10 +191,11 @@ When the supported levels are `assumed`, the effort reason ends with
   `~/.grok/models_cache.json`. Multi-agent models get no effort (on them effort
   sets how many agents run). From `grok models`: `low` to `xhigh`, capped as in
   Orca's seed (`grok-4.5` up to `high`).
-- **Antigravity**: ids ending in `-low`, `-medium` or `-high` (the Gemini
-  models, `gemini-3.8-flash-low|medium|high`) are grouped like Cursor's, with
-  the unsuffixed id filling a missing `medium`; other ids (Claude, GPT-OSS)
-  take Orca's `--effort` `low`/`medium`/`high`.
+- **Antigravity**: ids ending in `-low`, `-medium`, `-high` or `-xhigh` (the
+  Gemini models, `gemini-4-neon-low|medium|high|xhigh`) are grouped like
+  Cursor's, with the unsuffixed id filling a missing `medium`; other ids
+  (Claude, GPT-OSS) take Orca's `--effort`, with the efforts Orca's catalog
+  lists for them, else `low`/`medium`/`high`.
 - **Muse**: Orca's menu, `minimal` to `max`, passed as `--effort`; the
   default is `high`.
 - **OpenCode**: no effort; Orca does not support it for OpenCode.
@@ -205,14 +232,14 @@ When the supported levels are `assumed`, the effort reason ends with
 ```sh
 # everyday feature, a few local choices
 orcacompass route --tier daily --demand moderate
-#   effort: medium from moderate reasoning demand (balanced policy), passed as --effort
+#   effort: medium from moderate effort demand (balanced policy), passed as --effort
 
 # bulk rename across many files: cheap model, little thinking
 orcacompass route --tier light --demand low
 
 # one subtle race in one file: ordinary model, deep thinking
 orcacompass route --tier daily --demand high
-#   effort: high from high reasoning demand (balanced policy), passed as --effort
+#   effort: high from high effort demand (balanced policy), passed as --effort
 
 # the user asked for max on a Frontier job
 orcacompass route --tier frontier --effort max

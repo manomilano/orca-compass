@@ -9,10 +9,9 @@ describe('effort', () => {
     expect(snapEffort('medium', [])).toBeNull();
   });
 
-  it('maps reasoning demand to effort per policy, never to max', () => {
-    expect(DEMAND_EFFORT.balanced).toEqual({ low: 'low', moderate: 'medium', high: 'high', exceptional: 'high' });
-    expect(DEMAND_EFFORT.quality.exceptional).toBe('xhigh');
-    expect(DEMAND_EFFORT.quality.low).toBe('low');
+  it('maps effort demand to effort per policy, never to max', () => {
+    expect(DEMAND_EFFORT.balanced).toEqual({ low: 'low', moderate: 'medium', high: 'high', exceptional: 'xhigh' });
+    expect(DEMAND_EFFORT.quality).toEqual({ low: 'low', moderate: 'medium', high: 'xhigh', exceptional: 'xhigh' });
     expect(DEMAND_EFFORT.efficient).toEqual({ low: 'low', moderate: 'low', high: 'medium', exceptional: 'high' });
     for (const policy of Object.values(DEMAND_EFFORT)) expect(Object.values(policy)).not.toContain('max');
   });
