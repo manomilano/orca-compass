@@ -1,4 +1,4 @@
-import { AXES, STALE_DAYS, type Axis, type EvidenceSnapshot, type SnapshotModel, type SnapshotPricing, type SnapshotScore } from '../evidence/snapshot.js';
+import { AXES, type Axis, type EvidenceSnapshot, type SnapshotModel, type SnapshotPricing, type SnapshotScore } from '../evidence/snapshot.js';
 import { TIERS, type AgentDiscovery, type Classification, type Config, type ModelMeta, type PlacedAgent, type Tier } from '../types.js';
 import { compact, normalizeModelId, stripVersion } from './ids.js';
 import { FAMILY_TIERS, lineupTier, MODEL_LINE_TIERS, modelFamily } from './tiers.js';
@@ -11,8 +11,6 @@ export interface AxisProfile {
   label: EvidenceLabel;
   band: Tier | null;
   inheritedFrom?: string;
-  /** The axis's measured score rests on a result last seen this day, more than STALE_DAYS before the snapshot's data. */
-  staleSince?: string;
 }
 export type CostSource = 'override' | 'price' | 'family' | 'lineup' | 'evidence';
 export interface CostTier {
@@ -101,24 +99,6 @@ function inherit(axis: Axis, family: string | undefined, vendor: string | undefi
     || a.id.localeCompare(b.id))[0];
 }
 
-const dayNumber = (date: string): number => Date.parse(`${date.slice(0, 10)}T00:00:00Z`) / 86_400_000;
-
-/**
- * The oldest day among the best measured results behind an axis score, when it is more than STALE_DAYS before
- * the snapshot's data date. Only archived results can be that old: the dataset dates its own rows by its fetch.
- */
-function staleSince(model: SnapshotModel, axis: Axis, snapshot: EvidenceSnapshot): string | undefined {
-  const dataDate = snapshot.sources[0]?.dataDate ?? snapshot.generatedAt;
-  let oldest: string | undefined;
-  for (const benchmark of Object.keys(snapshot.axes[axis]?.weights ?? {})) {
-    const best = model.results.filter((row) => row.kind === 'measured' && row.benchmark === benchmark)
-      .sort((a, b) => b.value - a.value)[0];
-    if (!best || !(dayNumber(dataDate) - dayNumber(best.observedAt) > STALE_DAYS)) continue;
-    if (oldest === undefined || best.observedAt < oldest) oldest = best.observedAt.slice(0, 10);
-  }
-  return oldest;
-}
-
 /** A model's raw independent evidence and its separate cost tier. */
 export function buildProfile(modelId: string, meta: ModelMeta | undefined, lineup: string | undefined, snapshot: EvidenceSnapshot, config: Config): Profile {
   const matched = findSnapshotModel(modelId, snapshot);
@@ -141,8 +121,6 @@ export function buildProfile(modelId: string, meta: ModelMeta | undefined, lineu
       band: score === null ? null : bandOf(score, snapshot.bands[axis]),
       ...(borrowedFrom ? { inheritedFrom: borrowedFrom } : {}),
     };
-    const stale = direct?.kind === 'measured' && matched ? staleSince(matched, axis, snapshot) : undefined;
-    if (stale) profile.axes[axis].staleSince = stale;
   }
   profile.class = [...TIERS].reverse().find((tier) => AXES.some((axis) => profile.axes[axis].band === tier)) ?? null;
   profile.cost = costTierFor(modelId, identity, lineup, matched, profile.class, config);

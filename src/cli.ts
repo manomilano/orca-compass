@@ -833,7 +833,7 @@ function axisOption(raw: string | undefined): Axis | undefined {
 }
 
 function axisText(axis: Axis, p: AxisProfile): string {
-  return p.score === null || p.band === null ? `${axis} unranked (no evidence or estimate)` : `${axis} ${p.score.toFixed(1)} ${p.band[0].toUpperCase()} ${p.label}(${p.benchmarks})${p.staleSince ? ` last seen ${p.staleSince}` : ''}`;
+  return p.score === null || p.band === null ? `${axis} unranked (no evidence or estimate)` : `${axis} ${p.score.toFixed(1)} ${p.band[0].toUpperCase()} ${p.label}(${p.benchmarks})`;
 }
 
 /** Match provenance to the placement generation without another network request. */

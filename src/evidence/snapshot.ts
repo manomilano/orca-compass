@@ -11,11 +11,6 @@ export interface EvidenceSnapshot { schemaVersion: 1; generatedAt: string; sourc
   /** The `top` need cut per axis, above the `high` cut. Kept out of `bands`, whose three cuts 0.2.2 requires. */
   topBands?: Record<Axis, number>; models: SnapshotModel[] }
 export const SNAPSHOT_SCHEMA = 1;
-/**
- * A measured result older than this many days before the snapshot's data date came from the evidence
- * archive (the source stopped publishing it). It still counts, and its axis is reported as last seen then.
- */
-export const STALE_DAYS = 180;
 export const ALLOWED_LICENSES: readonly string[] = ['CC BY 4.0', 'CC0 1.0', 'MIT'];
 
 const object = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);

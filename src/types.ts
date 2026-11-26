@@ -236,7 +236,7 @@ export interface Quality {
   shortfall: number;
   overshoot: number;
   evidence: EvidenceLabel;
-  axes: Record<Axis, { score: number | null; band: Tier | null; evidence: EvidenceLabel; benchmarks: number; need: Need; cut: number | null; staleSince?: string }>;
+  axes: Record<Axis, { score: number | null; band: Tier | null; evidence: EvidenceLabel; benchmarks: number; need: Need; cut: number | null }>;
 }
 
 export interface Decision {

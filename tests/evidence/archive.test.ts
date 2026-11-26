@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { mergeArchive, parseArchive, serializeArchive, type EvidenceArchive } from '../../src/evidence/archive.js';
-import { STALE_DAYS } from '../../src/evidence/snapshot.js';
+import { archiveSummary, mergeArchive, parseArchive, serializeArchive, STALE_DAYS, type EvidenceArchive } from '../../src/evidence/archive.js';
 import { buildProfile } from '../../src/placements/profiles.js';
 import { DEFAULT_CONFIG } from '../../src/config.js';
 import { buildSnapshot, DEFAULT_BANDS, METRIC_MAP } from '../../src/evidence/refresh.js';
@@ -43,20 +42,36 @@ describe('evidence archive', () => {
     expect(withArchive.scores.agentic).toEqual(buildSnapshot(dataset, opts).models.find((m) => m.id === 'gpt-6-astra')!.scores.agentic);
   });
 
-  it(`keeps using a row after ${STALE_DAYS} days and shows its axis as last seen on its date`, () => {
+  it(`keeps counting a row after ${STALE_DAYS} days and calls it out only in the refresh summary`, () => {
     const dropped = mergeArchive(first, later('2026-11-11')).archive;
     const opts = (now: string) => ({ now: `${now}T05:00:00Z`, bands: DEFAULT_BANDS, sourceFetchedAt: now });
-    const agentic = (date: string) => {
-      const merge = mergeArchive(dropped, later(date));
-      expect(merge.retained.some((row) => row.metric === 'aa_agentic_index')).toBe(true);
-      const snapshot = buildSnapshot(merge.dataset, opts(date));
-      return buildProfile('gpt-6-astra', undefined, undefined, snapshot, DEFAULT_CONFIG).axes.agentic;
-    };
-    // 180 days after it was last seen the row is not stale yet; a day later it is, and it still counts.
-    expect(agentic('2027-05-09').staleSince).toBeUndefined();
-    const stale = agentic('2027-05-10');
-    expect(stale).toMatchObject({ label: 'measured', staleSince: '2026-11-10' });
-    expect(stale.score).toBe(buildProfile('gpt-6-astra', undefined, undefined, buildSnapshot(dataset, opts('2026-11-10')), DEFAULT_CONFIG).axes.agentic.score);
+    const merge = (date: string) => mergeArchive(dropped, later(date));
+    const agentic = (date: string) => buildProfile('gpt-6-astra', undefined, undefined, buildSnapshot(merge(date).dataset, opts(date)), DEFAULT_CONFIG).axes.agentic;
+    const original = buildProfile('gpt-6-astra', undefined, undefined, buildSnapshot(dataset, opts('2026-11-10')), DEFAULT_CONFIG).axes.agentic;
+    expect(agentic('2027-05-10')).toEqual(original);
+    // The metric has no live rows left, so the summary says it is no longer published.
+    const fresh = archiveSummary(merge('2027-05-09'));
+    expect(fresh[0]).toMatch(/^Kept \d+ score rows for \d+ models from the evidence archive/);
+    expect(fresh).toContainEqual(expect.stringMatching(/^- aa_agentic_index: \d+ rows, last seen 2026-11-10 or later; the dataset no longer publishes this metric at all$/));
+    expect(fresh.some((line) => line.includes(`older than ${STALE_DAYS} days`))).toBe(false);
+    expect(archiveSummary(merge('2027-05-10')).some((line) => line.includes(`older than ${STALE_DAYS} days and still count`))).toBe(true);
+    expect(archiveSummary(mergeArchive(first, dataset))).toEqual([]);
+  });
+
+  it('does not add back a source of a benchmark that another source still reports', () => {
+    const lost = 'openai/gpt-6-astra';
+    // Epoch (priority 1) drops the model while AA (priority 2) still reports its GPQA. The archived Epoch row
+    // would win on priority and freeze the score, so it stays archived only.
+    const next = later('2026-11-25', (row) => !(row.modelId === lost && row.metric === 'epoch_gpqa_diamond'));
+    expect(next.scores.some((row: Score) => row.modelId === lost && row.metric === 'aa_gpqa')).toBe(true);
+    const merge = mergeArchive(first, next);
+    expect(merge.retained.some((row) => row.modelId === lost && row.metric === 'epoch_gpqa_diamond')).toBe(false);
+    const gpqa = buildSnapshot(merge.dataset, { now: '2026-11-25T05:00:00Z', bands: DEFAULT_BANDS, sourceFetchedAt: '2026-11-25' })
+      .models.find((m) => m.id === 'gpt-6-astra')!.results.filter((r) => r.benchmark === 'gpqa_diamond');
+    expect(gpqa.every((r) => r.source !== 'epoch')).toBe(true);
+    // Once every GPQA source is gone, the archived rows come back.
+    const none = later('2026-11-25', (row) => !(row.modelId === lost && ['epoch_gpqa_diamond', 'aa_gpqa', 'gpqa_accuracy'].includes(row.metric)));
+    expect(mergeArchive(first, none).retained.some((row) => row.modelId === lost && row.metric === 'epoch_gpqa_diamond')).toBe(true);
   });
 
   it('adds back a metric a model lost entirely, not a setting it dropped beside others', () => {
