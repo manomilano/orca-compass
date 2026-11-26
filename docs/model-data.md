@@ -42,12 +42,14 @@ calibration runs on every refresh, changed or not.
 Sources sometimes stop publishing a score, for example when they drop older
 models from a leaderboard. `data/evidence-archive.json` keeps the last known
 value of every axis score row the dataset has carried, and the refresh updates
-it from each dataset. When the dataset no longer has a row, the refresh adds
-it back from the archive, dated to the last committed dataset that had it, for
-180 days.
-After that the row stays in the archive but no longer counts. The archive never
-deletes rows, so older values remain available if a source drops them for
-good. The refresh diff says how many rows it kept this way.
+it from each dataset. When a model no longer has any row of a metric, the
+refresh adds the archived rows back, dated to the last committed dataset that
+had them. A setting a source stopped reporting while it still reports others
+(a low-effort run beside the high-effort one) is not added back. Archived rows
+keep counting however old they are. Once one is more than 180 days older than
+the dataset, `ranking` and route reasons show its axis as `last seen <date>`,
+so a score that rests on old data is visible. The archive never deletes rows,
+and the refresh diff says how many rows it kept this way.
 
 When the rebuilt evidence matches the committed snapshot, the refresh keeps
 that snapshot. A new build time or dataset date alone is not a change. It

@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { mergeArchive, parseArchive, RETAIN_DAYS, serializeArchive, type EvidenceArchive } from '../../src/evidence/archive.js';
+import { mergeArchive, parseArchive, serializeArchive, type EvidenceArchive } from '../../src/evidence/archive.js';
+import { STALE_DAYS } from '../../src/evidence/snapshot.js';
+import { buildProfile } from '../../src/placements/profiles.js';
+import { DEFAULT_CONFIG } from '../../src/config.js';
 import { buildSnapshot, DEFAULT_BANDS, METRIC_MAP } from '../../src/evidence/refresh.js';
 
 interface Score { modelId: string; metric: string; value: number; observedAt: string; setting?: string }
@@ -40,15 +43,30 @@ describe('evidence archive', () => {
     expect(withArchive.scores.agentic).toEqual(buildSnapshot(dataset, opts).models.find((m) => m.id === 'gpt-6-astra')!.scores.agentic);
   });
 
-  it(`stops using a row ${RETAIN_DAYS} days after it was last seen but keeps it in the archive`, () => {
+  it(`keeps using a row after ${STALE_DAYS} days and shows its axis as last seen on its date`, () => {
     const dropped = mergeArchive(first, later('2026-11-11')).archive;
-    const edge = mergeArchive(dropped, later('2027-05-09'));
-    expect(edge.retained.length).toBeGreaterThan(0);
-    const expired = mergeArchive(edge.archive, later('2027-05-10'));
-    expect(expired.retained).toEqual([]);
-    expect(scores(expired.dataset).some((row) => row.metric === 'aa_agentic_index')).toBe(false);
-    expect(expired.archive.rows.filter((row) => row.metric === 'aa_agentic_index')).toEqual(
-      first.rows.filter((row) => row.metric === 'aa_agentic_index').map((row) => ({ ...row, lastSeen: '2026-11-10' })));
+    const opts = (now: string) => ({ now: `${now}T05:00:00Z`, bands: DEFAULT_BANDS, sourceFetchedAt: now });
+    const agentic = (date: string) => {
+      const merge = mergeArchive(dropped, later(date));
+      expect(merge.retained.some((row) => row.metric === 'aa_agentic_index')).toBe(true);
+      const snapshot = buildSnapshot(merge.dataset, opts(date));
+      return buildProfile('gpt-6-astra', undefined, undefined, snapshot, DEFAULT_CONFIG).axes.agentic;
+    };
+    // 180 days after it was last seen the row is not stale yet; a day later it is, and it still counts.
+    expect(agentic('2027-05-09').staleSince).toBeUndefined();
+    const stale = agentic('2027-05-10');
+    expect(stale).toMatchObject({ label: 'measured', staleSince: '2026-11-10' });
+    expect(stale.score).toBe(buildProfile('gpt-6-astra', undefined, undefined, buildSnapshot(dataset, opts('2026-11-10')), DEFAULT_CONFIG).axes.agentic.score);
+  });
+
+  it('adds back a metric a model lost entirely, not a setting it dropped beside others', () => {
+    const row = first.rows.find((r) => r.metric === 'aa_hle')!;
+    const archive = structuredClone(first);
+    // A low-effort setting the source no longer reports, while it still reports the model's other aa_hle row.
+    archive.rows.push({ ...row, setting: 'Retired', value: 0.05 });
+    const merge = mergeArchive(archive, later('2026-11-25', () => true));
+    expect(merge.retained).toEqual([]);
+    expect(merge.archive.rows.find((r) => r.modelId === row.modelId && r.metric === 'aa_hle' && r.setting === 'Retired')).toMatchObject({ lastSeen: '2026-11-10' });
   });
 
   it('clears the missing date when a row returns and keeps its first date until the value changes', () => {

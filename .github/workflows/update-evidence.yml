@@ -29,7 +29,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       # Downloads the dataset; refuses to write when calibration fails. Unchanged scores write nothing.
-      # Score rows the dataset dropped come back from data/evidence-archive.json for 180 days. The
+      # A metric a model lost entirely comes back from data/evidence-archive.json. The
       # archive alone changes on every run (its date), so only the snapshot decides whether to open a PR.
       - run: node scripts/refresh-evidence.mjs --fetch --diff /tmp/evidence-diff.md --check-methodology
       - name: Check for changed scores

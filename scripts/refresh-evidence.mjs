@@ -4,15 +4,16 @@
 // there first) and rebuilds data/evidence-snapshot.json and its manifest. Existing
 // snapshot bands are retained; to change the cuts, edit the previous snapshot's
 // bands before running this script. data/evidence-archive.json keeps every score row
-// the dataset has published; rows the dataset dropped come back from it for 180 days.
+// the dataset has published; a metric a model lost entirely comes back from it and keeps
+// counting, reported as last seen on its date once it is more than 180 days old.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { mergeArchive, parseArchive, RETAIN_DAYS, serializeArchive } from '../dist/evidence/archive.js';
+import { mergeArchive, parseArchive, serializeArchive } from '../dist/evidence/archive.js';
 import { planRefresh, serializeManifest } from '../dist/evidence/refresh.js';
 import { AXIS_WEIGHTS, BENCHMARKS } from '../dist/evidence/scoring.js';
-import { parseSnapshot } from '../dist/evidence/snapshot.js';
+import { parseSnapshot, STALE_DAYS } from '../dist/evidence/snapshot.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DATASET_URL = 'https://llmbenchmark.ai/data/dataset.json';
@@ -90,9 +91,12 @@ async function main() {
   }
   console.log('Calibration checks passed');
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  const dataDay = (date) => Date.parse(`${date.slice(0, 10)}T00:00:00Z`) / 86_400_000;
+  const stale = merged.retained.filter((row) => dataDay(dataset.generatedAt) - dataDay(row.lastSeen) > STALE_DAYS);
   const retained = merged.retained.length ? [
     `Kept ${plural(merged.retained.length, 'score row')} for ${plural(new Set(merged.retained.map((row) => row.modelId)).size, 'model')} that the dataset no longer has, ` +
-    `last seen ${merged.retained.map((row) => row.lastSeen).sort()[0]} or later (rows return for ${RETAIN_DAYS} days).`, ''] : [];
+    `last seen ${merged.retained.map((row) => row.lastSeen).sort()[0]} or later` +
+    (stale.length ? `; ${plural(stale.length, 'row')} older than ${STALE_DAYS} days still count and show as "last seen".` : '.'), ''] : [];
   const diff = ['# Evidence snapshot refresh', '', ...(plan.changed ? (plan.diff.length ? plan.diff : ['No model profile changes.']) : ['No changes.']), '', ...retained].join('\n');
   await mkdir(out, { recursive: true });
   const nextArchiveText = serializeArchive(merged.archive);

@@ -176,7 +176,7 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
       const price = blended === null ? `${sourceText}, no price` : `$${blended.toFixed(2)}/M blended, ${sourceText}`;
       reasons.push(`cost: ${tier} (${price})`);
     }
-    if (quality) reasons.push(AXES.map((axis) => `${axis} ${quality.axes[axis].score ?? 'unranked'} ${quality.axes[axis].evidence}`).join(', '));
+    if (quality) reasons.push(AXES.map((axis) => `${axis} ${quality.axes[axis].score ?? 'unranked'} ${quality.axes[axis].evidence}${quality.axes[axis].staleSince ? ` (last seen ${quality.axes[axis].staleSince})` : ''}`).join(', '));
     else reasons.push('cursor auto: fallback, no named model could be routed (Cursor picks the model)');
     if (cand.model.agent === 'opencode') reasons.push('opencode: Orca takes --model for OpenCode only in an existing worktree (--worktree current or a selector)');
     if (pinned) {
@@ -421,7 +421,7 @@ function evaluate(model: PlacedModel, env: Environment, config: Config, needs: N
     evidence: jobEvidence(model.profile, needs),
     axes: Object.fromEntries(AXES.map((axis) => {
       const p = model.profile.axes[axis];
-      return [axis, { score: p.score, band: p.band, evidence: p.label, benchmarks: p.benchmarks, need: needs[axis], cut: cutFor(needs[axis], env.bands[axis], top[axis]) }];
+      return [axis, { score: p.score, band: p.band, evidence: p.label, benchmarks: p.benchmarks, need: needs[axis], cut: cutFor(needs[axis], env.bands[axis], top[axis]), ...(p.staleSince ? { staleSince: p.staleSince } : {}) }];
     })) as Quality['axes'],
   };
   const base: Candidate = {

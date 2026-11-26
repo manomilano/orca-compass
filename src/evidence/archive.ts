@@ -3,11 +3,11 @@ import { METRIC_MAP } from './refresh.js';
 /**
  * The evidence archive keeps the last known value of every axis score row LLMBenchmark has
  * published, so a row the dataset later drops is not lost. Rows are never deleted: the archive is
- * also the record to recover from. A refresh puts a dropped row back into the dataset for
- * RETAIN_DAYS after the last dataset that had it; after that it stays in the archive only.
+ * also the record to recover from. A refresh puts a dropped row back into the dataset only when the
+ * model has no row of that metric left, dated to the last dataset that had it. It keeps counting
+ * however old it gets; after STALE_DAYS the profiles report its axis as last seen on that date.
  */
 export const ARCHIVE_SCHEMA = 1;
-export const RETAIN_DAYS = 180;
 
 export interface ArchiveRow {
   modelId: string; metric: string; setting?: string;
@@ -62,14 +62,15 @@ export interface ArchiveMerge {
   archive: EvidenceArchive;
   /** The dataset with the retained rows added to its scores. */
   dataset: unknown;
-  /** Archived rows the dataset no longer has, last seen within RETAIN_DAYS. */
+  /** Archived rows added back: metrics a listed model no longer has any row of. */
   retained: ArchiveRow[];
 }
 
 /**
- * Records the dataset's axis score rows in the archive, then adds back every archived row the dataset
- * dropped within the last RETAIN_DAYS. Dates come from the dataset, not the clock, so running it
- * again on the same dataset and archive changes nothing.
+ * Records the dataset's axis score rows in the archive, then adds back the archived rows of every metric
+ * a model has lost entirely. A setting the source stopped reporting while it kept others (a low-effort
+ * run beside the high-effort one) stays archived only. Dates come from the dataset, not the clock, so
+ * running it again on the same dataset and archive changes nothing.
  */
 export function mergeArchive(previous: EvidenceArchive | undefined, dataset: unknown): ArchiveMerge {
   if (!object(dataset) || typeof dataset.generatedAt !== 'string' || !validDate(dataset.generatedAt.slice(0, 10)) ||
@@ -82,10 +83,12 @@ export function mergeArchive(previous: EvidenceArchive | undefined, dataset: unk
   if (previous && date < previous.dataDate) throw new Error(`dataset from ${date} is older than the evidence archive (${previous.dataDate})`);
   const rows = new Map((previous?.rows ?? []).map((row) => [key(row), row]));
   const present = new Set<string>();
+  const measured = new Set<string>();
   for (const raw of dataset.scores as ScoreRow[]) {
     if (!object(raw) || !Object.hasOwn(METRIC_MAP, raw.metric)) continue;
     const id = key(raw);
     present.add(id);
+    measured.add(JSON.stringify([raw.modelId, raw.metric]));
     const old = rows.get(id);
     const same = old && old.value === raw.value && old.unit === raw.unit && old.source === raw.source && old.sourceUrl === raw.sourceUrl;
     // Store only what parseArchive accepts, so one odd dataset row cannot make the next refresh refuse the archive.
@@ -103,7 +106,7 @@ export function mergeArchive(previous: EvidenceArchive | undefined, dataset: unk
     rows.set(id, missing);
     // A metric the refresh no longer reads stays archived; adding it back would duplicate the dataset's own row.
     if (!Object.hasOwn(METRIC_MAP, row.metric) || (listed && !listed.has(row.modelId))) continue;
-    if (days(date) - days(missing.lastSeen!) <= RETAIN_DAYS) retained.push(missing);
+    if (!measured.has(JSON.stringify([row.modelId, row.metric]))) retained.push(missing);
   }
   const sorted = [...rows.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, row]) => row);
   const added: ScoreRow[] = retained.map((row) => ({
