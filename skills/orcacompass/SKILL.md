@@ -170,7 +170,7 @@ route without `--effort`.
 
 ## Route, then launch
 
-1. Rate the needs and note any user constraints.
+1. Rate the needs and the effort demand, and note any user constraints.
 2. Make one route call per worker:
 
    ```sh
