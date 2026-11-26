@@ -46,33 +46,41 @@ to split the job or add checks instead.
 The orchestrator (the agent coordinating workers) rates how much thinking the
 job requires, based on the work itself. The needs pick how capable the model
 must be; the demand picks how much it should think before acting. More effort
-buys exploring alternatives and checking its own reasoning; it costs time and
-usage, and adds nothing on simple work.
+buys exploring alternatives and checking its own reasoning, at a cost in time
+and usage.
 
 ### Rating the demand {#reasoning-demand}
 
-The rating answers one question: how likely is a direct first attempt to be
-wrong, and how hard would that be to notice?
+The rating answers one question: how much reasoning is required to reach a
+correct solution, and how difficult is it to detect an incorrect one with the
+checks available for this job?
 
 | Demand | The job | Typical work |
 | --- | --- | --- |
-| `low` | The steps are known before starting, and a wrong result is obvious (a test, the compiler, the diff) | Rename, formatting, dependency bump, boilerplate, one step of a written plan |
-| `moderate` | The path is clear but has a few local choices, or a failure whose message points at the cause | A feature that follows an existing pattern, a bug with a stack trace, tests for known behaviour |
-| `high` | The worker must work out *what* to do: an unknown cause, unclear requirements, a trade-off, constraints across components, or a plan to make. A wrong answer can look right | A bug with no repro, a race, a design or migration plan, a refactor that must keep an invariant |
-| `exceptional` | Several `high` signals at once, and a mistake is costly or hard to detect; or a `high` attempt already failed | An intermittent failure across services, an irreversible data migration, a security-sensitive design |
+| `low` | The approach is known, decisions are mechanical, and little independent reasoning or verification is needed | Rename, formatting, routine dependency bump, boilerplate, a straightforward step of a written plan |
+| `moderate` | The approach is mostly clear but requires local decisions, analysis, or routine investigation | A feature following an existing pattern, a bug whose cause is localized by the error, tests for known behaviour |
+| `high` | Finding or validating the right approach requires substantial investigation, non-obvious deductions, or resolving competing constraints | An unexplained bug with no repro, a subtle race, a migration plan with real trade-offs, a refactor with an invariant that is hard to preserve or verify |
+| `exceptional` | The job requires unusually deep reasoning, extensive exploration of competing explanations or solutions, or resolving complex interacting uncertainties beyond a normal `high` attempt | Tracing intermittent corruption across services with conflicting evidence, designing a novel security boundary with subtle failure modes |
 
-Between two levels, the orchestrator picks `moderate` when unsure (most jobs
-are `low` or `moderate`; `exceptional` is rare), the lower level when good
-tests or an easy check cover the work, and the higher one when a wrong answer
-would pass a quick look. A job that is only partly hard is split and its parts
-rated separately. A shallow answer is retried one level higher; an answer that
-lacked the ability raises the need instead.
+Between two adjacent levels, the orchestrator prefers the lower unless deeper
+reasoning would materially improve the solution or its validation, and falls
+back to `moderate` only when the task description is too sparse to rate. Most
+jobs are `low` or `moderate`; `exceptional` is rare. Good tests reduce
+verification uncertainty, not necessarily the reasoning needed to find a
+solution. A job that is only partly hard is split when practical and its parts
+rated separately. After a failed attempt the orchestrator reassesses first: it
+raises the demand one level when more thorough thinking is needed, the
+relevant need when more capability is needed, and both only when each is
+justified on its own. An unclear task spec or missing context, tools or access
+is fixed instead of escalating.
 
 Demand is independent of the needs and of the model: a Light model can get
 `high` (a tricky one-file fix) and a Frontier model `low` (a bulk edit that
-only a very strong model is trusted with). Size does not raise it (a rename
-across fifty files is `low`), nor does importance alone: costly failure calls
-for tests and review in the task spec.
+only a very strong model is trusted with). Size, topic, keywords, urgency or
+importance alone do not raise it: a rename across fifty files can be `low`,
+and security, migration, concurrency and production work follow the same
+rubric. Costly failure calls for tests and review in the task spec, not only
+more thinking.
 
 ### Effort policies
 
