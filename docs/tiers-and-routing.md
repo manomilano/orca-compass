@@ -190,7 +190,8 @@ when its subscription has clearly more room. They are compared in this order:
 1. unblocked before [blocked](#usage-headroom-and-pace);
 2. known usage before unknown usage;
 3. the higher **score**: [pace-scaled headroom](#usage-headroom-and-pace) in
-   percentage points, minus the price adjustment below;
+   percentage points, minus the price adjustment and the effort adjustment
+   below;
 4. on equal scores, the [usage order](#usage-order).
 
 The price adjustment for a blended price of `p` USD per million tokens is
@@ -220,6 +221,15 @@ the same usage windows are decided by price: the cheaper model wins.
 
 For example, a $1/M model with 80% headroom scores 79. A $4/M model with 82%
 scores 79.5 and wins. At 81% it scores 78.5 and the cheaper model wins.
+
+The effort adjustment is 2.5 points for each effort step a route falls short of
+the target from `--demand` or the tier default, because the model offers only
+lower efforts and the target would be [snapped](effort.md#snapping-automatic-targets)
+down. An `exceptional` job (target `xhigh`) on Gemini 4 Carbon, which stops at
+`high`, loses 2.5 points, so Gemini 4 Neon with `xhigh` wins on the same usage
+windows although it costs more. A route with clearly more headroom still wins
+at the lower effort. An explicit `--effort` leaves out routes that cannot apply
+it instead.
 
 A route that returns this pick adds the line `selection: 62.00 ranked headroom
 points minus 2.50 price points = 59.50` to its reasons, and `next best` names

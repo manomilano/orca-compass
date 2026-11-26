@@ -111,6 +111,9 @@ from (`supportSource`), most trusted first:
 
 A `demand` or `tier-default` target the model does not offer is **snapped**:
 the nearest **lower** supported effort, else the **lowest higher** one.
+Ranking counts each step snapped down against the route (2.5 points per step,
+see [ranking](tiers-and-routing.md#ranking-covering-routes)), so a route that
+can apply the target wins a near tie.
 
 | Target | Model supports | Resolved | Reported |
 | --- | --- | --- | --- |

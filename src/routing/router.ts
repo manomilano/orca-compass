@@ -2,7 +2,7 @@ import { AXES } from '../evidence/snapshot.js';
 import { DEFAULT_TOP_BANDS } from '../evidence/refresh.js';
 import { coverage, cutFor, EVIDENCE_ORDER, jobEvidence, needWeightedScore } from './adequacy.js';
 import { needsFromTier, tierOfNeeds, type Needs } from './needs.js';
-import { DEMAND_EFFORT, snapEffort } from './effort.js';
+import { DEMAND_EFFORT, EFFORT_LADDER, snapEffort } from './effort.js';
 import { poolState, projectPool, rankHeadroom } from './pace.js';
 import type { Rejection } from './rejection.js';
 import { FAMILY_TIERS, knownModelVersion, modelFamily } from '../placements/tiers.js';
@@ -143,10 +143,10 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
   const honors = (c: Candidate): boolean => !req.effort || canApplyEffort(c.model, req.effort);
   const named = all.filter((c) => c.tier !== null);
   const covering = named.filter((c) => c.quality?.covers);
-  const fit = rankCovering(covering.filter(honors), config);
-  const requested = req.tier;
   const plan = effortPlan(req, config);
   const target = plan.target;
+  const fit = rankCovering(covering.filter(honors), config, target);
+  const requested = req.tier;
   const warnings: string[] = [];
   const overRisk = new Set<Candidate>();
   const needLine = `needs ${AXES.map((axis) => `${axis}=${req.needs[axis]}`).join(' ')}${req.needsSource === 'tier' ? ` from tier ${requested}` : ''}; covering routes: ${fit.length} across all cost tiers`;
@@ -201,7 +201,9 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
     }
     if (automaticPick && cand.rank !== null) {
       const penalty = pricePenalty(cand, config);
-      reasons.push(`selection: ${(cand.rank * 100).toFixed(2)} ranked headroom points minus ${penalty.toFixed(2)} price points = ${(cand.rank * 100 - penalty).toFixed(2)}`);
+      const short = effortPenalty(cand, target);
+      const effortPart = short > 0 ? ` minus ${short.toFixed(2)} effort points` : '';
+      reasons.push(`selection: ${(cand.rank * 100).toFixed(2)} ranked headroom points minus ${penalty.toFixed(2)} price points${effortPart} = ${(cand.rank * 100 - penalty - short).toFixed(2)}`);
     }
     const next = others.find((c) => !c.blocked);
     if (next) {
@@ -235,7 +237,7 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
       warnings.push(`${label} skipped: not available${gone ? ` (${gone.reason})` : ''}`);
     } else if (match.blocked) warnings.push(`${label} skipped: blocked (${blockers(match, env.now)})`);
     else if (match.risk && match.risk.projectedPercent > config.preferRiskLimit) {
-      const safer = rankCovering(fit.filter((c) => !c.blocked && c.rank !== null && c.risk && c.risk.projectedPercent <= config.preferRiskLimit), config)[0];
+      const safer = rankCovering(fit.filter((c) => !c.blocked && c.rank !== null && c.risk && c.risk.projectedPercent <= config.preferRiskLimit), config, target)[0];
       if (!safer) {
         warnings.push(`${label} retained: no unblocked alternative with known usage within the ${config.preferRiskLimit}% risk limit`);
         return finish(match, fit, true);
@@ -248,7 +250,7 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
   }
 
   if (req.effort && covering.length && !fit.length) {
-    const unconstrainedFit = rankCovering(covering, config);
+    const unconstrainedFit = rankCovering(covering, config, target);
     const offered = unconstrainedFit.slice(0, 6).map((c) => `${c.model.agent} ${c.model.modelId} (${supportedEfforts(c.model)})`).join(', ');
     return { ...base(), alternatives: unconstrainedFit.slice(0, 5).map((c) => alternative(c, target, env.now)), reasons: [`no ${requested} route supports effort ${req.effort}: ${offered}`, 'choose one of these efforts, or route without --effort', needLine, ...skippedLine()] };
   }
@@ -510,10 +512,23 @@ function pricePenalty(c: Candidate, config: Config): number {
   return MAX_PRICE_POINTS * (price / (price + HALF_PENALTY_PRICE));
 }
 
-function rankCovering(candidates: Candidate[], config: Config): Candidate[] {
+/**
+ * In ranked headroom points, per effort step a route falls short of the target it was asked for (it offers only
+ * a lower effort, so the target is snapped down). A near tie goes to a route that can think as hard as the job
+ * needs; a route with clearly more headroom still wins at a lower effort. An explicit --effort filters instead.
+ */
+const EFFORT_STEP_POINTS = 2.5;
+
+function effortPenalty(c: Candidate, target: Effort): number {
+  const resolved = resolve(c, target).resolved;
+  if (resolved === null) return 0;
+  return EFFORT_STEP_POINTS * Math.max(0, EFFORT_LADDER.indexOf(target) - EFFORT_LADDER.indexOf(resolved));
+}
+
+function rankCovering(candidates: Candidate[], config: Config, target: Effort): Candidate[] {
   return candidates.map((candidate) => ({
     candidate,
-    score: (candidate.rank ?? 0) * 100 - pricePenalty(candidate, config),
+    score: (candidate.rank ?? 0) * 100 - pricePenalty(candidate, config) - effortPenalty(candidate, target),
   })).sort((left, right) => {
     const a = left.candidate, b = right.candidate;
     if (a.blocked !== b.blocked || (a.rank === null) !== (b.rank === null)) {

@@ -148,7 +148,8 @@ at $4, 3.33 at $8, 4 at $16, and never more than 5. Change the thresholds with
 OrcaCompass reads your live usage from Orca and projects it: at the current
 pace, how much of each usage window will be left when it resets? This
 remaining share is **headroom**. Each route's score is its headroom in
-percentage points minus its price adjustment, and the highest score wins. In
+percentage points minus its price adjustment, and minus an effort adjustment
+when the model cannot think as hard as the job asks; the highest score wins. In
 the example, every model of an agent draws on the same weekly window, and
 Cursor offers Sonnet 5.5 and Gemini 4 Carbon:
 
