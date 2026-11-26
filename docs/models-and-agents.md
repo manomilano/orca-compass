@@ -54,8 +54,9 @@ routing](tiers-and-routing.md#when-placement-runs)). Claude Code's and
 Codex's lists come first from Orca's model catalog (`agent-model-catalog.db`
 in Orca's data folder, `%APPDATA%\orca` on Windows): the models Orca's model
 picker offers, with the efforts recorded for each. The legacy
-`agent-model-catalog.json` is tried after the database and before agent caches. Orca saves only these
-two agents' lists there; it lists the others live, as OrcaCompass does.
+`agent-model-catalog.json` is tried after the database and before agent caches. Orca saves Claude
+Code's and Codex's model lists there, and Antigravity's effort menus (Antigravity's models still
+come from `agy`); it lists the others live, as OrcaCompass does.
 
 OrcaCompass opens the catalog read-only and needs `node:sqlite` (Node.js 22.13+ without
 flags); without SQLite, the legacy JSON catalog can still be used. If neither Orca
@@ -84,15 +85,19 @@ Each model has two separate profiles:
 - **Capability:** coding, agentic and reasoning scores from benchmark evidence.
   When an axis has no direct score, a usable hint can borrow the highest score
   from the same provider: either the same family or a model with a hint at or
-  below the target hint tier. Ties use release date, then ID. Without direct
-  evidence or a usable inheritance candidate, that axis stays unranked.
+  below the target hint tier. Ties use release date, then ID. A new Gemini
+  release without a hint borrows the scores of the latest earlier release of
+  its line. Without direct evidence or a usable inheritance candidate, that
+  axis stays unranked.
 - **Cost tier:** the first available tier from a user override, API price,
-  family/model-line or provider-lineup hint, then evidence class.
+  family/model-line or provider-lineup hint, then evidence class (or the
+  previous release's price for a Gemini release borrowing its scores).
 
 The job's needs select qualifying models, from every cost tier. Their routes
 are [scored](tiers-and-routing.md#ranking-covering-routes) by usage
 [headroom](tiers-and-routing.md#usage-headroom-and-pace) minus a price
-adjustment of at most five points, and the highest score wins.
+adjustment of at most five points and an effort adjustment when automatic
+effort is snapped down, and the highest score wins.
 `orcacompass ranking` shows the evidence and `orcacompass tiers`
 shows the cost tiers. Cursor `auto` is only a fallback and has no profile.
 See [How it works](how-it-works.md) for a worked example and

@@ -61,7 +61,7 @@ const readable = `daily → claude · claude-sonnet-5-5 · medium (high confiden
           <CommandBlock command="orcacompass route --need coding=mid,agentic=low,reasoning=low --demand moderate --json" label="Rate the three needs" :output="needs" output-label="Illustrative JSON excerpt" />
           <ol class="demo-notes">
             <li><strong>Three separate needs</strong><p><code>--tier</code> is shorthand for equal needs on all three axes.</p></li>
-            <li><strong>Effort follows demand</strong><p>Reasoning demand maps to supported effort through your effort policy.</p></li>
+            <li><strong>Effort follows demand</strong><p>Effort demand maps to supported effort through your effort policy.</p></li>
             <li><strong>Arguments, ready to pass</strong><p>Pass each <code>launchArgs</code> element as a separate, properly quoted argument.</p></li>
           </ol>
         </div>

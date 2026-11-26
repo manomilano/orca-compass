@@ -162,7 +162,7 @@ A route with no settable effort is listed as `provider-controlled`. Use
 | `provider-default` | `--model <id>` only; the agent uses its own default | OpenCode (Orca passes no effort), Cursor Auto, any model with no settable effort |
 
 When `applied` is `provider-default`, the reason reads, for example, `effort:
-not set, codex uses its own default (medium); high wanted from high reasoning
+not set, codex uses its own default (medium); high wanted from high effort
 demand (balanced policy)`, and `providerDefault` carries the agent's default
 when the provider reports one. The orchestrator must not claim an effort was
 set in that case.

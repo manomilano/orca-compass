@@ -80,7 +80,7 @@ const skillHref = withBase('/skill-workflow.html#_1-rate-the-job')
   <ComicPanel class="wf-rate" tag="section" aria-labelledby="wf-rate-title">
     <SectionHeading id="wf-rate-title" :level="3" title="Try rating a job">
       <template #lead>
-        Choose the job’s needs and reasoning demand to build a routing command.
+        Choose the job’s needs and effort demand to build a routing command.
       </template>
     </SectionHeading>
 
