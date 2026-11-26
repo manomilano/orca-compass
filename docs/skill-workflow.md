@@ -69,19 +69,25 @@ Rate all three needs from the work itself, regardless of spare capacity:
 | reasoning | Cognitive problem-solving difficulty |
 
 Use the packaged Skill's definitions for `min`, `low`, `mid`, `high`, and
-`top`. Use `top` only when `high` is not enough: a high route already failed,
-or a mistake would be expensive. Most hard work is `high`.
+`top`. Use `top` only on an axis where the job requires capability beyond
+`high`; a failed attempt or an expensive mistake does not by itself justify it.
+Most hard work is `high`.
 
 Use `--tier` only for a job with equal needs on all axes: `light`, `daily`,
 `advanced`, and `frontier` map to `min`, `low`, `mid`, and `high`. There is no
 tier for `top`; use `--need`.
 
-Rate effort demand independently: `low` for known steps with easy checking,
-`moderate` for local choices or a little diagnosis, `high` for ambiguity,
-unknown causes, trade-offs or planning, and `exceptional` for several of
-those with costly failure. A rename across fifty files can be `low`; a
-subtle race in one file can be `high`. Costly failure also calls for tests
-and review in the task spec.
+Rate effort demand independently, by how much reasoning a correct solution
+needs and how hard an incorrect one is to detect with the job's checks: `low`
+for a known approach with mechanical decisions, `moderate` for a mostly clear
+approach with local decisions or routine investigation, `high` when finding or
+validating the approach takes substantial investigation or competing
+constraints, and `exceptional` for unusually deep reasoning beyond a normal
+`high` attempt. Between adjacent levels, prefer the lower unless deeper
+reasoning would materially help. After a failure, reassess before raising the
+demand or the need. A rename across fifty files can be `low`; a subtle race in
+one file can be `high`. Costly failure also calls for tests and review in the
+task spec.
 
 Full tier and demand tables: [Tiers and routing](tiers-and-routing.md#the-four-tiers)
 and [Effort](effort.md#reasoning-demand).
@@ -197,10 +203,11 @@ reported as `started`. Details: [Verify and rejections](verify-and-rejections.md
 | warning `<window> quota is N% used; resets in …` | Orca reports the pick's usage window at or above its warning threshold (`thresholds`, 95% long, 90% session). Relay it and keep the job small |
 | warning `selected route is expected to end above …` | The pick is expected to end its usage window above `usageRiskLimit`. Relay it and keep the job small |
 | `effort.applied` | `flag`, `model-id`, or `provider-default` (the agent decides). Never claim an effort was set when it is `provider-default` |
+| `effort.adjusted: true` | The route cannot apply the exact target. Report the target and the resolved effort when relevant, especially for `exceptional` demand. Do not reroute only for this; ranking already counts the shortfall |
 | warning `… is a last-resort agent …` | The route costs money per token or runs on this machine; tell the user before launching several workers on it |
 | `status: "wait"` | Read `waitUntil` (epoch ms). Wait, or retry without `--no-downgrade` if the user allows a downgrade |
-| `status: "none"` | Launch with Orca's default (no `--model`, no `--effort`) and say no recommendation was available. Keep any explicit user model choice |
-| command missing | Same default fallback; say OrcaCompass was absent |
+| `status: "none"` | Say no recommendation was available. Use Orca's defaults only where they respect the user's explicit constraints, and keep any explicit agent or model choice. If no route can apply an explicit effort, report the available levels and ask before launching with another effort or none |
+| command missing | Say OrcaCompass was absent. Use the same default fallback only if it respects the user's explicit constraints; otherwise ask first |
 | exit 1 | Usage or runtime error: fix the command or report it |
 | exit 2 | `config error: <path>: <message>`: report and resolve before retrying |
 | low confidence | Usage unknown or more than 4x `usageStaleMinutes` old. Do not invent percentages |

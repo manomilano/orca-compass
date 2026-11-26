@@ -616,6 +616,32 @@ describe('discoverAntigravity', () => {
     expect(pro.models).toMatchObject([{ modelId: 'gemini-3.1-pro', efforts: ['low', 'high'], poolNames: gemini }]);
   });
 
+  it('groups xhigh variants with their model', async () => {
+    const agy = await discoverAntigravity(deps({ run: fakeRun('gemini-4-neon-high\tHigh\ngemini-4-neon-xhigh\tXHigh\ngemini-4-neon-low\tLow\n') }));
+    expect(agy.models).toMatchObject([{
+      modelId: 'gemini-4-neon', efforts: ['low', 'high', 'xhigh'], effortSource: 'provider',
+      launch: { kind: 'variant', ids: { low: 'gemini-4-neon-low', high: 'gemini-4-neon-high', xhigh: 'gemini-4-neon-xhigh' } },
+    }]);
+  });
+
+  it("takes an unsuffixed model's efforts from Orca's catalog, else Orca's default menu", async () => {
+    const rows = [probe('antigravity', [
+      { id: 'claude-sonnet-4-6', efforts: [{ value: 'low' }, { value: 'high' }, { value: 'extra-high' }] },
+      { id: 'claude-opus-4-6', efforts: [{ value: 'medium' }] },
+      { id: 'gpt-oss-120b', efforts: [] },
+    ])];
+    const agy = await discoverAntigravity(deps({ run: fakeRun(agyFixture), readOrcaCatalog: async () => rows }));
+    const efforts = (id: string) => agy.models.find((m) => m.modelId === id)?.efforts;
+    expect(efforts('claude-sonnet-4-6')).toEqual(['low', 'high', 'xhigh']);
+    // agy lists claude-opus-4-6-thinking; Orca's catalog names it without the suffix.
+    expect(efforts('claude-opus-4-6')).toEqual(['medium']);
+    // Effort variants come from agy's own ids, not from Orca's catalog.
+    expect(efforts('gpt-oss-120b')).toEqual(['medium']);
+    expect(efforts('gemini-3.8-flash')).toEqual(['low', 'medium', 'high']);
+    const none = await discoverAntigravity(deps({ run: fakeRun('claude-sonnet-4-6\tSonnet\n'), readOrcaCatalog: async () => [] }));
+    expect(none.models).toMatchObject([{ efforts: ['low', 'medium', 'high'], effortSource: 'orca' }]);
+  });
+
   it('returns no models with the reason when agy lists no launch ids', async () => {
     const old = await discoverAntigravity(deps({ run: fakeRun('Gemini 3.5 Flash (Medium)\n') }));
     expect(old).toMatchObject({ installed: true, models: [], note: 'agy models gave no model ids: Gemini 3.5 Flash (Medium)' });
@@ -776,7 +802,7 @@ describe("Orca's model catalog", () => {
     expect(cx.note).toMatch(/models_cache\.json; Orca's model catalog skipped: .*Node 22\.13 or later/);
   });
 
-  it('is read only for Claude Code and Codex, the agents whose model lists Orca saves there', async () => {
+  it('lists models only for Claude Code and Codex; Antigravity reads it only after agy lists its models', async () => {
     let reads = 0;
     const rows = ['cursor', 'grok', 'opencode', 'antigravity', 'muse'].map((agent) => probe(agent, [{ id: 'gpt-6-astra', efforts: [] }]));
     const orcaDeps = deps({ run: failRun, readFile: () => undefined, readOrcaCatalog: async () => (reads++, rows) });

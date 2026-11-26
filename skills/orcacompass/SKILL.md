@@ -7,7 +7,7 @@ description: Use when delegating work to Orca workers (orca orchestration worker
 
 Use alongside Orca's orchestration skill. OrcaCompass recommends a route;
 the coordinator launches and supervises the worker with Orca's normal commands.
-Explicit user instructions about agent or model take precedence over recommendations.
+Explicit user instructions about agent, model or effort take precedence over recommendations.
 
 ## First-time setup
 
@@ -117,10 +117,11 @@ Rate each job by the work, not spare capacity. Pass all three axes with `--need`
 | `high` | Difficult, ambiguous problems requiring deep analysis, non-obvious deductions, or sophisticated multi-step reasoning. |
 | `top` | Exceptional reasoning challenges involving novel problems, highly complex interacting constraints, or solutions that demand unusually deep insight beyond established approaches. |
 
-Use `top` only when `high` is not enough: a `high` route already failed at the
-job, or a mistake would be expensive. Most hard jobs are `high`; `top` leaves
-only the strongest models, for example
-`--need coding=top,agentic=high,reasoning=top`.
+Use `top` only on an axis where the job requires capability beyond `high`.
+A failed attempt or an expensive mistake does not by itself justify `top`.
+Most hard jobs are `high`; `top` leaves only the strongest models, for example
+`--need coding=top,agentic=high,reasoning=top`. For retries, use the failure
+reassessment rule in the effort demand section.
 
 Use `--tier` for the rare job that is the same on all axes: light, daily,
 advanced and frontier map to min, low, mid and high respectively. There is no
@@ -129,40 +130,67 @@ short explanation with `--tier-reason`; explain it in chat when asked.
 
 ## Rate the effort demand separately
 
-The needs describe the abilities required; the effort demand picks how
-much it should think. Rate it from the work, never from the tier or the model:
+The needs pick how capable the model must be; the effort demand picks how much
+it should think before acting. More effort buys exploring alternatives and
+checking its own reasoning, at a cost in time and usage. Rate it from the work,
+never from the tier or the model, with one question: **how much reasoning is
+required to reach a correct solution, and how difficult is it to detect an
+incorrect one with the checks available for this job?**
 
-| Demand | Signals |
-| --- | --- |
-| low | The steps are known; checking the result is easy. |
-| moderate | Some local choices or a little diagnosis. |
-| high | Ambiguity, an unknown cause, trade-offs, constraints across components, or a plan to make. |
-| exceptional | Several of those at once, with costly failure. |
+| Demand | The job | Typical work |
+| --- | --- | --- |
+| `low` | The approach is known, decisions are mechanical, and little independent reasoning or verification is needed. | Rename, formatting, routine dependency bump, boilerplate, a straightforward step of a written plan. |
+| `moderate` | The approach is mostly clear but requires local decisions, analysis, or routine investigation. | A feature following an existing pattern, a bug whose cause is localized by the error, tests for known behaviour. |
+| `high` | Finding or validating the right approach requires substantial investigation, non-obvious deductions, or resolving competing constraints. | An unexplained bug with no repro, a subtle race, a migration plan with real trade-offs, a refactor with an invariant that is hard to preserve or verify. |
+| `exceptional` | The job requires unusually deep reasoning, extensive exploration of competing explanations or solutions, or resolving complex interacting uncertainties beyond a normal `high` attempt. | Tracing intermittent corruption across services with conflicting evidence, designing a novel security boundary with subtle failure modes. |
 
-The amount of work is not the demand: a rename across fifty files is `low`; a
-subtle race in one file is `high`. Pass `--demand <d>`; OrcaCompass maps it to
-an effort the chosen model supports and reports what it applied. A Light model
-can get `high` and a Frontier model `low`. Costly failure calls for tests and
-review in the task spec, not only more thinking.
+Between two levels:
+
+- When unsure between adjacent levels, prefer the lower unless deeper
+  reasoning would materially improve the solution or its validation. Default
+  to `moderate` only when the task description is too sparse for a more precise
+  rating. Most jobs are `low` or `moderate`; `exceptional` is rare.
+- Good tests reduce verification uncertainty, not necessarily the reasoning
+  needed to find a solution. Lower demand only if the work itself justifies it;
+  hard-to-detect errors may warrant deeper reasoning and stronger checks.
+- Only part of the job is hard: split it when practical and rate the parts
+  separately.
+- After a failed attempt, reassess before escalating. Raise demand one level if
+  more thorough thinking is needed; raise the relevant need if greater model
+  capability is needed. Raise both only when independently justified. Fix an
+  unclear task spec or missing context, tools or access instead of escalating
+  for those reasons. If the cause is unclear, diagnose it first.
+
+Do not raise demand for size, topic, keywords, urgency or importance alone,
+or to make up for a weaker model. A rename across fifty files can be `low`;
+a subtle race in one file can be `high`. Security, migration, concurrency and
+production work follow the same rubric. Human review before execution can
+reduce execution risk, not the reasoning needed to design a sound plan.
+Costly failure calls for tests and review in the task spec, not only more
+thinking. Do not lower demand because the model is strong: a Light model can
+get `high` and a Frontier model `low`.
+
+Pass `--demand <d>`; OrcaCompass maps it to an effort the chosen model
+supports and reports what it applied.
 
 Pass `--effort <e>` only when the user asked for a specific effort. Valid
 levels are `none`, `minimal`, `low`, `medium`, `high`, `xhigh` (also spelled
 `extra-high`) and `max`; anything else, such as `ultra`, exits 1. It is never
 snapped: routes that cannot apply it are left out, and if no route in the tier
-can, `status` is `none` with the levels each route offers; ask the user or
-route without `--effort`.
+can, `status` is `none` with the levels each route offers. Ask the user before
+relaxing or removing their explicit effort requirement.
 
 ## Route, then launch
 
-1. Rate the needs and note any user constraints.
+1. Rate the needs and the effort demand, and note any user constraints.
 2. Make one route call per worker:
 
    ```sh
    orcacompass route --need coding=mid,agentic=low,reasoning=low --demand moderate --tier-reason "Multi-file change with tests and routine judgement." --json
    ```
 
-   Add `--demand <low|moderate|high|exceptional>`. Restrict agents with
-   repeated `--agent <id>` or `--exclude-agent <id>`. Use `--effort <e>` only
+   `--demand` takes `low`, `moderate`, `high` or `exceptional`. Restrict agents
+   with repeated `--agent <id>` or `--exclude-agent <id>`. Use `--effort <e>` only
    for an effort the user asked for; `--no-downgrade` prevents capability
    shortfalls and Cursor auto fallback. A cheaper cost tier that covers the
    needs is still allowed. Agent ids are `claude`, `codex`, `cursor`,
@@ -179,9 +207,13 @@ route without `--effort`.
 
 3. Compare all qualifying routes across cost tiers. Among unblocked routes,
    known usage takes priority. A pool blocks only at 100% reported usage.
-   Choose the highest ranked headroom in points minus a price adjustment of up to five points.
+   OrcaCompass ranks covering routes by headroom in points, minus a price
+   adjustment of up to five points and, for automatic effort, 2.5 points per
+   downward effort step from the target. Use its selected route; explicit
+   `--effort` filters instead of applying an effort penalty.
    Parse JSON and inspect `status`, `reasons`, `warnings`, `confidence`,
-   `downgraded`, and `upgraded`. Exit code 0 alone does not mean a route exists.
+   `downgraded`, `upgraded`, and `effort`. Exit code 0 alone does not mean a
+   route exists.
 4. For `status: "ok"`, append the returned `launchArgs` array to:
 
    ```sh
@@ -245,6 +277,10 @@ route without `--effort`.
 - `effort`: `applied` says how effort reaches the worker (`flag`, `model-id`,
   or `provider-default` when the agent decides). Never claim an effort was set
   when `applied` is `provider-default`.
+- `effort.adjusted: true`: the selected route cannot apply the exact target.
+  Report the target and resolved effort when relevant, especially for
+  `exceptional` demand. Do not reroute solely because of the adjustment;
+  OrcaCompass already accounts for downward effort steps in its ranking.
 - A warning `… is a last-resort agent (lastResortAgents) …`: the route costs
   money per token or runs on this machine; tell the user before launching
   several workers on it.
@@ -255,10 +291,13 @@ route without `--effort`.
   Relay the warning to the user.
 - `status: "wait"`: inspect `waitUntil` (epoch milliseconds); wait until reset
   or retry without `--no-downgrade` if user constraints permit a downgrade.
-- `status: "none"`: launch using Orca's normal default without `--model`
-  or `--effort`, and state that no recommendation was available. Preserve any
-  explicit user model choice instead of using a default.
-- Command missing: use the same default fallback and say OrcaCompass was absent.
+- `status: "none"`: state that no recommendation was available. Use Orca's
+  normal defaults only where they respect explicit user constraints; preserve
+  any explicit agent or model choice. If no route can honor an explicit effort,
+  report the available levels and ask before launching with a different effort
+  or without one. Do not silently bypass other explicit constraints.
+- Command missing: say OrcaCompass was absent. Use the same default fallback
+  only if it can honor explicit user constraints; otherwise ask before launching.
 - Exit 1 means a command usage or runtime error; fix the command or report it. Exit 2 means invalid config;
   report `config error: <path>: <message>` and resolve it before retrying.
 - Low confidence: surface that usage is unknown or more than 4x

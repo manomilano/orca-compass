@@ -271,7 +271,10 @@ describe('curated results', () => {
 });
 
 describe('model hints', () => {
-  it.each([['claude-opus-5-5', 'claude-opus'], ['gpt-6-1-terra', 'gpt-terra'], ['grok-4-7', 'grok'], ['gemini-3-1-pro', 'gemini'], ['composer-2-5', 'composer'], ['new-family', 'new-family'], ['123-model', undefined]])('derives the family of %s', (slug, want) => {
+  it.each([['claude-opus-5-5', 'claude-opus'], ['gpt-6-1-terra', 'gpt-terra'], ['grok-4-7', 'grok'], ['gemini-3-1-pro', 'gemini-pro'],
+    ['gemini-4-carbon', 'gemini-carbon'], ['gemini-4-hydrogen', 'gemini-hydrogen'], ['gemini-3-1-flash-lite-preview', 'gemini-flash-lite'],
+    ['gemini-3-1-pro-preview-customtools', 'gemini-pro'], ['gemini-2-0-flash-001', 'gemini-flash'], ['gemini-3-1-flash-image', 'gemini-flash-image'],
+    ['gemini-omni-1-2-flash', 'gemini-omni'], ['composer-2-5', 'composer'], ['new-family', 'new-family'], ['123-model', undefined]])('derives the family of %s', (slug, want) => {
     expect(familyOfSlug(slug)).toBe(want);
   });
   it('removes only the leading provider label', () => {

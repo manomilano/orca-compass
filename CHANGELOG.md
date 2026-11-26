@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+- Each Gemini line is its own family (Gemini 4 Neon, Carbon, Argon and
+  Hydrogen). Before, all Gemini models shared one family, so the newest one in
+  a cost tier hid the others: Gemini 4 Hydrogen hid the stronger Carbon and
+  Argon. This takes effect from the evidence snapshot, without an update.
+- A new Gemini release that has no evidence yet takes the scores and cost tier
+  of the previous release of its line, labelled `assumed`, as new Claude and
+  GPT releases already did: Gemini 5 Neon replaces Gemini 4 Neon on the day it
+  appears.
+- `--demand` gives each effort demand its own effort under the default
+  `balanced` policy: `exceptional` now maps to `xhigh` (was `high`). `quality`
+  maps `high` and `exceptional` to `xhigh`; `efficient` is unchanged. A model
+  without `xhigh` still snaps to its nearest lower effort. Route reasons say
+  `effort demand` (was `reasoning demand`), so it is not confused with the
+  reasoning need.
+- Antigravity's `-xhigh` model ids (Gemini 4 Neon and Hydrogen) are grouped
+  with their model as its `xhigh` effort instead of being listed as unknown
+  models that were never routed. Claude and GPT models in Antigravity take
+  their efforts from Orca's model catalog when it lists them.
+- Ranking prefers a route that can apply the effort a job asks for. Each
+  effort step a route would be snapped down from the `--demand` or tier-default
+  target costs 2.5 points of its score, so on the same usage windows an
+  `exceptional` job goes to a model with `xhigh` (Gemini 4 Neon) instead of a
+  slightly cheaper one that stops at `high` (Gemini 4 Carbon). A route with
+  clearly more headroom still wins. The `selection` reason shows the points.
+
 ## 0.2.5
 
 - Added the OrcaCompass website with a landing page, user guide, examples,

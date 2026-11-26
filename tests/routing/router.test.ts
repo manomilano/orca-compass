@@ -303,6 +303,82 @@ describe('route with synthetic usage', () => {
     expect(pinned).toMatchObject({ tier: 'advanced', route: { model: 'claude-sonnet-4-6' } });
   });
 
+  it('keeps every Gemini line in a cost tier: a newer Hydrogen does not hide Carbon', () => {
+    const geminiModel = (id: string, family: string, releaseDate: string): LaunchModel => ({
+      agent: 'cursor', modelId: id, efforts: ['low', 'medium', 'high'],
+      meta: { id, provider: 'google', name: id, family, releaseDate },
+      launch: { kind: 'variant', ids: { low: `${id}-low`, medium: `${id}-medium`, high: `${id}-high` } },
+      poolNames: ['monthly', 'bucket:Cursor Models'],
+    });
+    const row = (id: string, family: string, releasedAt: string, coding: number, agentic: number, reasoning: number): SnapshotModel => ({
+      id, aliases: [], provider: 'google', name: id, family, releasedAt, results: [],
+      pricing: { inputPerM: 2, outputPerM: 10 },
+      scores: Object.fromEntries(Object.entries({ coding, agentic, reasoning }).map(([axis, score]) => [axis, { score, benchmarks: 3, kind: 'measured' }])) as SnapshotModel['scores'],
+    });
+    const snapshot = parseSnapshot(fixture('evidence-mini.json'))!;
+    // Same price, so the same cost tier. Hydrogen is newer but falls short of an Advanced job; Carbon covers it.
+    snapshot.models.push(row('gemini-4-carbon', 'gemini-carbon', '2026-11-10', 86.6, 78.5, 93), row('gemini-4-hydrogen', 'gemini-hydrogen', '2026-11-12', 77.9, 69.5, 86.9));
+    const models = [geminiModel('gemini-4-carbon', 'gemini-carbon', '2026-11-10'), geminiModel('gemini-4-hydrogen', 'gemini-hydrogen', '2026-11-12')];
+    const e = onlyModels(placed(withCursorModels(env, models, 0.1), { snapshot }), 'cursor', ['gemini-4-carbon', 'gemini-4-hydrogen']);
+    const advanced = route({ tier: 'advanced', agents: ['cursor'] }, e, DEFAULT_CONFIG);
+    expect(advanced.route?.model).toBe('gemini-4-carbon-medium');
+    expect(advanced.skipped).toContainEqual(expect.objectContaining({ model: 'gemini-4-hydrogen', reason: expect.stringMatching(/^below need/) }));
+  });
+
+  it('routes a day-0 Gemini release in place of its predecessor, with borrowed scores', () => {
+    const neon = (id: string): LaunchModel => ({
+      agent: 'cursor', modelId: id, efforts: ['low', 'medium', 'high'],
+      launch: { kind: 'variant', ids: { low: `${id}-low`, medium: `${id}-medium`, high: `${id}-high` } },
+      poolNames: ['monthly', 'bucket:Cursor Models'],
+    });
+    const snapshot = parseSnapshot(fixture('evidence-mini.json'))!;
+    snapshot.models.push({
+      id: 'gemini-4-neon', aliases: [], provider: 'google', name: 'Gemini 4 Neon', family: 'gemini-neon', releasedAt: '2026-11-18', results: [],
+      pricing: { inputPerM: 2, outputPerM: 10 },
+      scores: { coding: { score: 86.9, benchmarks: 4, kind: 'measured' }, agentic: { score: 85.7, benchmarks: 3, kind: 'measured' }, reasoning: { score: 93.5, benchmarks: 3, kind: 'measured' } },
+    });
+    const e = onlyModels(placed(withCursorModels(env, [neon('gemini-4-neon'), neon('gemini-5-neon')], 0.1), { snapshot }), 'cursor', ['gemini-4-neon', 'gemini-5-neon']);
+    const d = route({ tier: 'frontier', agents: ['cursor'] }, e, DEFAULT_CONFIG);
+    expect(d.route?.model).toBe('gemini-5-neon-high');
+    expect(d.quality?.axes.coding).toMatchObject({ score: 86.9, evidence: 'assumed' });
+    expect(d.alternatives.map((a) => a.model)).not.toContain('gemini-4-neon-high');
+  });
+
+  it('prefers, in a near tie, a route that can apply the demanded effort over a cheaper one that would snap it', () => {
+    const gemini = (id: string, efforts: Effort[], pools: string[]): LaunchModel => ({
+      agent: 'cursor', modelId: id, efforts,
+      meta: { id, provider: 'google', name: id, family: id.replace(/^gemini-4-/, 'gemini-'), releaseDate: '2026-11-10' },
+      launch: { kind: 'variant', ids: Object.fromEntries(efforts.map((e) => [e, `${id}-${e}`])) },
+      poolNames: pools,
+    });
+    const row = (id: string, inputPerM: number): SnapshotModel => ({
+      id, aliases: [], provider: 'google', name: id, family: id.replace(/^gemini-4-/, 'gemini-'), releasedAt: '2026-11-10', results: [],
+      pricing: { inputPerM, outputPerM: inputPerM * 5 },
+      scores: { coding: { score: 86, benchmarks: 4, kind: 'measured' }, agentic: { score: 80, benchmarks: 3, kind: 'measured' }, reasoning: { score: 92, benchmarks: 4, kind: 'measured' } },
+    });
+    const snapshot = parseSnapshot(fixture('evidence-mini.json'))!;
+    // Carbon is cheaper ($4/M blended) but stops at high; Neon ($6/M) offers xhigh. Same pools, so the same headroom.
+    snapshot.models.push(row('gemini-4-carbon', 2), row('gemini-4-neon', 3));
+    const shared = ['monthly', 'bucket:Cursor Models'];
+    const models = [gemini('gemini-4-carbon', ['low', 'medium', 'high'], shared), gemini('gemini-4-neon', ['low', 'medium', 'high', 'xhigh'], shared)];
+    const e = onlyModels(placed(withCursorModels(env, models, 0.1), { snapshot }), 'cursor', ['gemini-4-carbon', 'gemini-4-neon']);
+    const req = { needs: { coding: 'mid', agentic: 'mid', reasoning: 'mid' } as const, agents: ['cursor'] };
+    const exceptional = route({ ...req, demand: 'exceptional' }, e, DEFAULT_CONFIG);
+    expect(exceptional.route?.model).toBe('gemini-4-neon-xhigh');
+    expect(exceptional.effort).toMatchObject({ target: 'xhigh', resolved: 'xhigh', adjusted: false });
+    expect(exceptional.reasons.find((r) => r.startsWith('selection:'))).not.toContain('effort points');
+    expect(exceptional.alternatives[0]).toMatchObject({ model: 'gemini-4-carbon-high' });
+    // When both can apply the target, price decides again.
+    expect(route({ ...req, demand: 'high' }, e, DEFAULT_CONFIG).route?.model).toBe('gemini-4-carbon-high');
+    // Clearly more headroom still wins at a lower effort, and the selection line shows the effort points.
+    const apart = [gemini('gemini-4-carbon', ['low', 'medium', 'high'], shared), gemini('gemini-4-neon', ['low', 'medium', 'high', 'xhigh'], ['monthly', 'bucket:Other Models'])];
+    const busy = withPool(onlyModels(placed(withCursorModels(env, apart, 0.1), { snapshot }), 'cursor', ['gemini-4-carbon', 'gemini-4-neon']), 'cursor', 'bucket:Other Models', { usedPercent: 60 });
+    const snapped = route({ ...req, demand: 'exceptional' }, busy, DEFAULT_CONFIG);
+    expect(snapped.route?.model).toBe('gemini-4-carbon-high');
+    expect(snapped.effort).toMatchObject({ target: 'xhigh', resolved: 'high', adjusted: true });
+    expect(snapped.reasons.find((r) => r.startsWith('selection:'))).toMatch(/minus 2\.50 effort points/);
+  });
+
   it('hides older Grok releases in the same cost tier before checking evidence', () => {
     const grokModel = (id: string, releaseDate: string): LaunchModel => ({
       agent: 'cursor', modelId: id, efforts: ['low', 'medium', 'high'],
@@ -464,15 +540,17 @@ describe('route with synthetic usage', () => {
     expect(d.alternatives[0]).toMatchObject({ agent: 'claude', model: 'claude-haiku-5-5', effort: 'low' });
   });
 
-  it('follows the reasoning demand through the effort policy, independent of the tier', () => {
+  it('follows the effort demand through the effort policy, independent of the tier', () => {
     const light = route({ tier: 'light', demand: 'high' }, env, DEFAULT_CONFIG);
     expect(light.route).toEqual({ agent: 'claude', model: 'claude-haiku-5-5', effort: 'high' });
     expect(light.effort).toMatchObject({ source: 'demand', demand: 'high', policy: 'balanced', target: 'high', resolved: 'high', applied: 'flag' });
-    expect(light.reasons).toContain('effort: high from high reasoning demand (balanced policy), passed as --effort');
+    expect(light.reasons).toContain('effort: high from high effort demand (balanced policy), passed as --effort');
     expect(route({ tier: 'frontier', demand: 'low' }, env, DEFAULT_CONFIG).effort).toMatchObject({ target: 'low', resolved: 'low' });
-    expect(route({ tier: 'daily', demand: 'exceptional' }, env, DEFAULT_CONFIG).route?.effort).toBe('high');
+    expect(route({ tier: 'daily', demand: 'exceptional' }, env, DEFAULT_CONFIG).route?.effort).toBe('xhigh');
     const quality: Config = { ...DEFAULT_CONFIG, effortPolicy: 'quality' };
-    expect(route({ tier: 'daily', demand: 'exceptional' }, env, quality).route?.effort).toBe('xhigh');
+    expect(route({ tier: 'daily', demand: 'high' }, env, quality).route?.effort).toBe('xhigh');
+    const efficient: Config = { ...DEFAULT_CONFIG, effortPolicy: 'efficient' };
+    expect(route({ tier: 'daily', demand: 'exceptional' }, env, efficient).route?.effort).toBe('high');
     expect(route({ tier: 'daily', demand: 'low' }, env, quality).route?.effort).toBe('low');
     // An explicit effort wins over the demand.
     expect(route({ tier: 'daily', demand: 'low', effort: 'high' }, env, DEFAULT_CONFIG).effort).toMatchObject({ source: 'explicit', target: 'high' });

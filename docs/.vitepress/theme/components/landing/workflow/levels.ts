@@ -63,12 +63,12 @@ export const AXES: readonly AxisInfo[] = [
   },
 ]
 
-/** The Skill's "Signals" column for each effort demand. */
+/** The Skill's "The job" column for each effort demand. */
 export const DEMAND_SIGNALS: Record<Demand, string> = {
-  low: 'The steps are known; checking the result is easy.',
-  moderate: 'Some local choices or a little diagnosis.',
-  high: 'Ambiguity, an unknown cause, trade-offs, constraints across components, or a plan to make.',
-  exceptional: 'Several of those at once, with costly failure.',
+  low: 'The approach is known, decisions are mechanical, and little independent reasoning or verification is needed.',
+  moderate: 'The approach is mostly clear but requires local decisions, analysis, or routine investigation.',
+  high: 'Finding or validating the right approach requires substantial investigation, non-obvious deductions, or resolving competing constraints.',
+  exceptional: 'The job requires unusually deep reasoning, extensive exploration of competing explanations or solutions, or resolving complex interacting uncertainties beyond a normal high attempt.',
 }
 
 /** Server-rendered default: the Skill's own example rating. */

@@ -17,7 +17,7 @@ export type Effort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 
 /** How much reasoning a job needs, separate from how capable a model it needs (the tier). */
 export type Demand = 'low' | 'moderate' | 'high' | 'exceptional';
 export const DEMANDS: readonly Demand[] = ['low', 'moderate', 'high', 'exceptional'];
-/** How a reasoning demand maps to effort: `balanced` is the default. */
+/** How an effort demand maps to effort: `balanced` is the default. */
 export type EffortPolicy = 'efficient' | 'balanced' | 'quality';
 export const EFFORT_POLICIES: readonly EffortPolicy[] = ['efficient', 'balanced', 'quality'];
 export type Confidence = 'high' | 'medium' | 'low';
@@ -177,7 +177,7 @@ interface RouteOptions {
   excludeAgents?: AgentId[];
   /** An explicit effort: only routes that can apply exactly this effort are used. */
   effort?: Effort;
-  /** The job's reasoning demand; the effort follows it through `effortPolicy`. */
+  /** The job's effort demand; the effort follows it through `effortPolicy`. */
   demand?: Demand;
 }
 
@@ -293,7 +293,7 @@ export interface Config {
   thresholds: { longPercent: number; sessionPercent: number };
   /** Effort per requested tier when the route call gives neither --effort nor --demand. */
   defaultEffort: Record<Tier, Effort>;
-  /** How a reasoning demand (--demand) maps to effort. */
+  /** How an effort demand (--demand) maps to effort. */
   effortPolicy: EffortPolicy;
   /** Ascending blended maker-price cuts in USD per million tokens (3:1 input/output). */
   costBands: [number, number, number];
