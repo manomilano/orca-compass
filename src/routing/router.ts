@@ -94,8 +94,12 @@ export interface ReservationSpec {
   tier: BufferTier;
   effort: BufferEffort;
   scope: string;
+  /** Every window the model is declared to draw on (canonical keys), whether or not it is reported now. */
   pools: string[];
   snapshotAt: number | null;
+  /** The account and plan the usage was read for at allocation, when known. */
+  account?: string;
+  plan?: string;
 }
 
 /** The effort to ask for: an explicit --effort, else the demand through the policy, else the requested tier's default. */
@@ -320,7 +324,8 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
     }
     reasons.push(...skippedLine(finalSkipped));
     const usage = env.usage[cand.model.agent];
-    const pools = cand.quota && cand.quota.buckets.length > 0 ? cand.quota.buckets.map((b) => poolKey(b.pool)) : [...new Set(cand.model.poolNames.map(poolKey))];
+    // Every declared window, always: one missing from this snapshot still counts against the worker when it reappears.
+    const pools = [...new Set(cand.model.poolNames.map(poolKey))];
     return {
       decision: {
         ...base(), skipped: finalSkipped, status: 'ok', tier: cand.tier ?? undefined, quality,
@@ -337,6 +342,8 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
         reserve: {
           agent: cand.model.agent, model: chosen.model, tier: cand.bufferTier, effort: cand.bufferEffort,
           scope: scopeOf(usage), pools, snapshotAt: usage?.updatedAt ?? null,
+          ...(usage?.account !== undefined ? { account: usage.account } : {}),
+          ...(usage?.plan !== undefined ? { plan: usage.plan } : {}),
         },
       } : {}),
     };

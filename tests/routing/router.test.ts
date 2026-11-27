@@ -1617,3 +1617,33 @@ describe('eligibility is all or nothing', () => {
     expect(bucketOf(used, 'bucket:Other Models')).toMatchObject({ buffer: 3 });
   });
 });
+
+describe('declared windows', () => {
+  const claudeWith = (pools: Environment['usage'][string]['pools']): Environment => ({
+    ...env,
+    discoveries: env.discoveries.filter((d) => d.agent === 'claude'),
+    usage: { ...env.usage, claude: { agent: 'claude', status: 'ok', updatedAt: env.now, account: 'acct', plan: 'max_5x', scope: 'scope_1', pools } },
+  });
+  const monthly = (usedPercent: number) => ({ monthly: { name: 'monthly', kind: 'long' as const, usedPercent, windowMinutes: 44640, resetsAt: env.now + 86_400_000 } });
+
+  it('a monthly-only Claude account at 100% is exhausted: the decision goes back, never an unknown route', () => {
+    const e = claudeWith(monthly(100));
+    const d = route({ tier: 'daily' }, e, DEFAULT_CONFIG);
+    expect(d.status).toBe('decide');
+    expect(d.route).toBeUndefined();
+    expect(d.alternatives.length).toBeGreaterThan(0);
+    for (const a of d.alternatives) expect(a).toMatchObject({ blocked: true, quota: { status: 'exhausted', binding: 'claude:scope_1:monthly' } });
+    const used = route({ tier: 'daily', use: { agent: 'claude', model: 'claude-sonnet-5-5' } }, e, DEFAULT_CONFIG);
+    expect(used.status).toBe('decide');
+    expect(used.reasons[0]).toBe('--use claude/claude-sonnet-5-5: quota exhausted (monthly 100% used, resets in 1d)');
+    // Below the limit it routes on the monthly window, with a known quota.
+    expect(route({ tier: 'daily' }, claudeWith(monthly(40)), DEFAULT_CONFIG)).toMatchObject({ status: 'ok', quota: { status: 'available', binding: 'claude:scope_1:monthly' } });
+  });
+
+  it('reserves every declared window with the account and plan, while the decision shows only the windows reported now', () => {
+    const { session: _session, fableWeekly: _fable, ...pools } = env.usage.claude.pools;
+    const p = planRoute({ tier: 'daily' }, claudeWith(pools), DEFAULT_CONFIG);
+    expect(p.reserve).toMatchObject({ agent: 'claude', model: 'claude-sonnet-5-5', scope: 'scope_1', pools: ['session', 'weekly', 'monthly'], account: 'acct', plan: 'max_5x' });
+    expect(p.decision.quota!.buckets.map((b) => b.id)).toEqual(['claude:scope_1:weekly']);
+  });
+});

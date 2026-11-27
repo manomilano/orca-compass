@@ -41,7 +41,7 @@ describe('routing reserves capacity', () => {
     });
     expect(stored()).toEqual([{
       id: d.reservation!.id, state: 'pending', agent: 'claude', model: 'claude-sonnet-5-5', tier: 'daily', effort: 'medium',
-      scope: 'default', pools: ['session', 'weekly'], createdAt: NOW, snapshotAt: NOW,
+      scope: 'default', pools: ['session', 'weekly', 'monthly'], createdAt: NOW, snapshotAt: NOW,
     }]);
     // The next route sees it: reported stays 50, 1.5 pp is reserved, and its own buffer comes on top.
     const second = routeAndReserve(daily, env, config, dir);
@@ -69,6 +69,26 @@ describe('routing reserves capacity', () => {
     }
     expect(readFileSync(join(dir, LEDGER_FILE), 'utf8')).toBe(before);
     expect(weekly(env, stored())).toMatchObject({ reported: 50, reserved: 1.5, effective: 51.5 });
+  });
+
+  it('reserves every declared window, so a window missing at allocation counts once it appears (#2a)', () => {
+    const base = claudeOnly();
+    const { session: _session, ...pools } = base.usage.claude.pools;
+    const noSession: Environment = { ...base, usage: { ...base.usage, claude: { ...base.usage.claude, pools } } };
+    const d = routeAndReserve(daily, noSession, config, dir);
+    expect(d.status).toBe('ok');
+    // The decision lists only what is reported now; the ledger records every declared window.
+    expect(d.reservation!.buckets.map((b) => b.bucket)).toEqual(['claude:default:weekly']);
+    expect(stored()).toMatchObject([{ id: d.reservation!.id, pools: ['session', 'weekly', 'monthly'] }]);
+    markRunning({ reservationId: d.reservation!.id, dispatchId: 'ctx_1' }, NOW + MIN, dir);
+    // Session reappears at 88%: the running worker counts on it, and the next daily worker would reach 91%.
+    const later = withUsageUpdatedAt(withPool(base, 'claude', 'session', { usedPercent: 88 }), NOW + 5 * MIN);
+    const synced = syncReservations(later.usage, NOW + 5 * MIN, config, dir);
+    const session = buildQuotaView(synced.usage, synced.reservations, config, NOW + 5 * MIN).buckets.find((b) => b.agent === 'claude' && b.pool === 'session');
+    expect(session).toMatchObject({ reported: 88, reserved: 1.5, workers: 1 });
+    const next = routeAndReserve(daily, { ...later, now: NOW + 5 * MIN }, config, dir);
+    expect(next.status).toBe('decide');
+    expect(next.options!.use[0].quota!.buckets.find((b) => b.pool === 'session')).toMatchObject({ prospective: 91, prospectiveStatus: 'high' });
   });
 
   it('#26 checks the thresholds on the prospective worker, under the lock, before allocating it', () => {
