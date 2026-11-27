@@ -198,8 +198,12 @@ describe('per-axis routing', () => {
   it('honors a pinned model even when it does not cover', () => {
     const d = route({ tier: 'frontier' }, env, { ...DEFAULT_CONFIG, pins: { frontier: { agent: 'claude', model: 'claude-sonnet-5-5' } } });
     expect(d.route?.model).toBe('claude-sonnet-5-5');
+    expect(d.downgraded).toBe(true);
     expect(d.quality).toMatchObject({ covers: false, shortfall: 1 });
     expect(d.reasons.join('\n')).toContain('preferred route does not cover the job: agentic 78.2 < 80');
+    expect(d.reasons).not.toContain('Manually preferred model; benchmark data unavailable. Task coverage could not be verified.');
+    expect(d.warnings).toContain("claude-sonnet-5-5 falls short of the job's needs by 1 band step (agentic); effort is not raised to make up for it: split the job or add stronger checks");
+    expect(d.skipped.some((s) => s.agent === 'claude' && s.model === 'claude-sonnet-5-5')).toBe(false);
   });
   it('tries last-resort named routes before auto', () => {
     const auto = withCursorModels(withPool(env, 'cursor', 'bucket:Other Models', { usedPercent: 100 }), [CURSOR_AUTO]);
@@ -214,12 +218,23 @@ describe('per-axis routing', () => {
     expect(d.route?.model).not.toBe('auto');
     expect(d.warnings).toContain('tierOverrides.auto is ignored: Cursor auto has no model profile');
   });
-  it('allows an explicit unranked model pin, while reporting its missing evidence', () => {
+  it('allows an explicit unranked model pin, reporting unknown coverage without downgrade or artificial shortfall', () => {
     const mystery: LaunchModel = { agent: 'cursor', modelId: 'mystery-9', efforts: [], launch: { kind: 'flag', model: 'mystery-9' }, poolNames: [] };
     const e = withCursorModels(onlyModels(env, 'cursor', []), [mystery]);
     const d = route({ tier: 'frontier' }, e, { ...DEFAULT_CONFIG, pins: { frontier: { agent: 'cursor', model: 'mystery-9' } } });
-    expect(d).toMatchObject({ status: 'ok', route: { model: 'mystery-9' }, confidence: 'low', quality: { class: null, covers: false, evidence: 'unranked', shortfall: 12 } });
-    expect(d.reasons.join('\n')).toContain('preferred route does not cover the job: coding unranked < 84');
+    expect(d).toMatchObject({
+      status: 'ok', downgraded: false, upgraded: false,
+      route: { agent: 'cursor', model: 'mystery-9', effort: null }, confidence: 'low',
+      quality: { class: null, cost: null, covers: null, evidence: 'unranked', shortfall: 0, overshoot: 0 },
+    });
+    for (const axis of ['coding', 'agentic', 'reasoning'] as const) {
+      expect(d.quality!.axes[axis]).toMatchObject({ score: null, band: null, evidence: 'unranked' });
+    }
+    expect(d.reasons).toContain('Manually preferred model; benchmark data unavailable. Task coverage could not be verified.');
+    expect(d.reasons.join('\n')).not.toContain('preferred route does not cover the job');
+    expect(d.reasons.join('\n')).not.toContain('downgraded from');
+    expect(d.warnings.some((w) => w.includes('falls short'))).toBe(false);
+    expect(d.skipped.some((s) => s.agent === 'cursor' && s.model === 'mystery-9')).toBe(false);
   });
   it('offers auto after every named Cursor model was rejected, but honors an auto rejection', () => {
     const auto = withCursorModels(env, [CURSOR_AUTO]);
@@ -1067,6 +1082,133 @@ describe('preferences', () => {
     const banned = route({ tier: 'frontier' }, env, { ...pin, banModels: ['claude-fable-5-1'] });
     expect(banned.route?.model).not.toMatch(/fable/);
     expect(banned.warnings).toContain('preferred claude claude-fable-5-1 skipped: not available (banned by you)');
+  });
+});
+
+describe('unranked models with manual preferences', () => {
+  const UNAVAILABLE_REASON = 'Manually preferred model; benchmark data unavailable. Task coverage could not be verified.';
+  const mystery: LaunchModel = {
+    agent: 'cursor', modelId: 'mystery-9', efforts: ['low', 'medium', 'high'],
+    launch: { kind: 'flag', model: 'mystery-9' }, poolNames: ['monthly', 'bucket:Cursor Models'],
+  };
+  const composer: LaunchModel = {
+    agent: 'cursor', modelId: 'composer-2-5', efforts: ['low', 'medium', 'high'],
+    launch: { kind: 'flag', model: 'composer-2-5' }, poolNames: ['monthly', 'bucket:Cursor Models'],
+  };
+
+  it('excludes unranked models from automatic routing even with a cost override or when no other model exists', () => {
+    const config: Config = { ...DEFAULT_CONFIG, tierOverrides: { 'mystery-9': 'daily' } };
+    const e = withCursorModels(onlyModels(env, 'cursor', []), [mystery], 0.5, config);
+    for (const tier of ['light', 'daily', 'advanced', 'frontier'] as const) {
+      const d = route({ tier, agents: ['cursor'] }, e, config);
+      expect(d.status).toBe('none');
+      expect(d.route).toBeUndefined();
+      expect(d.skipped).toContainEqual({ agent: 'cursor', model: 'mystery-9', reason: 'unranked: no evidence or estimate' });
+    }
+    // Agent-only pin also excludes unranked models even when cost override is set.
+    const agentPin = route({ tier: 'daily' }, e, { ...config, pins: { daily: { agent: 'cursor' } } });
+    expect(agentPin.route?.agent).not.toBe('cursor');
+    expect(agentPin.warnings).toContain('preferred cursor skipped: not available (unranked: no evidence or estimate)');
+  });
+
+  it('routes an explicitly preferred unranked model across tiers including light and noDowngrade without downgrade or skipped entry', () => {
+    const e = withCursorModels(onlyModels(env, 'cursor', []), [mystery]);
+    for (const tier of ['light', 'daily', 'frontier'] as const) {
+      const d = route({ tier, noDowngrade: true }, e, { ...DEFAULT_CONFIG, pins: { [tier]: { agent: 'cursor', model: 'mystery-9' } } });
+      expect(d).toMatchObject({
+        status: 'ok', downgraded: false, upgraded: false,
+        route: { agent: 'cursor', model: 'mystery-9' },
+        quality: { class: null, cost: null, covers: null, shortfall: 0, overshoot: 0, evidence: 'unranked' },
+      });
+      for (const axis of ['coding', 'agentic', 'reasoning'] as const) {
+        expect(d.quality!.axes[axis]).toMatchObject({ score: null, band: null, evidence: 'unranked' });
+      }
+      expect(d.reasons).toContain(UNAVAILABLE_REASON);
+      expect(d.warnings.some((w) => w.includes('falls short'))).toBe(false);
+      expect(d.skipped.some((s) => s.agent === 'cursor' && s.model === 'mystery-9')).toBe(false);
+    }
+  });
+
+  it('does not leak a blocked explicitly preferred unranked model with a cost override into automatic routing', () => {
+    const config: Config = { ...DEFAULT_CONFIG, tierOverrides: { 'mystery-9': 'daily' }, pins: { daily: { agent: 'cursor', model: 'mystery-9' } } };
+    const e = withPool(withCursorModels(onlyModels(env, 'cursor', []), [mystery], 0.5, config), 'cursor', 'bucket:Cursor Models', { usedPercent: 100 });
+    const d = route({ tier: 'daily', agents: ['cursor'] }, e, config);
+    expect(d.status).toBe('none');
+    expect(d.route).toBeUndefined();
+    expect(d.warnings.some((w) => w.includes('preferred cursor mystery-9 skipped: blocked'))).toBe(true);
+  });
+
+  it('distinguishes unknown axes from measured shortfall on a partially unranked model', () => {
+    const e = withCursorModels(onlyModels(env, 'cursor', []), [composer]);
+    // Automatic routing excludes composer-2-5 when a needed axis is unranked, even as a downgrade fallback.
+    const autoDaily = route({ tier: 'daily', agents: ['cursor'] }, e, DEFAULT_CONFIG);
+    expect(autoDaily.status).toBe('none');
+    expect(autoDaily.skipped).toContainEqual({ agent: 'cursor', model: 'composer-2-5', reason: 'unranked: no evidence or estimate (agentic, reasoning)' });
+    // Automatic routing still allows composer-2-5 when unranked axes are min.
+    const autoCodingOnly = route({ needs: { coding: 'low', agentic: 'min', reasoning: 'min' }, agents: ['cursor'] }, e, DEFAULT_CONFIG);
+    expect(autoCodingOnly).toMatchObject({ status: 'ok', downgraded: false, route: { model: 'composer-2-5' }, quality: { covers: true, shortfall: 0 } });
+    // Manually preferred on daily: coding covers low (80 >= 68), agentic/reasoning are unknown -> no downgrade, no shortfall, informational reason.
+    const pinnedDaily = route({ tier: 'daily' }, e, { ...DEFAULT_CONFIG, pins: { daily: { agent: 'cursor', model: 'composer-2-5' } } });
+    expect(pinnedDaily).toMatchObject({
+      status: 'ok', downgraded: false, route: { agent: 'cursor', model: 'composer-2-5' },
+      quality: { class: 'advanced', covers: null, shortfall: 0, evidence: 'unranked' },
+    });
+    expect(pinnedDaily.reasons).toContain(UNAVAILABLE_REASON);
+    expect(pinnedDaily.warnings.some((w) => w.includes('falls short'))).toBe(false);
+    expect(pinnedDaily.skipped.some((s) => s.agent === 'cursor' && s.model === 'composer-2-5')).toBe(false);
+    // Manually preferred on frontier: coding has measured shortfall of 1 (80 < 84), agentic/reasoning are unknown -> downgraded with shortfall 1 (coding only).
+    const pinnedFrontier = route({ tier: 'frontier' }, e, { ...DEFAULT_CONFIG, pins: { frontier: { agent: 'cursor', model: 'composer-2-5' } } });
+    expect(pinnedFrontier).toMatchObject({
+      status: 'ok', downgraded: true, route: { agent: 'cursor', model: 'composer-2-5' },
+      quality: { class: 'advanced', covers: false, shortfall: 1, evidence: 'unranked' },
+    });
+    expect(pinnedFrontier.reasons).toContain(UNAVAILABLE_REASON);
+    expect(pinnedFrontier.reasons.join('\n')).toContain('preferred route does not cover the job: coding 80 < 84');
+    expect(pinnedFrontier.warnings).toContain("composer-2-5 falls short of the job's needs by 1 band step (coding); effort is not raised to make up for it: split the job or add stronger checks");
+    expect(pinnedFrontier.skipped.some((s) => s.agent === 'cursor' && s.model === 'composer-2-5')).toBe(false);
+  });
+
+  it('evaluates a previously unranked preferred model normally once benchmark data becomes available', () => {
+    const pinConfig: Config = { ...DEFAULT_CONFIG, pins: { frontier: { agent: 'cursor', model: 'mystery-9' } } };
+    // Stage 1: unranked -> unknown coverage, no downgrade, informational reason.
+    const unrankedEnv = withCursorModels(onlyModels(env, 'cursor', []), [mystery]);
+    const before = route({ tier: 'frontier' }, unrankedEnv, pinConfig);
+    expect(before).toMatchObject({ status: 'ok', downgraded: false, route: { model: 'mystery-9' }, quality: { class: null, covers: null, shortfall: 0, evidence: 'unranked' } });
+    expect(before.reasons).toContain(UNAVAILABLE_REASON);
+    expect(before.warnings).toEqual([]);
+
+    // Stage 2: benchmark data arrives and reveals a genuine shortfall on agentic (75 < 80).
+    const shortSnap = parseSnapshot(fixture('evidence-mini.json'))!;
+    shortSnap.models.push({
+      id: 'mystery-9', aliases: [], provider: 'custom', name: 'Mystery 9', results: [],
+      scores: {
+        coding: { score: 86, benchmarks: 3, kind: 'measured' },
+        agentic: { score: 75, benchmarks: 3, kind: 'measured' },
+        reasoning: { score: 88, benchmarks: 3, kind: 'measured' },
+      },
+    });
+    const shortEnv = placed(unrankedEnv, { snapshot: shortSnap });
+    const withShortfall = route({ tier: 'frontier' }, shortEnv, pinConfig);
+    expect(withShortfall).toMatchObject({ status: 'ok', downgraded: true, route: { model: 'mystery-9' }, quality: { class: 'frontier', covers: false, shortfall: 1, evidence: 'measured' } });
+    expect(withShortfall.reasons).not.toContain(UNAVAILABLE_REASON);
+    expect(withShortfall.warnings).toContain("mystery-9 falls short of the job's needs by 1 band step (agentic); effort is not raised to make up for it: split the job or add stronger checks");
+    expect(withShortfall.skipped.some((s) => s.agent === 'cursor' && s.model === 'mystery-9')).toBe(false);
+
+    // Stage 3: benchmark data covers all needs -> covers: true, no downgrade, no warnings.
+    const fullSnap = parseSnapshot(fixture('evidence-mini.json'))!;
+    fullSnap.models.push({
+      id: 'mystery-9', aliases: [], provider: 'custom', name: 'Mystery 9', results: [],
+      scores: {
+        coding: { score: 86, benchmarks: 3, kind: 'measured' },
+        agentic: { score: 82, benchmarks: 3, kind: 'measured' },
+        reasoning: { score: 88, benchmarks: 3, kind: 'measured' },
+      },
+    });
+    const fullEnv = placed(unrankedEnv, { snapshot: fullSnap });
+    const covering = route({ tier: 'frontier' }, fullEnv, pinConfig);
+    expect(covering).toMatchObject({ status: 'ok', downgraded: false, route: { model: 'mystery-9' }, quality: { class: 'frontier', covers: true, shortfall: 0, evidence: 'measured' } });
+    expect(covering.reasons).not.toContain(UNAVAILABLE_REASON);
+    expect(covering.warnings).toEqual([]);
   });
 });
 

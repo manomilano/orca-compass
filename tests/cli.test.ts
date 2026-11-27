@@ -668,6 +668,34 @@ describe('prefer', () => {
     expect(out()).toMatch(/warning: preferred codex gpt-6\.1-terra skipped: weekly on pace for 120% \(limit 100%\), resets in 5d/);
   });
 
+  it('routes a preferred unranked model cleanly in JSON and text without downgrade, shortfall warning, or skipped entry', async () => {
+    const reason = 'Manually preferred model; benchmark data unavailable. Task coverage could not be verified.';
+    const withMystery: MainDeps = {
+      ...deps,
+      run: async (cmd, args) => args[0] === 'models'
+        ? { code: 0, stdout: `${fixture('cursor-list-models.txt')}\nmystery-9 - Mystery 9\n`, stderr: '' }
+        : runner(cmd, args),
+    };
+    expect(await main(['prefer', 'frontier', 'cursor', 'mystery-9'], io, withMystery)).toBe(0);
+    stdout = [];
+    expect(await main(['route', '--tier', 'frontier', '--json'], io, withMystery)).toBe(0);
+    const d = JSON.parse(out());
+    expect(d).toMatchObject({
+      status: 'ok', downgraded: false, upgraded: false,
+      route: { agent: 'cursor', model: 'mystery-9' },
+      quality: { class: null, covers: null, shortfall: 0, evidence: 'unranked' },
+    });
+    expect(d.reasons).toContain(reason);
+    expect(d.warnings.some((w: string) => w.includes('falls short'))).toBe(false);
+    expect(d.skipped.some((s: { agent: string; model?: string }) => s.agent === 'cursor' && s.model === 'mystery-9')).toBe(false);
+
+    stdout = [];
+    expect(await main(['route', '--tier', 'frontier'], io, withMystery)).toBe(0);
+    expect(out()).toContain(`  ${reason}`);
+    expect(out()).not.toContain('falls short');
+    expect(out()).not.toContain('cursor mystery-9 (unranked');
+  });
+
   it('validates tier, agent and the model of an installed agent, and warns for an agent not installed', async () => {
     expect(await main(['prefer', 'huge', 'claude'], io, deps)).toBe(1);
     expect(await main(['prefer', 'daily', 'gemini'], io, deps)).toBe(1);

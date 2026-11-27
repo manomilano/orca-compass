@@ -35,6 +35,7 @@ interface Candidate {
   tier: Tier | null;
   quality: Quality | null;
   below: ReturnType<typeof coverage>['below'];
+  unknown: ReturnType<typeof coverage>['unknown'];
   weightedScore: number;
   /**
    * Headroom of the ranked pool: the long pool, or session pool on pace to hit its warning threshold before
@@ -141,8 +142,8 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
   const agents = eligibleAgents(req, env, config, skipped, deferred);
   const { candidates: all, fallback } = collectCandidates(agents, env, config, req, skipped);
   const honors = (c: Candidate): boolean => !req.effort || canApplyEffort(c.model, req.effort);
-  const named = all.filter((c) => c.tier !== null);
-  const covering = named.filter((c) => c.quality?.covers);
+  const named = all.filter((c) => c.tier !== null && c.model.profile.class !== null);
+  const covering = named.filter((c) => c.quality?.covers === true);
   const plan = effortPlan(req, config);
   const target = plan.target;
   const fit = rankCovering(covering.filter(honors), config, target);
@@ -152,23 +153,26 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
   const needLine = `needs ${AXES.map((axis) => `${axis}=${req.needs[axis]}`).join(' ')}${req.needsSource === 'tier' ? ` from tier ${requested}` : ''}; covering routes: ${fit.length} across all cost tiers`;
   for (const c of named) {
     for (const { axis, score, cut } of c.below) skipped.push({ agent: c.model.agent, model: c.model.modelId, reason: `below need on ${axis} (${score ?? 'unranked'} < ${cut})` });
+    if (c.unknown.length > 0) skipped.push({ agent: c.model.agent, model: c.model.modelId, reason: `unranked: no evidence or estimate (${c.unknown.join(', ')})` });
   }
   const base = (): Decision => ({
     status: 'none', requestedTier: requested, needs: req.needs, needsSource: req.needsSource, downgraded: false, upgraded: false,
     reasons: [], warnings, alternatives: [], skipped,
   });
-  const skippedLine = (): string[] => skipped.length ? [`skipped: ${skipped.map((s) => `${s.agent}${s.model ? ` ${s.model}` : ''} (${s.reason})`).join(', ')}`] : [];
+  const skippedLine = (list: Skipped = skipped): string[] => list.length ? [`skipped: ${list.map((s) => `${s.agent}${s.model ? ` ${s.model}` : ''} (${s.reason})`).join(', ')}`] : [];
   const why = fit.length ? `all ${requested} candidates blocked: ${fit.map((c) => `${c.model.agent} ${c.model.modelId} (${summary(c, env.now)})`).join(', ')}` : 'no model covers the job';
 
   const finish = (cand: Candidate, group: Candidate[], pinned = false): Decision => {
     const chosen = resolve(cand, target);
     const effort = effortResolution(cand, plan, chosen);
     const quality = cand.quality;
-    const down = quality !== null && !quality.covers;
+    const down = quality !== null && quality.covers === false;
+    const unverified = quality !== null && cand.unknown.length > 0;
     const up = quality?.covers === true && cand.tier !== null && TIERS.indexOf(cand.tier) > TIERS.indexOf(requested)
       && !fit.some((c) => TIERS.indexOf(c.tier!) <= TIERS.indexOf(requested));
     const others = group.filter((c) => c !== cand && !overRisk.has(c));
     const automaticPick = group === fit && cand === fit[0] && !pinned;
+    const finalSkipped = skipped.filter((s) => !(s.agent === cand.model.agent && s.model === cand.model.modelId));
     const reasons = [`${cand.model.agent} ${chosen.model}: ${describe(cand, env.now)}`, needLine];
     if (quality?.cost) {
       const { tier, blended, source } = quality.cost;
@@ -181,6 +185,7 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
     if (cand.model.agent === 'opencode') reasons.push('opencode: Orca takes --model for OpenCode only in an existing worktree (--worktree current or a selector)');
     if (pinned) {
       reasons.push(`preferred route, ${cand.risk ? paceText(cand.risk) : 'usage unknown'}`);
+      if (unverified) reasons.push('Manually preferred model; benchmark data unavailable. Task coverage could not be verified.');
       if (down) reasons.push(`preferred route does not cover the job: ${cand.below.map(({ axis, score, cut }) => `${axis} ${score ?? 'unranked'} < ${cut}`).join(', ')}`);
     }
     for (const name of cand.expiredPools) reasons.push(`${cand.model.agent} ${poolLabel(name)}: reset time already passed (expired), pool ignored`);
@@ -211,9 +216,9 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
       const cost = price == null ? `${next.tier} cost tier` : `$${price.toFixed(2)}/M blended`;
       reasons.push(`next best: ${next.model.agent} ${resolve(next, target).model} (${summary(next, env.now)}, ${cost})`);
     }
-    reasons.push(...skippedLine());
+    reasons.push(...skippedLine(finalSkipped));
     return {
-      ...base(), status: 'ok', tier: cand.tier ?? undefined, quality,
+      ...base(), skipped: finalSkipped, status: 'ok', tier: cand.tier ?? undefined, quality,
       source: quality === null ? 'auto' : cand.model.profile.hint?.source ?? 'evidence',
       downgraded: down, upgraded: up,
       route: { agent: cand.model.agent, model: chosen.model, effort: chosen.effort },
@@ -227,7 +232,7 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
   const pin = config.pins[requested];
   if (pin) {
     // Agent-only pins choose a ranked model; explicit model pins can name unranked models.
-    const isPin = (c: Candidate) => c.model.agent === pin.agent && (pin.model ? launchIds(c.model).includes(pin.model) : c.tier !== null);
+    const isPin = (c: Candidate) => c.model.agent === pin.agent && (pin.model ? launchIds(c.model).includes(pin.model) : c.tier !== null && c.model.profile.class !== null);
     const mine = all.filter((c) => isPin(c) && honors(c)).sort(compareRanked);
     const match = mine.find((c) => !c.blocked) ?? mine[0];
     const label = `preferred ${pin.agent}${pin.model ? ` ${pin.model}` : ''}`;
@@ -256,7 +261,7 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
   }
   const best = fit.find((c) => !c.blocked && !overRisk.has(c));
   if (best) return finish(best, fit);
-  const downgrades = named.filter((c) => !c.quality!.covers && honors(c));
+  const downgrades = named.filter((c) => c.quality?.covers === false && c.unknown.length === 0 && honors(c));
   if (!req.noDowngrade) {
     const shortfalls = [...new Set(downgrades.map((c) => c.quality!.shortfall))].sort((a, b) => a - b);
     for (const shortfall of shortfalls) {
@@ -367,9 +372,12 @@ function collectCandidates(agents: PlacedAgent[], env: Environment, config: Conf
         continue;
       }
       if (model.profile.class === null) {
-        skipped.push({ agent: model.agent, model: model.modelId, reason: 'unranked: no evidence or estimate' });
         const pin = config.pins[req.tier];
-        if (pin?.agent !== model.agent || !pin.model || !launchIds(model).includes(pin.model)) continue;
+        const explicitlyPinned = pin?.agent === model.agent && !!pin.model && launchIds(model).includes(pin.model);
+        if (!explicitlyPinned) {
+          skipped.push({ agent: model.agent, model: model.modelId, reason: 'unranked: no evidence or estimate' });
+          continue;
+        }
       }
       models.push(model);
     }
@@ -427,7 +435,7 @@ function evaluate(model: PlacedModel, env: Environment, config: Config, needs: N
     })) as Quality['axes'],
   };
   const base: Candidate = {
-    model, tier: model.profile.cost?.tier ?? null, quality: auto ? null : quality, below: adequacy.below, weightedScore: needWeightedScore(model.profile, needs),
+    model, tier: model.profile.cost?.tier ?? null, quality: auto ? null : quality, below: adequacy.below, unknown: adequacy.unknown, weightedScore: needWeightedScore(model.profile, needs),
     headroom: null, rank: null, blocked: false, strained: false, nearLimitPools: [], blockedPools: [], expiredPools: [], confidence: 'low', projections: {}, handoutMinutes: config.handoutMinutes, handoutPercent: config.handoutPercent,
   };
   if (model.poolNames.length === 0) return { ...base, usageNote: `no usage window: ${model.billing ?? 'limits not tracked'}` };
@@ -550,7 +558,7 @@ function compareRanked(a: Candidate, b: Candidate): number {
   if (evidence !== 0) return evidence;
   // Equal headroom (routes on one agent share its pools): of two models that both cover the job, the cheaper one
   // does it for less of them. A model that falls short never wins on price.
-  if (a.quality?.covers && b.quality?.covers) {
+  if (a.quality?.covers === true && b.quality?.covers === true) {
     const pa = a.model.profile.cost?.blended ?? null, pb = b.model.profile.cost?.blended ?? null;
     if (pa !== null && pb !== null && pa !== pb) return pa - pb;
   }
