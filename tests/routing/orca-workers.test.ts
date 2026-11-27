@@ -1,10 +1,11 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG } from '../../src/config.js';
 import { markRunning, routeAndReserve, syncReservations, workerStatesFor } from '../../src/routing/allocate.js';
 import { readOrcaWorkers } from '../../src/routing/orca-workers.js';
+import { LEDGER_FILE, readLedger } from '../../src/routing/reservations.js';
 import type { Runner } from '../../src/system/run.js';
 import { machineEnv, NOW, withUsageUpdatedAt } from '../helpers/env.js';
 
@@ -30,8 +31,8 @@ describe('readOrcaWorkers', () => {
     expect(await readOrcaWorkers(run)).toEqual({
       complete: true,
       states: [
-        { dispatchId: 'ctx_1', outcome: 'in_progress', liveness: 'live', terminalState: 'retained' },
-        { dispatchId: 'ctx_2', outcome: 'failed', liveness: 'exited', terminalState: 'retained' },
+        { dispatchId: 'ctx_1', outcome: 'in_progress', liveness: 'live', terminalState: 'retained', agent: 'claude', model: 'claude-sonnet-5-5' },
+        { dispatchId: 'ctx_2', outcome: 'failed', liveness: 'exited', terminalState: 'retained', agent: 'claude', model: 'claude-sonnet-5-5' },
         { dispatchId: 'ctx_3', outcome: 'succeeded', liveness: 'exited', terminalState: 'released' },
       ],
     });
@@ -84,5 +85,36 @@ describe('reservations follow Orca\'s workers', () => {
     // Same snapshot as before the worker ended: still reserved. The next refresh reconciles it.
     expect(syncReservations(env.usage, NOW + 600_000, DEFAULT_CONFIG, dir).reservations[0].state).toBe('completed');
     expect(syncReservations(withUsageUpdatedAt(env, NOW + 300_000).usage, NOW + 600_000, DEFAULT_CONFIG, dir).reservations[0].state).toBe('released');
+  });
+});
+
+describe('workers Orca confirms live', () => {
+  let dir: string;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'oc-workers-')); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  const env = { ...machineEnv(), discoveries: machineEnv().discoveries.filter((d) => d.agent === 'claude') };
+  const HOUR = 3_600_000;
+
+  it('#8 keeps a worker running past maxRunningHours while Orca lists it live, on sync and on route', async () => {
+    const id = routeAndReserve({ tier: 'daily' }, env, DEFAULT_CONFIG, dir).reservation!.id;
+    markRunning({ reservationId: id, dispatchId: 'ctx_1' }, NOW, dir);
+    const live = await workerStatesFor(answering({ workers: [row('ctx_1', 'in_progress', 'live')], scope: { source: 'all' } }).run, dir);
+    const later = withUsageUpdatedAt(env, NOW + 25 * HOUR);
+    expect(syncReservations(later.usage, NOW + 25 * HOUR, DEFAULT_CONFIG, dir, live).reservations[0].state).toBe('running');
+    routeAndReserve({ tier: 'daily' }, { ...later, now: NOW + 25 * HOUR }, DEFAULT_CONFIG, dir, { workers: live });
+    expect(readLedger(dir).reservations.find((r) => r.id === id)!.state).toBe('running');
+    // Without Orca's word the 24-hour close applies.
+    routeAndReserve({ tier: 'daily' }, { ...later, now: NOW + 25 * HOUR }, DEFAULT_CONFIG, dir);
+    expect(readLedger(dir).reservations.find((r) => r.id === id)).toMatchObject({ state: 'completed', note: 'closed: still running after 24h' });
+  });
+
+  it('#1 asks Orca for its workers when the ledger is unreadable, to reconstruct them', async () => {
+    writeFileSync(join(dir, LEDGER_FILE), '{ not json');
+    const asked = answering({ workers: [row('ctx_1', 'in_progress', 'live')], scope: { source: 'all' } });
+    const workers = await workerStatesFor(asked.run, dir);
+    expect(asked.calls).toHaveLength(1);
+    const synced = syncReservations(env.usage, NOW, DEFAULT_CONFIG, dir, workers, { discoveries: env.discoveries });
+    expect(synced.reservations).toMatchObject([{ state: 'running', dispatchId: 'ctx_1', agent: 'claude', model: 'claude-sonnet-5-5' }]);
+    expect(synced.recovered).toContain('1 running reservation reconstructed');
   });
 });

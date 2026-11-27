@@ -72,7 +72,8 @@ export function bufferFor(config: ReservationConfig, w: { agent: AgentId; plan?:
     if (cell !== undefined) value = cell;
     if (o.scale !== undefined) value *= o.scale;
   }
-  return value;
+  // A huge scale overflows to Infinity and a later scale of 0 makes NaN, which would classify as available.
+  return Number.isFinite(value) ? clampPercent(value) : 100;
 }
 
 // --- reservations ---------------------------------------------------------------------------
@@ -97,8 +98,17 @@ export interface Reservation {
   effort: BufferEffort;
   /** The quota identity (account, runtime, plan) it was reserved on. */
   scope: string;
-  /** Canonical keys of the usage windows it draws on; aliases are folded, so each bucket appears once. */
+  /**
+   * Canonical keys of every usage window the model is declared to draw on; aliases are folded, so each bucket
+   * appears once. A declared window Orca does not report now still counts once it appears.
+   */
   pools: string[];
+  /** Keys of `pools` a fresh reading already covers after the worker ended: they no longer count. */
+  settled?: string[];
+  /** The account (`AgentUsage.account`) the capacity was reserved on, when known. */
+  account?: string;
+  /** The plan (`AgentUsage.plan`) the capacity was reserved on, when known. */
+  plan?: string;
   /** The Orca Dispatch of the worker, once known. */
   dispatchId?: string;
   createdAt: number;
@@ -114,14 +124,51 @@ export interface Reservation {
 export const isLive = (r: Reservation): boolean =>
   r.state === 'pending' || r.state === 'running' || r.state === 'completed' || r.state === 'cancelled_after_consumption';
 
-/** Canonical key of a usage window name: aliases that differ in case or spacing fold into one bucket. */
-export const poolKey = (name: string): string => name.trim().replace(/\s+/g, ' ').toLowerCase();
+/**
+ * Canonical key of a usage window name: aliases that differ in case or spacing fold into one bucket, and so do
+ * `bucket: Other Models` and `bucket:Other Models`.
+ */
+export const poolKey = (name: string): string => name.trim().replace(/\s+/g, ' ').toLowerCase().replace(/^bucket:\s*/, 'bucket:');
 
 /** The id of a quota bucket: provider, quota identity and window. */
 export const bucketId = (agent: AgentId, scope: string, pool: string): string => `${agent}:${scope}:${poolKey(pool)}`;
 
-/** The scope of an agent's usage; agents Orca gives no identity for share one scope each. */
-export const scopeOf = (usage: Pick<AgentUsage, 'scope'> | undefined): string => usage?.scope ?? 'default';
+/**
+ * The scope of an agent's usage. Only a readable (`ok`) snapshot has a known quota identity; anything else, and
+ * agents Orca gives no identity for, share the `default` scope, which a record adopts once a snapshot exists.
+ */
+export const scopeOf = (usage: Pick<AgentUsage, 'scope'> & Partial<Pick<AgentUsage, 'status'>> | undefined): string =>
+  usage !== undefined && (usage.status === undefined || usage.status === 'ok') ? usage.scope ?? 'default' : 'default';
+
+/**
+ * Whether a usage window is one a declared window name draws on: the same window, or (Antigravity) any window
+ * of the quota group the name designates, so `bucket:Gemini Models` draws on its 5-hour window too.
+ */
+export function drawsOn(declared: string, pool: Pick<UsagePool, 'name' | 'group'>): boolean {
+  const key = poolKey(declared);
+  return poolKey(pool.name) === key || (pool.group !== undefined && poolKey(`bucket:${pool.group}`) === key);
+}
+
+/**
+ * Windows Orca copies forward instead of re-reading: Claude's status-line path (`live-session`) writes the
+ * previous `fableWeekly` and `monthly` again with a new `updatedAt`. Their `updatedAt` does not prove a re-read.
+ */
+export const CARRIED_WINDOWS: Readonly<Record<AgentId, { source: string; keys: readonly string[] }>> = {
+  claude: { source: 'live-session', keys: ['fableweekly', 'monthly'] },
+};
+
+/** Whether `name` is a window Orca carries forward for this agent and reading source. */
+export function isCarried(agent: AgentId, source: string | undefined, name: string): boolean {
+  const carried = Object.hasOwn(CARRIED_WINDOWS, agent) ? CARRIED_WINDOWS[agent] : undefined;
+  return carried !== undefined && source === carried.source && carried.keys.includes(poolKey(name));
+}
+
+/**
+ * A carried window whose value did not move settles a finished worker once a healthy snapshot (`ok`, not
+ * retained) is this long past its end: a small worker may not move the integer percentage at all. During a
+ * provider error Orca reports `error` and keeps its old windows (`retained`), so this never fires then.
+ */
+export const CARRIED_SETTLE_MS = 20 * 60_000;
 
 // --- bucket view ----------------------------------------------------------------------------
 
@@ -181,13 +228,22 @@ export function classify(reported: number | null, total: number | null, threshol
   return 'available';
 }
 
-/** The reservations counting against one bucket, each worker once. */
-export function reservationsOn(reservations: readonly Reservation[], agent: AgentId, scope: string, pool: string): Reservation[] {
-  const key = poolKey(pool);
+/**
+ * The reservations counting against one bucket: each worker once, and each Dispatch once (the first record
+ * stands). A record no longer counts on a window it has settled. `pool` is a window name or the window itself;
+ * only the window carries its quota group.
+ */
+export function reservationsOn(reservations: readonly Reservation[], agent: AgentId, scope: string, pool: string | Pick<UsagePool, 'name' | 'group'>): Reservation[] {
+  const target = typeof pool === 'string' ? { name: pool } : pool;
   const seen = new Set<string>();
+  const dispatches = new Set<string>();
   return reservations.filter((r) => {
-    if (!isLive(r) || r.agent !== agent || r.scope !== scope || seen.has(r.id) || !r.pools.some((p) => poolKey(p) === key)) return false;
+    if (!isLive(r) || r.agent !== agent || r.scope !== scope || seen.has(r.id)) return false;
+    if (r.dispatchId !== undefined && dispatches.has(r.dispatchId)) return false;
+    const settled = new Set((r.settled ?? []).map(poolKey));
+    if (!r.pools.some((p) => !settled.has(poolKey(p)) && drawsOn(p, target))) return false;
     seen.add(r.id);
+    if (r.dispatchId !== undefined) dispatches.add(r.dispatchId);
     return true;
   });
 }
@@ -195,9 +251,10 @@ export function reservationsOn(reservations: readonly Reservation[], agent: Agen
 /** One bucket, rebuilt from the latest snapshot and the live reservation records. */
 export function bucketQuota(usage: AgentUsage, pool: UsagePool, reservations: readonly Reservation[], config: Config, now: number): BucketQuota {
   const scope = scopeOf(usage);
-  const mine = reservationsOn(reservations, usage.agent, scope, pool.name);
+  const mine = reservationsOn(reservations, usage.agent, scope, pool);
   const reserved = mine.reduce((sum, r) => sum + bufferFor(config.reservations, { agent: usage.agent, plan: usage.plan, pool: pool.name, tier: r.tier, effort: r.effort }), 0);
-  const snapshotAt = usage.updatedAt ?? null;
+  // A window the ledger kept from an earlier reading ages from the last snapshot that reported it.
+  const snapshotAt = pool.seenAt ?? usage.updatedAt ?? null;
   const age = snapshotAt === null ? 0 : now - snapshotAt;
   const staleMs = config.usageStaleMinutes * 60_000;
   let reported = validPercent(pool.usedPercent);
@@ -216,11 +273,13 @@ export function bucketQuota(usage: AgentUsage, pool: UsagePool, reservations: re
     }
   }
   if (reported !== null && pool.resetsAt === null) note = 'no reset time reported (window not started or unknown)';
+  // No snapshot time: the number is kept (a reported 100% still blocks) but its age is unknown, so it is stale.
+  if (reported !== null && snapshotAt === null) note = note === undefined ? 'snapshot time not reported' : `${note}; snapshot time not reported`;
   const effective = reported === null ? null : clampPercent(reported + reserved);
   return {
     id: bucketId(usage.agent, scope, pool.name), agent: usage.agent, scope, pool: pool.name, kind: pool.kind, windowMinutes: pool.windowMinutes,
     reported, reserved, workers: mine.length, effective, remaining: effective === null ? null : 100 - effective,
-    status: classify(reported, effective, config.riskThresholds), resetsAt, snapshotAt, stale: age > staleMs,
+    status: classify(reported, effective, config.riskThresholds), resetsAt, snapshotAt, stale: snapshotAt === null || age > staleMs,
     ...(note ? { note } : {}),
   };
 }
@@ -295,15 +354,15 @@ export function candidateQuota(
   const buckets: CandidateBucket[] = [];
   const seen = new Set<string>();
   for (const name of poolNames) {
-    const key = poolKey(name);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const pool = Object.values(usage.pools).find((p) => poolKey(p.name) === key);
-    if (!pool) continue;
-    const b = bucketQuota(usage, pool, reservations, config, now);
-    const buffer = bufferFor(config.reservations, { agent: usage.agent, plan: usage.plan, pool: pool.name, ...worker });
-    const prospective = b.reported === null ? null : clampPercent(b.reported + b.reserved + buffer);
-    buckets.push({ ...b, buffer, prospective, prospectiveStatus: classify(b.reported, prospective, config.riskThresholds) });
+    // Every window the declared name draws on (an Antigravity group name: each window of the group), each bucket once.
+    for (const pool of Object.values(usage.pools).filter((p) => drawsOn(name, p))) {
+      const b = bucketQuota(usage, pool, reservations, config, now);
+      if (seen.has(b.id)) continue;
+      seen.add(b.id);
+      const buffer = bufferFor(config.reservations, { agent: usage.agent, plan: usage.plan, pool: pool.name, ...worker });
+      const prospective = b.reported === null ? null : clampPercent(b.reported + b.reserved + buffer);
+      buckets.push({ ...b, buffer, prospective, prospectiveStatus: classify(b.reported, prospective, config.riskThresholds) });
+    }
   }
   if (buckets.length === 0) return unknown('usage unknown (no matching usage pool)');
   // The most restrictive bucket: the one with the least remaining effective capacity.
@@ -327,13 +386,42 @@ export interface WorkerState {
   dispatchId: string;
   /** `in_progress`, `succeeded`, `failed`, ... */
   outcome?: string;
-  /** `live` or `exited`. */
+  /** `live`, `unverifiable` or `exited`. */
   liveness?: string;
   terminalState?: string;
+  /** The agent Orca launched the worker with, when it says (`agent/model` in the worker list). */
+  agent?: string;
+  /** The model Orca launched the worker with, when it says. */
+  model?: string;
 }
 
 const TERMINAL_RETENTION_MS = 3_600_000;
 const RECORD_RETENTION_MS = 7 * 86_400_000;
+
+/** Whether Orca confirms a worker is still running: live, not settled, its terminal not released. */
+export const isConfirmedLive = (w: WorkerState): boolean =>
+  w.liveness === 'live' && (w.outcome === undefined || w.outcome === 'in_progress') && w.terminalState !== 'released';
+
+/** The Dispatches Orca confirms are still running. */
+export const confirmedLiveDispatches = (workers: readonly WorkerState[]): Set<string> =>
+  new Set(workers.filter(isConfirmedLive).map((w) => w.dispatchId));
+
+/**
+ * Whether a fresh reading covers what a finished worker drew from one declared window (`key`):
+ * - windows the key draws on exist: every one of them was observed at least `settleMs` after the worker ended
+ *   and after the snapshot it was allocated on. A window without `observedAt` counts as observed at the
+ *   snapshot's `updatedAt` (pure callers);
+ * - a window Orca carries forward (see `CARRIED_WINDOWS`) whose value did not move also settles once a healthy
+ *   snapshot that reported it is `CARRIED_SETTLE_MS` past the end;
+ * - no window matches: the provider reported after the worker ended and has no such window.
+ */
+function windowSettled(key: string, r: Reservation, u: AgentUsage & { updatedAt: number }, endedAt: number, settleMs: number): boolean {
+  const after = (t: number, wait: number): boolean => t >= endedAt + wait && (r.snapshotAt === null || t > r.snapshotAt);
+  const matching = Object.values(u.pools).filter((p) => drawsOn(key, p));
+  if (matching.length === 0) return after(u.updatedAt, settleMs);
+  return matching.every((p) => after(p.observedAt ?? u.updatedAt, settleMs) ||
+    (isCarried(r.agent, u.source, p.name) && after(p.seenAt ?? u.updatedAt, Math.max(settleMs, CARRIED_SETTLE_MS))));
+}
 
 /**
  * Brings the records up to date with what is known now. Deterministic: the same records, snapshots and time
@@ -341,15 +429,24 @@ const RECORD_RETENTION_MS = 7 * 86_400_000;
  *
  * - A pending reservation nobody confirmed within `pendingMinutes` is abandoned. Its worker may still have
  *   run, so it is held like a cancelled one until a fresh snapshot covers it.
- * - A running reservation older than `maxRunningHours` is closed the same way.
- * - A completed or cancelled reservation is released only by a snapshot of its own provider and quota
- *   identity that Orca took at least `settleSeconds` after the worker ended. The snapshot time is Orca's
- *   own `updatedAt`: re-reading a cached snapshot never releases anything, and a fresh one releases even when
- *   it reports the same percentage. Elapsed time alone releases nothing.
+ * - A running reservation older than `maxRunningHours` is closed the same way, unless its Dispatch is in
+ *   `confirmedLive` (Orca reports it still running).
+ * - A completed or cancelled reservation is settled window by window (see `windowSettled`), only by a
+ *   readable, non-retained snapshot of its own provider and quota identity. The time is Orca's own: re-reading
+ *   a cached snapshot never settles anything, and a fresh one settles even when it reports the same
+ *   percentage. A window settled no longer counts; once every window is settled the record is released.
  * - A provider whose snapshot did not advance (a partial refresh, an error, another account) keeps its
  *   reservations.
+ * - Records that count for nothing are dropped an hour after they ended; any record but a running one is
+ *   dropped seven days after it ended (a held record nobody reconciled by then stops counting).
  */
-export function reconcile(list: readonly Reservation[], usage: Record<AgentId, AgentUsage>, now: number, config: ReservationConfig): Reservation[] {
+export function reconcile(
+  list: readonly Reservation[],
+  usage: Record<AgentId, AgentUsage>,
+  now: number,
+  config: ReservationConfig,
+  confirmedLive?: ReadonlySet<string>,
+): Reservation[] {
   const pendingMs = config.pendingMinutes * 60_000;
   const settleMs = config.settleSeconds * 1000;
   const runningMs = config.maxRunningHours * 3_600_000;
@@ -359,19 +456,30 @@ export function reconcile(list: readonly Reservation[], usage: Record<AgentId, A
     if (r.state === 'pending' && now - r.createdAt >= pendingMs) {
       r = { ...r, state: 'cancelled_after_consumption', endedAt: r.createdAt + pendingMs, note: 'abandoned: the launch was never confirmed' };
     }
-    if (r.state === 'running' && now - (r.startedAt ?? r.createdAt) >= runningMs) {
+    const confirmed = r.dispatchId !== undefined && confirmedLive?.has(r.dispatchId) === true;
+    if (r.state === 'running' && !confirmed && now - (r.startedAt ?? r.createdAt) >= runningMs) {
       r = { ...r, state: 'completed', endedAt: now, note: `closed: still running after ${config.maxRunningHours}h` };
     }
     if (r.state === 'completed' || r.state === 'cancelled_after_consumption') {
       const u = Object.hasOwn(usage, r.agent) ? usage[r.agent] : undefined;
       const endedAt = r.endedAt ?? r.createdAt;
-      if (u && u.status === 'ok' && !u.retained && scopeOf(u) === r.scope && u.updatedAt !== undefined && u.updatedAt >= endedAt + settleMs) {
-        r = { ...r, state: 'released', endedAt, note: `reconciled by the usage snapshot of ${new Date(u.updatedAt).toISOString()}` };
+      if (u && u.status === 'ok' && !u.retained && !u.standIn && scopeOf(u) === r.scope && u.updatedAt !== undefined) {
+        const fresh = u as AgentUsage & { updatedAt: number };
+        const keys = [...new Set(r.pools.map(poolKey))];
+        const before = new Set((r.settled ?? []).map(poolKey));
+        const settled = keys.filter((k) => before.has(k) || windowSettled(k, r, fresh, endedAt, settleMs));
+        const all = keys.length === 0 ? windowSettled('', r, { ...fresh, pools: {} }, endedAt, settleMs) : settled.length === keys.length;
+        if (all) {
+          const { settled: _settled, ...rest } = r;
+          r = { ...rest, state: 'released', endedAt, note: `reconciled by the usage snapshot of ${new Date(fresh.updatedAt).toISOString()}` };
+        } else if (settled.some((k) => !before.has(k))) {
+          r = { ...r, settled };
+        }
       }
     }
     const age = now - (r.endedAt ?? r.createdAt);
     if (!isLive(r) && age >= TERMINAL_RETENTION_MS) continue;
-    if (r.state !== 'running' && now - r.createdAt >= RECORD_RETENTION_MS) continue;
+    if (r.state !== 'running' && age >= RECORD_RETENTION_MS) continue;
     out.push(r);
   }
   return out;

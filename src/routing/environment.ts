@@ -6,7 +6,7 @@ import { cacheDir } from '../paths.js';
 import { findExecutable, runCommand } from '../system/run.js';
 import type { Config, Environment, OrcaAgents, PlacementTable } from '../types.js';
 import { VERSION } from '../version.js';
-import { syncReservations, workerStatesFor } from './allocate.js';
+import { syncReservations, workerStatesFor, type Workers } from './allocate.js';
 import { isLive, type Reservation } from './quota.js';
 import { readOrcaAgents } from './orca-settings.js';
 import { readOrcaUsage } from './orca-usage.js';
@@ -33,8 +33,12 @@ export interface Gathered {
   env: Environment;
   /** Every reservation record in the ledger, live or recently ended, after reconciling with this call's usage. */
   reservations: Reservation[];
-  /** Set when the reservation ledger could not be written. */
+  /** Set when the reservation ledger could not be read or written. */
   ledgerError?: string;
+  /** Set when the reservation ledger file was unreadable and was reset: what happened and what was reconstructed. */
+  ledgerRecovered?: string;
+  /** Orca's worker list, when it was asked for (a reservation is bound to a Dispatch, or the ledger was reset). */
+  workers?: Workers;
   table: PlacementTable;
   /** Why the table was rebuilt on this call; undefined when the cached one was used. */
   rebuilt: Staleness | 'refresh' | undefined;
@@ -43,7 +47,7 @@ export interface Gathered {
 }
 
 /** The cached table when it is fresh, else a rebuilt one. */
-export async function loadPlacements(config: Config, deps: GatherDeps = {}): Promise<Omit<Gathered, 'env' | 'reservations' | 'ledgerError'>> {
+export async function loadPlacements(config: Config, deps: GatherDeps = {}): Promise<Omit<Gathered, 'env' | 'reservations' | 'ledgerError' | 'ledgerRecovered' | 'workers'>> {
   const now = deps.now ?? Date.now();
   const find = deps.find ?? findExecutable;
   const dir = deps.cacheDir ?? cacheDir();
@@ -76,7 +80,7 @@ export async function gather(config: Config, deps: GatherDeps = {}): Promise<Gat
   ]);
   const { table } = placements;
   // Reported usage is never adjusted. Reservations travel next to it and the quota view is rebuilt from both.
-  const synced = syncReservations(reported, now, config, dir, workers);
+  const synced = syncReservations(reported, now, config, dir, workers, { discoveries: table.agents });
   const rejections = activeRejections(readRejections(deps.readFile ?? readTextFile, deps.cacheDir ?? cacheDir()), now, config.rejectionTtlHours);
   const env: Environment = {
     now,
@@ -93,7 +97,13 @@ export async function gather(config: Config, deps: GatherDeps = {}): Promise<Gat
     scoreSource: table.sources.evidence.source,
     ...(rejections.length > 0 ? { rejections } : {}),
   };
-  return { env, reservations: synced.reservations, ...(synced.error ? { ledgerError: synced.error } : {}), ...placements };
+  return {
+    env, reservations: synced.reservations,
+    ...(synced.error ? { ledgerError: synced.error } : {}),
+    ...(synced.recovered ? { ledgerRecovered: synced.recovered } : {}),
+    ...(workers ? { workers } : {}),
+    ...placements,
+  };
 }
 
 export async function gatherEnvironment(config: Config, deps: GatherDeps = {}): Promise<Environment> {

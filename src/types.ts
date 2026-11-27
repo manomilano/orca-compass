@@ -48,6 +48,12 @@ export interface UsagePool {
   windowMinutes: number | null;
   /** Epoch ms of the next reset. Null when Orca reports none (`0` or `null`): the window has not started or its reset is unknown. */
   resetsAt: number | null;
+  /** Antigravity quota group the window belongs to, e.g. "Gemini Models": a model declaring `bucket:<group>` draws on every window of it. */
+  group?: string;
+  /** Set only by the ledger merge: the reading was taken at or after this time (0: unknown). */
+  observedAt?: number;
+  /** Set only by the ledger merge: the last provider snapshot that reported this reading. */
+  seenAt?: number;
 }
 
 export interface AgentUsage {
@@ -64,8 +70,20 @@ export interface AgentUsage {
   scope?: string;
   /** Orca's `planType`, when it reports one. */
   plan?: string;
-  /** Set when Orca could not be read and the last valid snapshot stands in for it. */
+  /**
+   * The account the reading belongs to: agent, account id, runtime and WSL distro, hashed (no plan). A reading
+   * of another account invalidates the stored snapshot of the previous one.
+   */
+  account?: string;
+  /** Orca's `usageMetadata.source`, e.g. `oauth`, `cli` or `live-session`. */
+  source?: string;
+  /**
+   * Set when the windows are older than this read: Orca kept its last good windows after a failed refresh,
+   * or Orca could not be read and the ledger's last valid snapshot stands in for it.
+   */
   retained?: true;
+  /** Internal: these pools come from the ledger, not from this read. Never stored. */
+  standIn?: true;
   /** Set when Orca itself could not be read (not running, CLI error), as opposed to Orca reporting no usage. */
   unreachable?: true;
 }
