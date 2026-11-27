@@ -1245,3 +1245,48 @@ describe('ban list', () => {
     expect(skipped.some((s) => s.model === 'grok-build-0.1' && s.reason === 'banned by you')).toBe(false);
   });
 });
+
+describe('eligibility is all or nothing', () => {
+  it('#20 leaves out a model that exceeds some needs but fails another', () => {
+    // Sonnet (84.3 / 78.2 / 87.3) is far above the coding and reasoning needs and misses agentic by under two points.
+    const d = r({ needs: { coding: 'mid', agentic: 'high', reasoning: 'low' } });
+    expect(d).toMatchObject({ status: 'ok', downgraded: false, quality: { covers: true, shortfall: 0 } });
+    expect(d.route?.model).toBe('claude-opus-5-5-high');
+    // It is the cheapest model on the bucket with the most room, and still not a candidate: not picked, not a runner-up.
+    for (const agent of ['claude', 'cursor']) expect(d.skipped).toContainEqual({ agent, model: 'claude-sonnet-5-5', reason: 'below need on agentic (78.2 < 80)' });
+    expect([d.route!.model, ...d.alternatives.map((a) => a.model)].some((model) => model.includes('sonnet'))).toBe(false);
+    expect(d.alternatives.every((a) => a.quality.covers)).toBe(true);
+    // Strength on the other axes does not buy it back, whatever the quota looks like.
+    const onlySonnet = onlyModels(onlyModels(onlyModels(env, 'claude', ['claude-sonnet-5-5']), 'cursor', ['claude-sonnet-5-5']), 'codex', []);
+    const alone = route({ needs: { coding: 'mid', agentic: 'high', reasoning: 'low' } }, onlySonnet, DEFAULT_CONFIG);
+    expect(alone.status).toBe('decide');
+    expect(alone.route).toBeUndefined();
+    expect(alone.options!.lower.map((l) => l.shortfall)).toEqual(['below need on agentic (78.2 < 80)', 'below need on agentic (78.2 < 80)']);
+  });
+
+  it('#27 treats a model without capability scores as unclassified and invents none', () => {
+    // On the bucket with the most room, with nothing known about it.
+    const mystery: LaunchModel = { agent: 'cursor', modelId: 'mystery-9', efforts: [], launch: { kind: 'flag', model: 'mystery-9' }, poolNames: ['monthly', 'bucket:Other Models'] };
+    const e = withCursorModels(env, [mystery]);
+    const profile = e.discoveries.find((a) => a.agent === 'cursor')!.models.find((m) => m.modelId === 'mystery-9')!.profile;
+    expect(profile).toMatchObject({ class: null, cost: null, axes: { coding: { score: null, band: null }, agentic: { score: null, band: null }, reasoning: { score: null, band: null } } });
+    for (const tier of ['light', 'daily', 'advanced', 'frontier'] as const) {
+      const d = route({ tier }, e, DEFAULT_CONFIG);
+      expect(d.status, tier).toBe('ok');
+      expect(d.route?.model.includes('mystery'), tier).toBe(false);
+      expect(d.alternatives.some((a) => a.model === 'mystery-9'), tier).toBe(false);
+      expect(d.skipped, tier).toContainEqual({ agent: 'cursor', model: 'mystery-9', reason: 'unranked: no evidence or estimate' });
+    }
+    // Not even for a job with no minimum, and not as a LOWER option when nothing else is left.
+    const alone = route({ tier: 'frontier', agents: ['cursor'] }, onlyModels(e, 'cursor', ['mystery-9']), DEFAULT_CONFIG);
+    expect(alone).toMatchObject({ status: 'none', reasons: expect.arrayContaining(['no model covers the job']) });
+    expect(alone.options).toBeUndefined();
+    // Only an explicit choice routes it, and the decision says that nothing is known: no score is made up.
+    const used = route({ tier: 'frontier', use: { agent: 'cursor', model: 'mystery-9' } }, e, DEFAULT_CONFIG);
+    expect(used).toMatchObject({ status: 'ok', downgraded: true, route: { agent: 'cursor', model: 'mystery-9', effort: null }, quality: { class: null, cost: null, covers: false, evidence: 'unranked' } });
+    expect(used.tier).toBeUndefined();
+    expect(Object.values(used.quality!.axes).map((a) => [a.score, a.band, a.evidence])).toEqual([[null, null, 'unranked'], [null, null, 'unranked'], [null, null, 'unranked']]);
+    // With no cost tier it reserves the largest buffer row.
+    expect(bucketOf(used, 'bucket:Other Models')).toMatchObject({ buffer: 3 });
+  });
+});
