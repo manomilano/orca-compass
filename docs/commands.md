@@ -430,7 +430,7 @@ cost: light < $1 ≤ daily < $5 ≤ advanced < $12 ≤ frontier (per million tok
 and prints its capability cuts. The table is rebuilt first when stale (see
 [Tiers and routing](tiers-and-routing.md#when-placement-runs)).
 
-`--json` prints the table file plus `age` in milliseconds: `schemaVersion: 4`,
+`--json` prints the table file plus `age` in milliseconds: `schemaVersion: 5`,
 `version`, `builtAt`, `builtWith` (containing `tierOverrides` and `costBands`),
 `sources`, `bands`, `topBands`, and `agents` with each model's `profile`.
 

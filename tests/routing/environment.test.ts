@@ -93,13 +93,13 @@ describe('loadPlacements', () => {
     expect((await loadPlacements(DEFAULT_CONFIG, fakeDeps)).rebuilt).toBe('invalid');
   });
 
-  it('rebuilds a fresh schema-2 placement cache before old classifications can route', async () => {
+  it.each([2, 4])('rebuilds a fresh schema-%i placement cache before old classifications can route', async (schemaVersion) => {
     const first = await loadPlacements(DEFAULT_CONFIG, fakeDeps);
-    const legacy = { ...first.table, schemaVersion: 2 };
+    const legacy = { ...first.table, schemaVersion };
     writeFileSync(join(home, 'cache', 'placements.json'), JSON.stringify(legacy));
     const rebuilt = await loadPlacements(DEFAULT_CONFIG, { ...fakeDeps, now: NOW + HOUR });
     expect(rebuilt.rebuilt).toBe('invalid');
-    expect(rebuilt.table.schemaVersion).toBe(4);
+    expect(rebuilt.table.schemaVersion).toBe(5);
     expect(rebuilt.table.agents.find((a) => a.agent === 'claude')!.models.find((m) => m.modelId === 'claude-opus-5-5')!).toMatchObject({ profile: { class: 'frontier', hint: { tier: 'advanced', source: 'family' } } });
   });
 

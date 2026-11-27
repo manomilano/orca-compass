@@ -19,7 +19,9 @@
 - Antigravity's `-xhigh` model ids (Gemini 4 Neon and Hydrogen) are grouped
   with their model as its `xhigh` effort instead of being listed as unknown
   models that were never routed. Claude and GPT models in Antigravity take
-  their efforts from Orca's model catalog when it lists them.
+  their efforts from Orca's model catalog when it lists them. Placement table
+  schema 5 is rebuilt on first run, so a table cached before this change does
+  not keep the old grouping until it expires.
 - **Routing is quota first, and no longer forecasts usage.** The headroom
   projection (pace, expected use at reset, the seven-day urgency discount) is
   removed. A route is ranked by the capacity left in its most restrictive

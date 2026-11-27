@@ -61,7 +61,7 @@ describe('buildPlacements', () => {
   it('builds from the fixtures and writes placements.json', async () => {
     const { table, saveError } = await buildPlacements(DEFAULT_CONFIG, fakeDeps);
     expect(saveError).toBeUndefined();
-    expect(table).toMatchObject({ schemaVersion: 4, version: VERSION, builtAt: NOW, builtWith: builtWith(DEFAULT_CONFIG) });
+    expect(table).toMatchObject({ schemaVersion: 5, version: VERSION, builtAt: NOW, builtWith: builtWith(DEFAULT_CONFIG) });
     expect(table.sources.evidence.source).toBe('snapshot');
     expect(table.sources.evidence.generatedAt).toBeDefined();
     // The frozen bundled fixture was refreshed once for raw-evidence scoring and its new cuts.

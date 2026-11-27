@@ -48,7 +48,7 @@ milliseconds), and `models`: an array of `{ "id": "..." }` objects with an optio
 provider `label` (Cursor keeps its labels, including `NO ZDR`). They store provider
 observations only. Computed tiers live in `placements.json`, which records the
 OrcaCompass version and the placement keys of the configuration
-(`tierOverrides`, `costBands`) in `builtWith` (schema 4), so a change
+(`tierOverrides`, `costBands`) in `builtWith` (schema 5), so a change
 to any of them rebuilds it. OrcaCompass reads usage on each run and keeps
 worker reservations until Orca's usage covers them. User preferences remain in
 `config.json`.
