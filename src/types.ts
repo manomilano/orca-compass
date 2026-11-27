@@ -263,7 +263,8 @@ export interface DecisionOptions {
 export interface Quality {
   class: Tier | null;
   cost: CostTier | null;
-  covers: boolean;
+  /** True when all needed axes meet their cuts, false on measured shortfall, null when benchmark data is unavailable. */
+  covers: boolean | null;
   shortfall: number;
   overshoot: number;
   evidence: EvidenceLabel;
