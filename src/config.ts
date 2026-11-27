@@ -64,7 +64,13 @@ export function loadConfig(path = configPath(), warn?: (message: string) => void
         if (Object.hasOwn(raw, key)) warn?.(`${key} is no longer used (usage is no longer projected; see riskThresholds and reservations)`);
       }
     }
-    return merge(raw);
+    const config = merge(raw);
+    // The preference limit is the user's own and stays independent of the risk thresholds; say when it lets a
+    // preferred route run past the high-risk threshold automatic routing stops at.
+    if (config.preferRiskLimit > config.riskThresholds.highPercent) {
+      warn?.(`preferRiskLimit (${config.preferRiskLimit}%) is above riskThresholds.highPercent (${config.riskThresholds.highPercent}%): a preferred route is taken in the high-risk range up to ${config.preferRiskLimit}%`);
+    }
+    return config;
   } catch (e) {
     if (e instanceof Invalid) throw new ConfigError(path, e.message);
     throw e;
@@ -151,7 +157,13 @@ function bufferOverride(v: unknown, key: string): BufferOverride {
     if (typeof o[field] !== 'string' || o[field] === '') throw new Invalid(`${key}.${field} must be a non-empty string`);
     out[field] = o[field];
   }
-  if (o.scale !== undefined) out.scale = num(o.scale, `${key}.scale`);
+  if (o.scale !== undefined) {
+    // A buffer is percentage points of a window: a larger factor (or a huge one overflowing to Infinity) means nothing.
+    if (typeof o.scale !== 'number' || !Number.isFinite(o.scale) || o.scale < 0 || o.scale > 100) {
+      throw new Invalid(`${key}.scale must be a number between 0 and 100 (got ${JSON.stringify(o.scale)})`);
+    }
+    out.scale = o.scale;
+  }
   if (o.buffers !== undefined) out.buffers = bufferCells(o.buffers, `${key}.buffers`);
   if (out.scale === undefined && out.buffers === undefined) throw new Invalid(`${key} must have "scale" or "buffers"`);
   return out;

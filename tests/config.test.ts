@@ -189,9 +189,46 @@ describe('loadConfig', () => {
     const warnings: string[] = [];
     const cfg = loadConfig(undefined, (m) => warnings.push(m));
     expect(cfg).toEqual({ ...DEFAULT_CONFIG, preferRiskLimit: 95 });
-    expect(warnings).toEqual(['thresholds', 'usageRiskLimit', 'handoutMinutes', 'handoutPercent']
-      .map((key) => `${key} is no longer used (usage is no longer projected; see riskThresholds and reservations)`));
+    expect(warnings).toEqual([
+      ...['thresholds', 'usageRiskLimit', 'handoutMinutes', 'handoutPercent']
+        .map((key) => `${key} is no longer used (usage is no longer projected; see riskThresholds and reservations)`),
+      // 95 is above the default high-risk threshold of 90.
+      'preferRiskLimit (95%) is above riskThresholds.highPercent (90%): a preferred route is taken in the high-risk range up to 95%',
+    ]);
     for (const key of ['thresholds', 'usageRiskLimit', 'handoutMinutes', 'handoutPercent']) expect(cfg).not.toHaveProperty(key);
+  });
+
+  it('keeps preferRiskLimit independent of riskThresholds.highPercent and warns when it is above it', () => {
+    const load = (text: string) => {
+      write(text);
+      const warnings: string[] = [];
+      return { cfg: loadConfig(undefined, (m) => warnings.push(m)), warnings };
+    };
+    // Defaults (90 and 90), or a limit at or below the threshold: no warning.
+    expect(load('{}').warnings).toEqual([]);
+    expect(load('{"preferRiskLimit":80}').warnings).toEqual([]);
+    expect(load('{"riskThresholds":{"highPercent":95}}').warnings).toEqual([]);
+    // A lowered threshold under the default limit warns, and neither value is changed.
+    const lowered = load('{"riskThresholds":{"cautionPercent":70,"highPercent":80}}');
+    expect(lowered.cfg).toMatchObject({ preferRiskLimit: 90, riskThresholds: { cautionPercent: 70, highPercent: 80 } });
+    expect(lowered.warnings).toEqual(['preferRiskLimit (90%) is above riskThresholds.highPercent (80%): a preferred route is taken in the high-risk range up to 90%']);
+    // An explicit limit above the default threshold warns too; it is not capped.
+    const explicit = load('{"preferRiskLimit":150}');
+    expect(explicit.cfg.preferRiskLimit).toBe(150);
+    expect(explicit.warnings).toEqual(['preferRiskLimit (150%) is above riskThresholds.highPercent (90%): a preferred route is taken in the high-risk range up to 150%']);
+  });
+
+  it('accepts a reservation override scale between 0 and 100 and rejects anything else', () => {
+    for (const scale of [0, 0.5, 100]) {
+      write(JSON.stringify({ reservations: { overrides: [{ scale }] } }));
+      expect(loadConfig().reservations.overrides).toEqual([{ scale }]);
+    }
+    for (const scale of ['101', '1e308', '-1', '"2"', 'null']) {
+      write(`{"reservations":{"overrides":[{"agent":"claude","scale":${scale}}]}}`);
+      expect(configErrorOf(() => loadConfig()).message, scale).toBe(
+        `${configPath()}: reservations.overrides[0].scale must be a number between 0 and 100 (got ${JSON.stringify(JSON.parse(scale))})`,
+      );
+    }
   });
 
   it('rejects invalid JSON with a message starting with the path', () => {
