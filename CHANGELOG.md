@@ -20,12 +20,42 @@
   with their model as its `xhigh` effort instead of being listed as unknown
   models that were never routed. Claude and GPT models in Antigravity take
   their efforts from Orca's model catalog when it lists them.
-- Ranking prefers a route that can apply the effort a job asks for. Each
-  effort step a route would be snapped down from the `--demand` or tier-default
-  target costs 2.5 points of its score, so on the same usage windows an
-  `exceptional` job goes to a model with `xhigh` (Gemini 4 Neon) instead of a
-  slightly cheaper one that stops at `high` (Gemini 4 Carbon). A route with
-  clearly more headroom still wins. The `selection` reason shows the points.
+- **Routing is quota first, and no longer forecasts usage.** The headroom
+  projection (pace, expected use at reset, the seven-day urgency discount) is
+  removed. A route is ranked by the capacity left in its most restrictive
+  quota bucket; inside a bucket the most economical eligible route wins.
+  `headroom` and `risk` are gone from the JSON; `quota` and `buckets` report
+  reported, reserved, effective and prospective usage per bucket.
+- **A valid 0% is fully available.** Unused windows are no longer penalized,
+  and a window with no reset time yet (`resetsAt` `0` or `null`) is no longer
+  skipped as expired. A missing percentage is unknown, never 0.
+- **Per-quota worker reservations replace the flat hand-out buffer.** Each
+  routed worker reserves percentage points on every quota bucket it draws on,
+  by cost tier and effort (`reservations.buffers`, with per-provider, plan and
+  window overrides). The reserved total is rebuilt from the worker records on
+  every usage snapshot and never accumulates. Finished workers are reconciled
+  only by a fresh Orca snapshot, told apart by its timestamp. Records live in
+  `reservations.json`, updated under a lock, so parallel route calls cannot
+  overbook a quota. New: `orcacompass release`, `verify --reservation`,
+  `route --dry-run`.
+- **Risk thresholds.** Prospective usage below 85% is available, 85% to below
+  90% is caution (used only when nothing is available), 90% and above is never
+  routed automatically (`riskThresholds`). `preferRiskLimit` now applies to
+  prospective usage and defaults to 90.
+- **The decision comes back instead of a silent fallback.** When no eligible
+  route is below the threshold the result is `decide`, with `options.wait`,
+  `options.use` and `options.lower`; `route --use <agent>/<model>` takes one.
+  `status: "wait"`, `waitUntil` and automatic downgrades are gone;
+  `--no-downgrade` is accepted and ignored. Cursor `auto` is offered as an
+  option and no longer routed on its own.
+- **Effort is an eligibility test, not a penalty.** A model must offer the
+  demanded effort or the next higher one; a model that tops out below it is
+  left out instead of losing 2.5 points per step. A tier default still takes
+  the nearest offered effort.
+- Removed config keys, ignored with a warning: `thresholds`,
+  `usageRiskLimit`, `handoutMinutes`, `handoutPercent`.
+- When Orca cannot be read, the last valid usage snapshot stands in at medium
+  confidence instead of all usage becoming unknown.
 
 ## 0.2.5
 

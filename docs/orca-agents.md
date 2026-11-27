@@ -119,13 +119,14 @@ Source: `src/routing/environment.ts` and `src/placements/agents/*.ts`, `src/rout
    saves them for `rejectionTtlHours`).
 7. **Build `launchArgs`** (`resolve` in `src/routing/router.ts`):
    - `flag` models: `--agent <id> --model <id> [--effort <e>]`, effort resolved
-     to the requested level, otherwise the nearest lower offered level,
-     otherwise the lowest higher level (`applied: flag`, or
-     `provider-default` when none).
+     to the requested level, otherwise the next higher offered level
+     (`applied: flag`, or `provider-default` when none). A model with no level
+     at or above a demanded effort is not eligible; only a tier default falls
+     back to the nearest lower level.
    - `variant` models (effort inside the id): `--agent <id> --model <id-for-effort>`,
      no `--effort` (`applied: model-id`). Explicit `--effort` requests are never
      snapped: models that cannot apply that exact level are excluded.
-8. **After launch**, `orcacompass verify --dispatch <id>` reads the worker's
+8. **After launch**, `orcacompass verify --dispatch <id> --reservation <id>` reads the worker's
    output and matches the agent's own refusal text (below).
 
 ### Agent adapter reference {#per-agent}
@@ -140,7 +141,7 @@ Source: `src/routing/environment.ts` and `src/placements/agents/*.ts`, `src/rout
 | **`launchArgs`** | `--model --effort` | `--model --effort` | `--model <variant id>` | `--model <variant id>` (Gemini) or `--model --effort` | `--model --effort` | `--model <provider/model>` | `--model --effort` |
 | **Usage pools** | `session`, `weekly`, plus `fableWeekly` for Fable | `session`, `weekly` | `monthly` + `Cursor Models` or `Other Models` bucket (which models draw on which is inferred) | Per quota group (`Gemini Models`, `Claude and GPT models`): 5-hour and long; else Orca's `session`/`weekly` | `weekly`, `monthly` | None: pay per use or local; the route says how it is paid | `session`, `weekly` requested, but no Muse usage reported by Orca |
 | **Refusal `verify` matches** | `There's an issue with the selected model` (idles) | `model is not supported when using Codex…` (idles) | `Cannot use this model` (exits) | `invalid model selection` / `not recognized as a known model` (exits) | `Couldn't set model … unknown model id` (exits) | `Model unavailable` | — |
-| **Special rule** | — | — | Cursor `auto` is a separate fallback, with no profile or cost tier | — | — | Last resort by default (`lastResortAgents`); routes note that Orca needs an existing worktree | — |
+| **Special rule** | — | — | Cursor `auto` has no profile or cost tier: offered as an option, never routed on its own | — | — | Last resort by default (`lastResortAgents`); routes note that Orca needs an existing worktree | — |
 
 ### Where OrcaCompass and Orca disagree today
 

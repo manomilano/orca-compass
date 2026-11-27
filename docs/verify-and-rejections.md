@@ -35,7 +35,7 @@ behavior of the agents themselves:
 ## How `verify` works
 
 ```sh
-orcacompass verify --dispatch <dispatchId> [--wait 60] --json
+orcacompass verify --dispatch <dispatchId> [--reservation <id>] [--wait 60] --json
 ```
 
 1. `orca orchestration worker-show --dispatch <id> --json`: the effective
@@ -128,13 +128,33 @@ orcacompass rejected --clear   # forget everything (for example after upgrading 
 `rejected --json` returns `{ rejectionTtlHours, cleared, rejections }`, where
 `cleared` is the number of entries `--clear` removed.
 
+## What verify does to the reservation {#reservations}
+
+Every route reserves quota for its worker (see
+[Reservations](tiers-and-routing.md#reservations)). `verify` settles that
+reservation with what it saw. Pass the route's `reservation.id` as
+`--reservation`; without it, the worker is matched to the oldest pending
+reservation for the same agent and model.
+
+| Verdict | Reservation |
+| --- | --- |
+| `started`, `stalled`, `unknown` | Bound to the Dispatch and marked `running`. It is the same record: nothing is reserved twice |
+| `reported` | `completed`: held until Orca's next usage refresh covers it |
+| `rejected` | `failed_before_launch`: nothing ran, so the quota is free again at once, for the replacement route |
+| `failed` | `cancelled_after_consumption`: the worker may have used quota, so it is held until a fresh snapshot |
+
+The JSON carries the result as `reservation` (`{ id, state }`, or `null`
+when no reservation matched, for example for a worker launched without
+`orcacompass route`). When the worker later finishes, end its reservation with
+`orcacompass release --dispatch <dispatchId>`.
+
 ## The replacement flow
 
 After `rejected`, the orchestrator:
 
 1. runs each `cleanup` argv in order and checks it succeeded;
-2. routes again with the same flags (the refused model is now skipped, so the
-   route differs);
+2. routes again with the same flags (the refused model is now skipped and its
+   reservation released, so the route differs);
 3. starts the replacement on the same Task:
    `orca orchestration worker-start --task <taskId> --retry-of <dispatchId> …`
    with the same placement and the new `launchArgs`;

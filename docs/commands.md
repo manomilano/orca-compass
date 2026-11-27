@@ -14,10 +14,11 @@ Code: `src/cli.ts`.
 | --- | --- | --- |
 | `install` | Installs or updates the CLI, then its matching Skill | [`install`](#install) |
 | `setup` | First-time setup, in a terminal or from chat | [`setup`](#setup) |
-| `route` | Recommends an agent, model and effort for a job | [`route`](#route) |
+| `route` | Recommends an agent, model and effort for a job and reserves its quota | [`route`](#route) |
 | `verify` | Checks whether a just-started worker's agent accepted its model | [`verify`](#verify) |
+| `release` | Ends the quota reservation of a finished worker | [`release`](#release) |
 | `rejected` | Lists or clears models agents refused at launch | [`rejected`](#rejected) |
-| `status` | Shows agents, usage, the pick per tier and data ages | [`status`](#status) |
+| `status` | Shows agents, usage and reservations per quota, the pick per tier and data ages | [`status`](#status) |
 | `tiers` | Shows every model's tiers and the numbers behind them | [`tiers`](#tiers) |
 | `ranking` | Lists profiles of discovered models | [`ranking`](#ranking) |
 | `agents` | Shows which agents are used or skipped; changes the selection | [`agents`](#agents) |
@@ -33,8 +34,9 @@ Also: `--help` (aliases `help`, `-h`) prints the usage text, and `--version`
 ## Synopsis
 
 ```text
-orcacompass route --need coding=<l>,agentic=<l>,reasoning=<l> | --tier <light|daily|advanced|frontier> [--no-downgrade] [--agent <id>]... [--exclude-agent <id>]... [--demand <d>] [--effort <e>] [--tier-reason <text>] [--json]
-orcacompass verify --dispatch <id> [--wait <seconds>] [--json]
+orcacompass route --need coding=<l>,agentic=<l>,reasoning=<l> | --tier <light|daily|advanced|frontier> [--agent <id>]... [--exclude-agent <id>]... [--demand <d>] [--effort <e>] [--use <agent>/<model>] [--dry-run] [--tier-reason <text>] [--json]
+orcacompass verify --dispatch <id> [--reservation <id>] [--wait <seconds>] [--json]
+orcacompass release --reservation <id> | --dispatch <id> | --all [--outcome completed|cancelled|failed-before-launch] [--json]
 orcacompass rejected [--clear] [--json]
 orcacompass status [--json]
 orcacompass ranking [--axis <coding|agentic|reasoning>] [--json]
@@ -68,8 +70,10 @@ stale; see [Tiers and routing](tiers-and-routing.md#when-placement-runs).
 
 | Command | Writes |
 | --- | --- |
-| `route` | Table caches when stale; `handouts.json` when the result is `ok` |
-| `verify` | `rejected-models.json` when the verdict is `rejected` |
+| `route` | Table caches when stale; `reservations.json`: a reservation when the result is `ok` (not with `--dry-run`) |
+| `verify` | `rejected-models.json` when the verdict is `rejected`; `reservations.json`: the worker's reservation |
+| `release` | `reservations.json` |
+| every command that reads usage | `reservations.json`, when Orca's usage snapshot changed or a reservation was reconciled |
 | `rejected` | Nothing; `--clear` empties `rejected-models.json` |
 | `status`, `ranking`, `tiers` | Table caches when stale |
 | `agents` (list) | Table caches when stale |
@@ -173,9 +177,9 @@ First-time setup of agents, favorites and bans. See
 | `configPath`, `configExists` | Where the config lives and whether it exists |
 | `orcaAgents` | Orca's agent switches as read, or why they are unknown |
 | `config` | Current `allowAgents`, `denyAgents`, `pins`, `preferRiskLimit`, `banModels` |
-| `defaultPreferRiskLimit` | 100 |
+| `defaultPreferRiskLimit` | 90 |
 | `agents` | `agent`, `installed`, `enabledInOrca`, `orcaUsage`, `models` (count), `chosen`, `preselected` (in the default answer to question 1), `verdict` |
-| `tiers` | Per tier: `pick`, `preferred`, `options` (agent, `model` to prefer, `blocked`, `onPacePercent`, `reason`), `warnings` |
+| `tiers` | Per tier: `pick`, `preferred`, `options` (agent, `model` to prefer, `blocked`, `usagePercent`: the route's highest prospective usage, or `null` when unknown, `reason`), `warnings` |
 | `families` | Each discovered family with its models and whether it is banned |
 
 `setup --complete` creates an empty config when absent and preserves an
@@ -189,8 +193,8 @@ stops offering setup; defaults then apply (agents follow Orca's switches).
 
 ## `route`
 
-Recommends one agent, model and effort for a job. Needs a tier or an explicit
-need per axis.
+Recommends one agent, model and effort for a job and reserves the quota its
+worker will draw on. Needs a tier or an explicit need per axis.
 
 ```sh
 orcacompass route --need coding=high,agentic=mid,reasoning=low --demand high --agent claude --agent codex --json
@@ -201,11 +205,13 @@ orcacompass route --need coding=high,agentic=mid,reasoning=low --demand high --a
 | `--need <axes>` | All three axes: `coding`, `agentic`, `reasoning`, each `min`, `low`, `mid`, `high` or `top`; no spaces |
 | `--tier <t>` | Shorthand for equal needs: `light`, `daily`, `advanced`, `frontier`; mutually exclusive with `--need` |
 | `--tier-reason <text>` | Optional nonempty explanation from the coordinator, returned in JSON and text. The Skill keeps routine classification in the tool exchange and explains it in chat on request |
-| `--demand <d>` | `low`, `moderate`, `high`, `exceptional`; mapped to an effort through `effortPolicy` |
+| `--demand <d>` | `low`, `moderate`, `high`, `exceptional`; mapped to an effort through `effortPolicy`. Only models that can apply that effort, or the next higher one they offer, are eligible |
 | `--effort <e>` | Exact effort: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` (`extra-high` is accepted for `xhigh`). Never snapped; routes that cannot apply it are left out |
 | `--agent <id>` | Repeatable. Only these agents. Lifts a last-resort agent's status |
 | `--exclude-agent <id>` | Repeatable. Not these agents |
-| `--no-downgrade` | Prevent capability-shortfall and Cursor Auto fallbacks; cheaper covering cost tiers remain allowed. A [favorite](tiers-and-routing.md#preferences-pins) can still fall short with this flag |
+| `--use <agent>/<model>` | The Orchestrator's explicit choice after a `decide`: that route is taken despite the risk thresholds and a capability or effort shortfall. Refused when a quota it draws on is exhausted |
+| `--dry-run` | Decide without reserving quota |
+| `--no-downgrade` | Accepted and ignored, with a warning: requirements are never lowered automatically |
 | `--json` | Machine-readable output |
 
 One of `--need` or `--tier` is required.
@@ -217,16 +223,30 @@ There is no `--model` flag: an exact model the user named is launched directly.
 Text output (illustrative; values vary):
 
 ```text
-light → claude · claude-haiku-5-5 · medium (high confidence)
-  claude claude-haiku-5-5: weekly 20% used, 56% of window elapsed (headroom 60%) → on pace for 36% before reset in 3d
-  needs coding=low agentic=low reasoning=low from tier daily; covering routes: 14 across all cost tiers
-  cost: light ($0.20/M blended, maker price)
-  coding 68.4 measured, agentic 53.5 measured, reasoning 74.6 measured
+daily → codex · gpt-6.1-terra · medium (high confidence)
+  codex gpt-6.1-terra: weekly 20% reported + 1.5 pp reserved (1 worker) + 1.5 pp for this worker = 23% prospective (available), resets in 5d
+  needs coding=low agentic=low reasoning=low from tier daily; eligible routes: 9 across all cost tiers
+  cost: daily ($2.00/M blended, maker price)
+  coding 77.5 measured, agentic 70 measured, reasoning 78 measured
   effort: medium from tier default, passed as --effort
-  selection: 60.00 ranked headroom points minus 0.24 price points = 59.76
-  next best: claude claude-sonnet-5-5 (weekly headroom 60%, resets in 3d, $4.00/M blended)
+  selection: quota bucket codex weekly has 78.5% effective capacity left (bucket 1 of 2 with an eligible route); most economical eligible route in it below the 85% caution threshold
+  next best: codex gpt-6.1-sol (weekly 23% prospective, available, $4.00/M blended)
   skipped: grok (not enabled in Orca), opencode (last resort: used only when no other agent can take the job)
-orca orchestration worker-start --spec "<task>" --agent claude --model claude-haiku-5-5 --effort medium
+  reserved rsv_3f9a1c2b7d10: weekly +1.5 pp; after worker-start run: orcacompass verify --dispatch <id> --reservation rsv_3f9a1c2b7d10
+orca orchestration worker-start --spec "<task>" --agent codex --model gpt-6.1-terra --effort medium
+```
+
+When no eligible route is below the risk threshold, nothing is picked and the
+decision comes back:
+
+```text
+daily → your decision: WAIT (14h), USE or LOWER
+  no eligible route is below the 90% risk threshold: claude claude-sonnet-5-5 (weekly 94.5% prospective, high risk)
+  needs coding=low agentic=low reasoning=low from tier daily; eligible routes: 1 across all cost tiers
+  WAIT: until 2026-10-29T14:00:00.000Z (14h); the earliest quota reset is in 14h
+  USE: claude claude-sonnet-5-5 with --use claude/claude-sonnet-5-5 (weekly 94.5% prospective, high risk)
+  LOWER: claude claude-haiku-5-5 takes the job with lower requirements: below need on agentic (53.5 < 60) (weekly 93.5% prospective, high risk)
+  to LOWER, route again with lower --need or --demand; to take one route as it is, add its --use flag
 ```
 
 ### Route JSON
@@ -236,22 +256,24 @@ fields (`evidenceSource`, `catalogSource`, `scoreSource`) and `placementsBuiltAt
 
 | Field | Meaning |
 | --- | --- |
-| `status` | `ok`, `wait`, or `none` |
-| `requestedTier`, `tier` | Requested needs shorthand and the pick's cost tier (absent without a route and for the Cursor `auto` fallback); a covering pick from a cheaper tier is not a downgrade, and one from a pricier tier is an upgrade only when no cheaper route covers the job |
-| `source` | Where the pick's cost tier came from: `override`, `lineup`, `family` or `evidence`; `auto` for the Cursor `auto` fallback |
+| `status` | `ok` (routed and reserved), `decide` (the Orchestrator chooses; see `options`), or `none` |
+| `requestedTier`, `tier` | Requested needs shorthand and the pick's cost tier (absent without a route and for Cursor `auto`); an eligible pick from a cheaper tier is not a downgrade, and one from a pricier tier is an upgrade only when no cheaper route is eligible |
+| `source` | Where the pick's cost tier came from: `override`, `lineup`, `family` or `evidence`; `auto` for Cursor `auto` |
 | `tierReason` | The coordinator's explanation of the requested tier, when supplied. Also included in `reasons`, even when there is no route |
-| `downgraded`, `upgraded` | A downgrade falls short of the requested needs. An upgrade is a covering pick from a pricier cost tier than the requested tier, when no route at or below the requested tier covers the job (and can apply an explicit `--effort`) |
+| `downgraded`, `upgraded` | A downgrade falls short of the requested needs; it only happens for a route chosen explicitly (`--use`, or a preferred model). An upgrade is an eligible pick from a pricier cost tier than the requested tier, when no route at or below the requested tier is eligible |
 | `route` | `{ agent, model, effort }`; `effort` is `null` when it is in the model id or not set |
 | `effort` | How the effort was chosen and applied; see [Effort](effort.md#the-effort-object-in-route-json) |
 | `launchArgs` | Array to append to `orca orchestration worker-start --spec "<task>"`, one argument per element |
 | `launch` | Readable template with a `<task>` placeholder; not shell-escaped, not for automation; `null` without a route |
 | `confidence` | `high`, `medium`, `low` |
-| `risk` | `{ pool, usedPercent, elapsedPercent, projectedPercent, tooEarly, resetsAt }` for the route; `null` when usage is unknown |
-| `reasons` | One line per fact behind the choice; the needs line includes `covering routes: 3 across all cost tiers`, a route adds `cost: daily ($4.00/M blended, maker price)`, and a pick made by score adds `selection: 62.00 ranked headroom points minus 2.50 price points = 59.50` (with `minus N.NN effort points` when automatic effort is snapped down; tier, count, price and source vary) |
-| `warnings` | Downgrade, upgrade, skipped preference, last-resort use, and on the picked route: reported usage at or above `thresholds` (`weekly quota is 96% used; resets in 14h`) or a forecast above `usageRiskLimit` (`selected route is expected to end above 90% of its usage window`) |
-| `alternatives` | Up to five other candidates in decision order: the other covering routes, from all cost tiers, or for a downgrade the models with the same shortfall; without a pick, the covering routes: `agent`, `model`, `effort`, `tier`, `headroom` (fraction, or `null`), `confidence`, `blocked`, `risk`, `reason` |
-| `skipped` | `{ agent, model?, reason }` for excluded agents (including an unknown `--agent`), banned and refused models, unranked models and models below the requested needs, in every tier. Superseded releases and no-ZDR exclusions are omitted. Preference exclusions appear in `warnings` |
-| `waitUntil` | Epoch ms of the earliest time a blocked candidate has all its blocking windows reset; present with `wait` only |
+| `quota` | The route's quota: `status` (the most restrictive prospective status), `binding` (the bucket with the least capacity left), `remaining`, `prospective`, and `buckets`: for every bucket the route draws on `id`, `pool`, `reported`, `reserved`, `workers`, `effective`, `remaining`, `buffer`, `prospective`, `prospectiveStatus`, `resetsAt` (or `null`), `snapshotAt`, `stale`. `null` for a route without a usage window |
+| `reservation` | With `ok`: `{ id, state: "pending", buckets: [{ bucket, percentPoints }], expiresAt }`. Absent with `--dry-run` and for a route without a usage window |
+| `buckets` | Every quota bucket of the agents considered, most capacity left first, with the same reported, reserved and effective fields |
+| `options` | With `decide`: `wait` (`{ until?, reason }` or `null`; `until` only when a reset time is reported), `use` and `lower` (routes with `agent`, `model`, `effort`, `tier`, `quota`, `reason`, the `use` flag that takes them, and for `lower` the `shortfall`) |
+| `reasons` | One line per fact behind the choice; the first names the route and, for each bucket it draws on, reported usage, what is reserved, this worker's buffer and the prospective result; the needs line includes `eligible routes: 3 across all cost tiers`, a route adds `cost: daily ($4.00/M blended, maker price)`, and an automatic pick adds a `selection:` line with its bucket's rank and the threshold it passed; a `decide` adds `WAIT:`, `USE:` and `LOWER:` lines |
+| `warnings` | Downgrade, upgrade, skipped preference, last-resort use, and on the picked route: a bucket in the caution range or above (`weekly quota would be 87.5% used with this worker (caution); resets in 14h`) or unknown usage (`usage of codex is unknown: …; routed without a quota check`) |
+| `alternatives` | Up to five other eligible routes in rank order, from all cost tiers: `agent`, `model`, `effort`, `tier`, `quota`, `confidence`, `blocked` (a quota is exhausted), `reason` |
+| `skipped` | `{ agent, model?, reason }` for excluded agents (including an unknown `--agent`), banned and refused models, unranked models, models below the requested needs and models that cannot apply the effort, in every tier. Superseded releases and no-ZDR exclusions are omitted. Preference exclusions appear in `warnings` |
 | `needs`, `needsSource` | The three requested levels and whether they came from `need` or `tier` |
 | `quality` | Evidence class, cost, coverage, shortfall or overshoot, evidence and per-axis scores, bands, needs and cuts; also on alternatives |
 | `quality.class` | Highest evidence band across the axes; independent of cost |
@@ -259,21 +281,23 @@ fields (`evidenceSource`, `catalogSource`, `scoreSource`) and `placementsBuiltAt
 | `evidenceSource` | `network`, `cache`, or `snapshot`; `catalogSource` and `scoreSource` are compatibility aliases |
 | `placementsBuiltAt` | Epoch ms when the placement table this route read was built (see [`tiers`](#tiers)); the evidence source says what that build used |
 
-The chosen route's own headroom appears in its reason line, not as a separate
-field.
+Reported usage is never adjusted: what is reserved for workers is a separate
+number next to it, and the effective and prospective usage are derived from
+both. See [Quota buckets, reservations and risk](tiers-and-routing.md#quota-reservations-and-risk).
 
 ## `verify`
 
-Checks whether a newly started worker's agent accepted its model and records
-any recognized refusal.
+Checks whether a newly started worker's agent accepted its model, records any
+recognized refusal and settles the worker's quota reservation.
 
 ```sh
-orcacompass verify --dispatch <dispatchId> [--wait 60] [--json]
+orcacompass verify --dispatch <dispatchId> [--reservation <id>] [--wait 60] [--json]
 ```
 
 | Flag | Meaning |
 | --- | --- |
 | `--dispatch <id>` | Required. The `dispatchId` that `worker-start` printed |
+| `--reservation <id>` | The `reservation.id` the route returned. Without it, the worker is matched to the oldest pending reservation for the same agent and model |
 | `--wait <seconds>` | 0–60, default 60. `0` returns `unknown` immediately |
 | `--json` | Machine-readable output |
 
@@ -298,10 +322,40 @@ Output fields:
 | `skippedForHours` | With `rejected`: how long routes skip this agent and model (`rejectionTtlHours`) |
 | `next` | What the orchestrator does next, in order. For `rejected` and `failed` this includes the `worker-start --task <taskId> --retry-of <dispatchId>` command for a replacement |
 
+The JSON also carries `reservation` (`{ id, state }`, or `null` when none
+matched). The verdict moves the reservation on: a worker that `started` is
+marked `running` (the same record, nothing is reserved twice); `reported`
+marks it `completed`; a `rejected` model consumed nothing, so its
+reservation is released at once; a `failed` worker keeps its reservation
+until a fresh usage snapshot covers it.
+
 OrcaCompass saves a `rejected` verdict to the cache when Orca reports the
 worker's agent and model (`skippedForHours` is then present). Every route then skips
 that agent and model for `rejectionTtlHours`. See
 [Verify and rejections](verify-and-rejections.md).
+
+## `release`
+
+Ends the quota reservation of a worker.
+
+```sh
+orcacompass release --dispatch <dispatchId>                 # the worker finished
+orcacompass release --dispatch <dispatchId> --outcome cancelled
+orcacompass release --reservation <id> --outcome failed-before-launch
+orcacompass release --all                                   # forget every reservation
+```
+
+| Outcome | Effect |
+| --- | --- |
+| `completed` (default) | The worker finished. Its reservation keeps counting until Orca's next usage refresh covers what it consumed, then it is released |
+| `cancelled` | The worker was stopped after it had worked: held the same way |
+| `failed-before-launch` | Nothing ran. The reservation stops counting at once |
+
+A worker that is never released is closed when Orca reports it as finished
+(checked on later calls), and a reservation nobody confirmed is abandoned
+after `reservations.pendingMinutes`. `--json` returns `{ reservation }` (or
+`{ cleared }` with `--all`). See
+[Reservations](tiers-and-routing.md#reservations).
 
 ## `rejected`
 
@@ -318,8 +372,9 @@ number forgotten by `--clear` (0 otherwise).
 
 ## `status`
 
-Shows the whole routing picture in one call: which agents are available, how
-much usage is left, and what each tier would pick now.
+Shows the whole routing picture in one call: which agents are available, the
+reported, reserved and effective usage of every quota, the workers holding
+reservations, and what each tier would pick now. It reserves nothing.
 
 Text output contains:
 
@@ -330,10 +385,13 @@ Text output contains:
 - A warning under the evidence line when the evidence in use is older than
   the snapshot bundled with the installed release.
 - Orca's agent switches.
-- Each agent with its note, model count, usage state and pools with headroom.
-- Recent hand-outs.
+- Each agent with its note, model count, usage state and, per quota, a line
+  such as `weekly 50% reported + 3 pp reserved (2 workers) = 53% effective,
+  available; resets in 14h`.
+- The reservations that count against quota: id, route, state and the points
+  held on each bucket.
 - The pick and up to three alternatives per requested tier, from any cost
-  tier that covers it, without downgrade or upgrade fallbacks.
+  tier that is eligible, or the decision that would come back.
 - Banned and refused models.
 - Unclassified models (the first 15 per agent; the JSON has all of them).
 
@@ -342,15 +400,17 @@ Text output contains:
 | Field | Meaning |
 | --- | --- |
 | `now` | Epoch ms of the call |
-| `handouts`, `handoutMinutes`, `handoutPercent` | Live hand-outs and the settings that count them |
+| `riskThresholds` | The configured `cautionPercent` and `highPercent` |
+| `reservations` | Every reservation record: `id`, `state`, `live` (whether it counts), `agent`, `model`, `tier`, `effort`, `dispatchId`, timestamps, and `buckets` with the `percentPoints` held on each |
+| `ledgerError` | Present when the reservation ledger could not be written |
 | `evidence` | The evidence summary: `source`, `fetchedAt`, `models`, `generatedAt` |
 | `evidenceWarning` | `null`, or a warning when the evidence in use is older than the snapshot bundled with the installed release. The same text is added to `route` warnings; `orcacompass refresh` clears it |
 | `placements` | `builtAt`, `age` in ms, `version`, `rebuilt` (why this call rebuilt it, or `null`), `saveError` (or `null`) |
 | `orcaAgents` | Orca's agent switches as read, or `null` |
-| `agents` | One row per agent: `agent`, `installed`, `enabledInOrca`, `models` (count), `usage` (`null` or `status`, `updatedAt`, `error`, and `pools` with `headroom`, `expired`, `blocked`, and `reportedUsedPercent` when recent hand-outs raised `usedPercent`), plus `note` and `skipped` when they apply |
+| `agents` | One row per agent: `agent`, `installed`, `enabledInOrca`, `models` (count), `usage` (`null` or `status`, `updatedAt`, `plan`, `error`, `retained` when the last valid snapshot stands in for an unreadable Orca, and `pools`: per quota bucket `name`, `reported` (also as `usedPercent`), `reserved`, `workers`, `effective`, `remaining`, `status`, `resetsAt`, `snapshotAt`, `stale`), plus `note` and `skipped` when they apply |
 | `banned` | `{ agent, model }` pairs |
 | `rejected` | Active refusals |
-| `tiers` | Per tier: `status`, `pick`, `alternatives`, `warnings`, `waitUntil` |
+| `tiers` | Per tier: `status`, `pick`, `alternatives`, `warnings`, and `options` when the status is `decide` |
 | `unclassified` | `{ agent, model }` pairs that are never routed |
 
 ## `tiers`
@@ -442,8 +502,7 @@ prints `wrote <config path>`, `chosen` and `not chosen`; `--json` returns
 
 ## `prefer`
 
-Sets a favorite route per tier, and the projected usage above which a
-within-limit alternative replaces it.
+Sets a favorite route per tier, and the usage limit below which it is used.
 
 ```sh
 orcacompass prefer                             # list preferences per tier
@@ -451,13 +510,13 @@ orcacompass prefer daily codex                 # Codex's best Daily model
 orcacompass prefer advanced claude claude-opus-5-5
 orcacompass prefer clear daily
 orcacompass prefer clear --all
-orcacompass prefer --risk-limit 120            # above 120%, switch if a known within-limit alternative exists
-orcacompass prefer --risk-limit 100            # back to the default (removes the key)
+orcacompass prefer --risk-limit 95             # keep a favorite in use up to 95% prospective usage
+orcacompass prefer --risk-limit 90             # back to the default (removes the key)
 ```
 
 A model must be one the agent lists. When the agent is not installed or lists
 no models right now, the preference is saved with a warning. `--risk-limit`
-accepts `120` or `120%`, must be a non-negative number, and cannot be combined
+accepts `95` or `95%`, must be a non-negative number, and cannot be combined
 with other arguments. `--json` returns `{ configPath, preferRiskLimit, pins }`.
 Rules for when a preference wins:
 [Tiers and routing](tiers-and-routing.md#preferences-pins).

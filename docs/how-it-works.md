@@ -15,34 +15,39 @@ lists what every call reads and caches.
 
 - **Describe the job.** Supply the minimum coding, agentic and reasoning levels
   (or a tier shorthand). Optionally specify effort demand or an exact effort.
-- **Find eligible routes.** Apply agent restrictions, availability, model bans
-  and recorded launch refusals. Keep the latest release per agent, family and
-  cost tier. Defer last-resort agents such as OpenCode unless explicitly selected.
-- **Check capability.** A regular candidate must meet every required axis and
-  support any exact effort requested. Models from all cost tiers can qualify.
-- **Check quota.** Read the usage windows of each route. A route is blocked
-  when Orca reports 100% or more in any of its active windows. Recent
-  hand-outs lower its score only. A forecast above 90% at reset adds a warning.
-- **Score the eligible routes.** Start with the percentage expected to remain
-  at reset in the limiting window. Positive headroom counts in full for a reset
-  within seven days and is discounted for a later reset. Subtract the price
-  adjustment (at most five points) and choose the highest score among the
-  unblocked routes with known usage. See
-  [Ranking covering routes](tiers-and-routing.md#ranking-covering-routes).
-- **Apply a configured favorite.** An eligible, unblocked favorite can take
-  precedence, even if it falls short on capability. Above its separate risk
-  limit, a qualifying alternative with known usage within that limit is used
-  if there is one. The decision reports when a preference or shortfall applies.
-- **Handle missing routes.** When downgrades are allowed, try unblocked models
-  with the smallest capability shortfall. If ordinary agents yield no route,
-  retry with last-resort agents. Cursor `auto` is the final fallback when
-  downgrades are allowed. Return a reset time to wait for when one is known,
-  or report that no route is available.
-- **Return and verify the pick.** Resolve the effort, return launch arguments,
-  reasons and up to five alternatives. The route command records a temporary
-  hand-out (five points of usage for ten minutes by default). The orchestrator
-  launches the worker and verifies it. After a confirmed model refusal it
-  routes the same task again with that agent and model left out.
+- **Find the routes you can launch.** Apply agent restrictions, availability,
+  model bans and recorded launch refusals. Keep the latest release per agent,
+  family and cost tier. Defer last-resort agents such as OpenCode unless
+  explicitly selected.
+- **Keep the eligible ones.** A route is eligible only when its model meets
+  every required axis and can apply an effort that satisfies the request.
+  Models from all cost tiers can qualify. A route that falls short is left
+  out; neither the needs nor the effort are lowered to make it fit.
+- **Read the quota.** For every quota bucket a route draws on (provider,
+  account and usage window), take the usage Orca reports, add what is reserved
+  for workers already allocated, and add the buffer this worker would reserve.
+  That prospective usage is checked on each bucket separately. Nothing is
+  forecast.
+- **Route quota first.** Rank the buckets by the capacity they have left. In
+  the best one, take the most economical eligible route whose prospective
+  usage is below the risk threshold; a route over it is passed over for the
+  next route in the same bucket, then for the next bucket. See
+  [Ranking eligible routes](tiers-and-routing.md#ranking-covering-routes).
+- **Apply a configured favorite.** A favorite for the requested tier comes
+  first while its prospective usage stays below its own limit, even if it
+  falls short on capability. The decision reports when a preference or
+  shortfall applies.
+- **Hand back what cannot be decided.** When no eligible route is below the
+  threshold, nothing is picked: the Orchestrator gets the decision, with what
+  it can do: WAIT for a reset or a fresh snapshot, USE a route at elevated
+  risk, or LOWER the requirements. Last-resort agents take the job only when
+  no other agent can.
+- **Reserve, return and verify.** Under a lock, the route is decided again on
+  the current reservations and its buffer is reserved on every bucket it
+  draws on. The orchestrator launches the worker and verifies it, which
+  confirms the reservation or, after a model refusal, releases it and routes
+  the same task again without that model. A finished worker's reservation is
+  released by Orca's next usage refresh.
 
 ::: info About the example
 The scores and prices below are from the bundled evidence snapshot of
@@ -125,7 +130,7 @@ cost tier of the latest earlier release of its line (Gemini 4 Neon). For Compose
 2.5, the snapshot uses Kimi K2.5 as an explicit fallback on all three axes.
 See [Model data](model-data.md).
 
-## 4. Price sets the cost tier and the price adjustment {#_4-price-decides-how-much-model-to-spend}
+## 4. Price sets the cost tier {#_4-price-decides-how-much-model-to-spend}
 
 Each model also has a cost tier, set by its API price in the snapshot, blended
 3:1 input to output, in USD per million tokens. It is not what your
@@ -139,48 +144,52 @@ subscription a model consumes.
 | Advanced | 5 to below 12 | Opus 5.5 ($8) |
 | Frontier | 12 or above | Fable 5.2 ($16), Astra ($20) |
 
-Every qualifying model enters the comparison, including Opus, Fable and Astra.
-The price takes a few points off a route's score in the next step: 2.5 points
-at $4, 3.33 at $8, 4 at $16, and never more than 5. Change the thresholds with
-`costBands`, or move a model with `tierOverrides`; see
+Every qualifying model stays eligible, including Opus, Fable and Astra. The
+cost tier sets how much quota a worker on that model reserves in the next
+step, and on one quota the cheaper model goes first. Change the price cuts
+with `costBands`, or move a model with `tierOverrides`; see
 [Tiers and routing](tiers-and-routing.md).
 
-## 5. Compare subscription headroom and price
+## 5. Route to the quota with the most room
 
-OrcaCompass reads your live usage from Orca and projects it: at the current
-pace, how much of each usage window will be left when it resets? This
-remaining share is **headroom**. Each route's score is its headroom in
-percentage points minus its price adjustment, and minus an effort adjustment
-when the model cannot think as hard as the job asks; the highest score wins. In
-the example, every model of an agent draws on the same weekly window, and
-Cursor offers Sonnet 5.5 and Gemini 4 Carbon:
+OrcaCompass reads your usage from Orca as it is now. It does not project it:
+where a window stands in time changes nothing. For each **quota bucket** (a
+provider's usage window on one account) it keeps three numbers apart: what
+Orca **reported**, what is **reserved** for workers already routed, and their
+sum, the **effective** usage. For a route it adds the buffer this worker
+would reserve, in percentage points by cost tier and effort: the
+**prospective** usage. In the example a worker is already running on Codex,
+and Cursor offers Sonnet 5.5 and Gemini 4 Carbon:
 
-| Route | Usage | Headroom | Price adjustment | Score |
-| --- | --- | --- | --- | --- |
-| Codex, Sol ($4) | weekly 8% used, 31% of the week gone | 62% | 2.50 | 59.50 |
-| Codex, Astra ($20) | same window | 62% | 4.17 | 57.83 |
-| Claude Code, Sonnet 5.5 ($4) | weekly reset less than a day ago | 55% | 2.50 | 52.50 |
-| Claude Code, Opus 5.5 ($8) | same window | 55% | 3.33 | 51.67 |
-| Claude Code, Fable 5.2 ($16) | same window | 55% | 4.00 | 51.00 |
-| Cursor, Sonnet 5.5 or Gemini 4 Carbon ($4) | 76% used, 78% of the window gone | 3% | 2.50 | 0.50 |
+| Route | Binding bucket | Reported | Reserved | This worker | Prospective | Status |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| Codex, Sol (Daily) | Codex weekly | 8% | 2 pp | 1.5 pp | 11.5% | available |
+| Codex, Astra (Frontier) | same | 8% | 2 pp | 2.5 pp | 12.5% | available |
+| Claude Code, Sonnet 5.5 (Daily) | Claude weekly | 30% | 0 | 1.5 pp | 31.5% | available |
+| Claude Code, Opus 5.5 (Advanced) | same | 30% | 0 | 2 pp | 32% | available |
+| Claude Code, Fable 5.2 (Frontier) | Fable weekly | 62% | 0 | 2.5 pp | 64.5% | available |
+| Cursor, Sonnet 5.5 or Gemini 4 Carbon (Daily) | Cursor Other Models | 84% | 0 | 1.5 pp | 85.5% | caution |
 
-- On one subscription the cheaper model always scores higher: Sol before
-  Astra, Sonnet before Opus and Fable.
-- Between subscriptions, room decides: a pricier route wins only when it has
-  clearly more headroom. Five points more always outweigh the price.
-- A route is **blocked**, and skipped, only when Orca reports one of its
-  windows as 100% used. A route at 96% can still win when nothing better is
-  left; the pick then carries a warning that the quota is nearly used up
-  (from 95% of a long window or 90% of a session by default).
-- A pick expected to end its usage window above `usageRiskLimit` (90%) carries
-  a warning too. The Cursor routes here are in that state; they are not picked,
-  so nothing is warned.
-- A route with unknown usage is used only when no unblocked route with known
-  usage covers the job.
+- **The bucket with the most capacity left comes first.** Codex's weekly has
+  90% left (8% reported plus 2 points reserved), Claude's 70%, Fable's own
+  weekly 38%, Cursor's 16%. A route on several windows is ranked by its most
+  restrictive one.
+- **Inside a bucket the most economical route wins.** Sol reserves 1.5
+  points, Astra 2.5: Sol goes first. A stronger model is not preferred when a
+  cheaper one meets the needs.
+- **The thresholds apply to the prospective usage.** Below 85% is available.
+  From 85% to below 90% is caution: used only when nothing is available, with
+  a warning. Cursor's bucket is still at 84%, but one more worker takes it to
+  85.5%. From 90% a route is never picked automatically.
+- A bucket is **exhausted**, and its routes cannot be used, only when Orca
+  reports it as 100% used. A bucket that reaches 100% only through
+  reservations is *fully reserved*: nothing is used up, and it frees itself.
+- A route with unknown usage is used only when no route with known usage can
+  be routed, at low confidence and with a warning.
 
-Each route handed out in the last `handoutMinutes` (10) counts as
-`handoutPercent` (5 points) more usage on that model's windows, so workers
-routed back to back spread across subscriptions. A favorite set with
+The reserved total is rebuilt from the worker records at every refresh, on top
+of the newly reported usage, so it cannot pile up; see
+[Reservations](tiers-and-routing.md#reservations). A favorite set with
 `orcacompass prefer` can take the place of this pick; see
 [Preferences](tiers-and-routing.md#preferences-pins).
 
@@ -197,50 +206,56 @@ The route comes back with launch arguments and the reasons behind it. Without
 
 ```text
 daily → codex · gpt-6.1-sol · medium (high confidence)
-  codex gpt-6.1-sol: weekly 8% used, 31% of window elapsed (headroom 62%) → on pace for 26% before reset in 4d
-  needs coding=mid agentic=mid reasoning=low; covering routes: 7 across all cost tiers
+  codex gpt-6.1-sol: weekly 8% reported + 2 pp reserved (1 worker) + 1.5 pp for this worker = 11.5% prospective (available), resets in 4d
+  needs coding=mid agentic=mid reasoning=low; eligible routes: 7 across all cost tiers
   cost: daily ($4.00/M blended, maker price)
   coding 79.8 measured, agentic 75.5 measured, reasoning 88.7 measured
   effort: medium from moderate effort demand (balanced policy), passed as --effort
-  selection: 62.00 ranked headroom points minus 2.50 price points = 59.50
-  next best: codex gpt-6-astra (weekly headroom 62%, resets in 4d, $20.00/M blended)
+  selection: quota bucket codex weekly has 90% effective capacity left (bucket 1 of 4 with an eligible route); most economical eligible route in it below the 85% caution threshold
+  next best: codex gpt-6-astra (weekly 12.5% prospective, available, $20.00/M blended)
   skipped: …
+  reserved rsv_3f9a1c2b7d10: weekly +1.5 pp; after worker-start run: orcacompass verify --dispatch <id> --reservation rsv_3f9a1c2b7d10
 orca orchestration worker-start --spec "<task>" --agent codex --model gpt-6.1-sol --effort medium
 ```
 
-The first line shows the pick's cost tier. "7" counts the covering routes in
-the table above. `next best` is the runner-up by score: here the pricier model
-on the same subscription.
+The first line shows the pick's cost tier. "7" counts the eligible routes in
+the table above. `next best` is the runner-up: here the pricier model on the
+same quota. The `reserved` line names the reservation this route took.
 
 The orchestrator appends `launchArgs` to `orca orchestration worker-start`,
-then runs `orcacompass verify --dispatch <id>` to confirm the agent accepted
-the model. If the agent refused it, OrcaCompass remembers the refusal and the
-next route picks another model. See
+then runs `orcacompass verify --dispatch <id> --reservation <id>` to confirm
+the agent accepted the model. If the agent refused it, OrcaCompass remembers
+the refusal, releases the reservation, and the next route picks another model.
+When the worker is done, `orcacompass release --dispatch <id>` ends its
+reservation. See
 [Verify and rejections](verify-and-rejections.md) and
 [Commands](commands.md) for the full JSON.
 
 ## What changes the answer
 
-- **Codex is at its limit.** Sol and Astra are blocked; the next score is
-  Sonnet 5.5 through Claude Code.
+- **Codex is at its limit.** Sol and Astra cannot be used; the next bucket is
+  Claude's weekly, and its most economical route is Sonnet 5.5.
 - **The job needs more coding.** At `coding=high` (82 or more), Sol (79.8)
-  drops out. Astra (83.8) on the same subscription now has the highest score
-  (57.83), ahead of Sonnet 5.5 (52.50).
-- **A pricier route has much more headroom.** If Claude Code had 79% headroom
-  and Codex 60%, Opus 5.5 (75.67) would beat Sol (57.50); Sonnet 5.5 (76.50),
-  on the same subscription as Opus, would still win.
+  is no longer eligible. Astra (83.8), on the same bucket, takes the job.
+- **Another quota has more room.** If Claude's weekly had 95% left and Codex's
+  90%, Claude's bucket would come first and Sonnet 5.5, its most economical
+  route, would win; Opus on the same bucket would not.
+- **Several workers are routed at once.** Each reserves its buffer, so the
+  bucket's effective usage rises with every route and later workers move to
+  the next bucket once the threshold is near. Reservations are released as
+  Orca's refreshes cover the finished workers.
 - **No Daily model qualifies.** The pick comes from a pricier tier. When the
-  requested tier is cheaper than the pick and has no covering model, the route
+  requested tier is cheaper than the pick and has no eligible model, the route
   is marked `upgraded`.
-- **Every qualifying route is close to its limit.** They still compete on the
-  same score, and the pick carries a warning.
-- **Every qualifying route is blocked.** OrcaCompass picks the closest model
-  that falls short and marks the route `downgraded`, or returns `wait` with
-  `--no-downgrade`. See
-  [Fallbacks](tiers-and-routing.md#fallbacks-downgrade-upgrade-wait-none).
-- **Nothing can be routed.** Cursor `auto` is the last fallback before waiting
-  (not with `--no-downgrade` or `--effort`); Cursor then picks the model
-  itself.
+- **Every eligible route is in the caution range.** The bucket with the most
+  room is used, and the pick carries a warning.
+- **Every eligible route is at 90% or more, or exhausted.** Nothing is picked.
+  The result is `decide`: wait for the reset, use a route at elevated risk
+  with `--use`, or lower the needs. Models that fall short are listed there
+  with what they lack; they are not chosen for you. See
+  [Outcomes](tiers-and-routing.md#outcomes-ok-decide-none).
+- **Only Cursor `auto` is left.** Cursor would pick the model itself, so it
+  is offered as an option, never routed on its own.
 
 ## What runs on every call
 
@@ -286,22 +301,25 @@ model for classification.
    is the evidence view; `orcacompass tiers` groups by cost tier and
    `orcacompass tiers --axis coding` shows evidence bands.
 3. **Read usage** with `orca account list --json` (20 s timeout). The usage reader covers all supported agents except OpenCode,
-   which has no usage entry. Each covered agent gets a status (`ok`, `unavailable`, `unknown`) and its usage pools. A pool with a
-   missing number is skipped, never read as 0%. This is the only child command a
-   route runs when the table is fresh; local files and executable locations
+   which has no usage entry. Each covered agent gets a status (`ok`, `unavailable`, `unknown`), its usage pools, the time Orca took the snapshot and a
+   quota identity (a hash of account, runtime and plan). A pool with a
+   missing number is kept as unknown, never read as 0%, and a reset time of `0` or `null` as no reset time. Orca returns the snapshot it holds:
+   the command never triggers a refresh. When a reservation is bound to a worker, `orca orchestration worker-list` is read as well.
+   These are the only child commands a route runs when the table is fresh; local files and executable locations
    are still checked.
 4. **Read Orca's agent switches**, read-only, from the active profile's
    `profile-state.db` (or `orca-data.json`). Anything unexpected is `unknown`
    and excludes nobody.
-5. **Apply recent [hand-outs](tiers-and-routing.md#usage-headroom-and-pace)**
-   to known usage pools, then **load rejections**:
+5. **Reconcile [reservations](tiers-and-routing.md#reservations)** with the
+   snapshots and with the workers Orca reports, then **load rejections**:
    models an agent refused at launch, saved by `verify`,
    still younger than `rejectionTtlHours`.
 
 Then the pure routing core (`src/routing/router.ts`, no I/O) turns that
-environment, your request and your config into a `Decision`: every model that
-covers the job competes, from all cost tiers, and the score is the route's
-usage headroom minus a price adjustment of at most five points. Setup and
+environment, your request and your config into a `Decision`: every eligible
+model competes, from all cost tiers, and the quota bucket with the most
+capacity left decides. `route` then repeats that decision under the ledger's
+lock and reserves the pick's quota (`src/routing/allocate.ts`). Setup and
 status show a pick from another cost tier with a label such as
 `(daily cost tier)` for Advanced needs; a cheaper covering pick is not a
 downgrade. See

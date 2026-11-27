@@ -742,4 +742,3 @@ function selectionText(c: Candidate, eligible: Candidate[], config: Config): str
   const limit = state === 'available' ? `below the ${config.riskThresholds.cautionPercent}% caution threshold` : `in the caution range (no route is below ${config.riskThresholds.cautionPercent}%)`;
   return `selection: quota bucket ${c.model.agent} ${displayPool(binding.pool)} has ${percentText(binding.remaining!)} effective capacity left (bucket ${position} of ${ranked.length} with an eligible route); most economical eligible route in it ${limit}`;
 }
-

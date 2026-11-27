@@ -34,7 +34,7 @@ machine (ollama)`, `free model through openrouter`, `pay per use through
 openrouter`). Because it costs money or local resources, it is in
 `lastResortAgents` by default: routing first tries every other agent,
 including a lower tier, and uses OpenCode only when nothing else can take the
-job (or instead of waiting under `--no-downgrade`), with a warning. `--agent
+job (or instead of waiting), with a warning. `--agent
 opencode`, a preference for the tier (`orcacompass prefer daily opencode
 [model]`) or `"lastResortAgents": []` makes it an ordinary agent; without usage
 data it still ranks after agents that have it. OpenRouter's `~vendor/x-latest`
@@ -93,13 +93,12 @@ Each model has two separate profiles:
   family/model-line or provider-lineup hint, then evidence class (or the
   previous release's price for a Gemini release borrowing its scores).
 
-The job's needs select qualifying models, from every cost tier. Their routes
-are [scored](tiers-and-routing.md#ranking-covering-routes) by usage
-[headroom](tiers-and-routing.md#usage-headroom-and-pace) minus a price
-adjustment of at most five points and an effort adjustment when automatic
-effort is snapped down, and the highest score wins.
+The job's needs and effort select the eligible models, from every cost tier.
+Their routes are [ranked](tiers-and-routing.md#ranking-covering-routes) by
+[quota](tiers-and-routing.md#quota-reservations-and-risk): the bucket with the
+most capacity left comes first, and in it the most economical route.
 `orcacompass ranking` shows the evidence and `orcacompass tiers`
-shows the cost tiers. Cursor `auto` is only a fallback and has no profile.
+shows the cost tiers. Cursor `auto` has no profile and is only offered as an option.
 See [How it works](how-it-works.md) for a worked example and
 [Tiers and routing](tiers-and-routing.md#needs-and-ranking) for the full order.
 
@@ -127,13 +126,13 @@ Its Gemini and Claude/GPT quota groups are evaluated separately.
 
 `orcacompass prefer <tier> <agent> [model]` stores a favorite route per tier
 in `pins`. It must pass every exclusion (your agent choice, request flags,
-Orca's switches, availability, bans) and be unblocked. Usage can replace an
-over-limit favorite; routing explains both replacements and cases where it
-retains one. See [Preferences (pins)](tiers-and-routing.md#preferences-pins)
-for the `preferRiskLimit` rules and projection formula.
+Orca's switches, availability, bans), and its quota must not be exhausted. A
+favorite at its usage limit is skipped, and routing says so. See
+[Preferences (pins)](tiers-and-routing.md#preferences-pins) for the
+`preferRiskLimit` rules.
 
 For example, a switch can appear as `preferred codex
-gpt-6.1-terra skipped: weekly on pace for 150% (limit 100%), resets in 2d`.
+gpt-6.1-terra skipped: weekly would be 90.5% used with this worker (limit 90%); resets in 2d`.
 
 `orcacompass ban <model-or-family>` stores entries in `banModels`. An entry
 matches a model's base ID, so `claude-opus-5-5` also covers Cursor's
