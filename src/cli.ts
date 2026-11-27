@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-import { recordHandout } from './routing/handouts.js';
+import { clearReservations, endWorker, markRunning, routeAndReserve, type LifecycleChange } from './routing/allocate.js';
+import { bucketId, bucketText, buildQuotaView, bufferFor, displayPool, isLive, pointsText, type Reservation } from './routing/quota.js';
+import type { ReleaseOutcome } from './routing/reservations.js';
 import { cacheDir } from './paths.js';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
@@ -16,9 +18,8 @@ import {
   applyAgentChoice, ConfigError, isChosen, loadConfig, parsePercent, setBans, setPin, setPreferRiskLimit, updateConfigFile, writeAgentChoice, type AgentAction,
 } from './config.js';
 import { parseEffort } from './routing/effort.js';
-import { poolState } from './routing/pace.js';
 import { activeRejections } from './routing/rejection.js';
-import { agentNotFamily, agentSkipReason, banMatches, enabledInOrca, formatLaunch, headroomText, launchIds, rejectedText, route } from './routing/router.js';
+import { agentNotFamily, agentSkipReason, banMatches, enabledInOrca, formatLaunch, launchIds, rejectedText, route } from './routing/router.js';
 import {
   AGENT_IDS, DEMANDS, TIERS, type AgentId, type Demand, type Alternative, type Config, type Decision, type Effort, type Environment, type OrcaAgents,
   type PlacementTable, type Preference, type RouteRequest, type Tier,
@@ -55,11 +56,16 @@ commands:
                                        install or update the CLI, then its matching Skill
   update [same options as install]     get the latest release and matching Skill
   uninstall [same options as install]  remove the selected Skill; --global also removes the shared CLI
-  route --need coding=<l>,agentic=<l>,reasoning=<l> | --tier <light|daily|advanced|frontier> [--no-downgrade] [--agent <id>]...
+  route --need coding=<l>,agentic=<l>,reasoning=<l> | --tier <light|daily|advanced|frontier> [--agent <id>]...
         [--exclude-agent <id>]... [--demand <low|moderate|high|exceptional>]
-        [--effort <effort>] [--tier-reason <reason>] [--json]
-  verify --dispatch <id> [--wait <seconds>] [--json]
+        [--effort <effort>] [--use <agent>/<model>] [--dry-run] [--tier-reason <reason>] [--json]
+                                       pick a route and reserve its quota; --use takes one route as it is,
+                                       --dry-run reserves nothing
+  verify --dispatch <id> [--reservation <id>] [--wait <seconds>] [--json]
                                        did a new worker's agent accept its model
+  release --reservation <id> | --dispatch <id> | --all
+          [--outcome completed|cancelled|failed-before-launch] [--json]
+                                       a worker finished: end its quota reservation
   rejected [--clear] [--json]          models agents refused at launch (skipped)
   status [--json]
   ranking [--axis <coding|agentic|reasoning>] [--json]
@@ -101,6 +107,7 @@ export async function main(argv: string[], io: IO, deps: MainDeps = {}): Promise
     }
     if (command === 'route') return await routeCommand(rest, io, deps);
     if (command === 'verify') return await verifyCommand(rest, io, deps);
+    if (command === 'release') return await releaseCommand(rest, io, deps);
     if (command === 'rejected') return await rejectedCommand(rest, io, deps);
     if (command === 'status') return await statusCommand(rest, io, deps);
     if (command === 'ranking') return await rankingCommand(rest, io, deps);
@@ -147,6 +154,8 @@ async function routeCommand(args: string[], io: IO, deps: MainDeps): Promise<num
     'exclude-agent': { type: 'string', multiple: true },
     effort: { type: 'string' },
     demand: { type: 'string' },
+    use: { type: 'string' },
+    'dry-run': { type: 'boolean' },
     json: { type: 'boolean' },
   });
   if (v.tier === undefined && v.need === undefined) throw new UsageError('--need is required (or --tier as a shorthand)');
@@ -184,30 +193,38 @@ async function routeCommand(args: string[], io: IO, deps: MainDeps): Promise<num
   });
   const agents = agentIds(v.agent, '--agent', 'not routed');
   const excludeAgents = agentIds(v['exclude-agent'], '--exclude-agent', 'nothing excluded for it');
+  let use: RouteRequest['use'];
+  if (v.use !== undefined) {
+    const slash = v.use.indexOf('/');
+    if (slash <= 0 || slash === v.use.length - 1) throw new UsageError(`--use takes <agent>/<model> (got "${v.use}")`);
+    use = { agent: v.use.slice(0, slash).toLowerCase(), model: v.use.slice(slash + 1) };
+  }
   const req: RouteRequest = {
     ...request,
     ...(tierReason ? { tierReason } : {}),
-    ...(v['no-downgrade'] ? { noDowngrade: true } : {}),
     ...(agents ? { agents } : {}),
     ...(excludeAgents ? { excludeAgents } : {}),
     ...(effort ? { effort } : {}),
     ...(demand ? { demand } : {}),
+    ...(use ? { use } : {}),
   };
 
   const config = readConfig(io);
   const env = await gatherEnvironment(config, deps);
-  const d = route(req, env, config);
+  // Deciding and reserving are one atomic step: the route is revalidated on the ledger under its lock.
+  let d: Decision;
+  let unreserved: string | undefined;
+  try {
+    d = routeAndReserve(req, env, config, deps.cacheDir ?? cacheDir(), { dryRun: v['dry-run'] });
+  } catch (e) {
+    d = route(req, env, config);
+    unreserved = (e as Error).message;
+  }
   d.warnings.push(...unknownAgents);
+  if (v['no-downgrade']) d.warnings.push('--no-downgrade is no longer needed: requirements are never lowered automatically');
+  if (unreserved !== undefined && d.status === 'ok') d.warnings.push(`quota could not be reserved for this route: ${unreserved}`);
   const behind = evidenceBehindWarning(env.evidenceGeneratedAt, deps);
   if (behind) d.warnings.push(behind);
-  if (d.status === 'ok' && d.route) {
-    const chosen = d.route;
-    const model = env.discoveries.find((a) => a.agent === chosen.agent)?.models.find((m) => launchIds(m).includes(chosen.model));
-    if (model) {
-      try { recordHandout({ at: env.now, agent: chosen.agent, model: chosen.model, pools: model.poolNames, needs: d.needs }, config.handoutMinutes, deps.cacheDir ?? cacheDir()); }
-      catch (e) { d.warnings.push(`hand-out could not be saved: ${(e as Error).message}`); }
-    }
-  }
   if (v.json) {
     const sources = {
       evidenceSource: env.evidenceSource, catalogSource: env.evidenceSource, scoreSource: env.evidenceSource,
@@ -247,13 +264,19 @@ function decisionText(d: Decision, now: number): string[] {
   if (d.status === 'ok' && d.route) {
     const { agent, model, effort } = d.route;
     head = `${d.tier ?? d.requestedTier} → ${agent} · ${model}${effort ? ` · ${effort}` : ''} (${d.confidence} confidence)`;
-  } else if (d.status === 'wait' && d.waitUntil !== undefined) {
-    head = `${d.requestedTier} → wait until ${new Date(d.waitUntil).toISOString()} (in ${duration(d.waitUntil - now)})`;
+  } else if (d.status === 'decide') {
+    const until = d.options?.wait?.until;
+    head = `${d.requestedTier} → your decision: WAIT${until !== undefined ? ` (${duration(until - now)})` : ''}, USE or LOWER`;
   } else {
     head = `${d.requestedTier} → no route`;
   }
   const launch = formatLaunch(d);
-  return [head, ...d.reasons.map((r) => `  ${r.startsWith('skipped:') ? skippedText(d.skipped) : r}`), ...d.warnings.map((w) => `  warning: ${w}`), ...(launch ? [launch] : [])];
+  // The window's name as Orca reports it, not the bucket's canonical key.
+  const poolOf = (bucket: string): string => d.quota?.buckets.find((b) => b.id === bucket)?.pool ?? bucket.split(':').slice(2).join(':');
+  const reserved = d.reservation
+    ? [`  reserved ${d.reservation.id}: ${d.reservation.buckets.map((b) => `${displayPool(poolOf(b.bucket))} +${pointsText(b.percentPoints)}`).join(', ') || 'no usage window'}; after worker-start run: orcacompass verify --dispatch <id> --reservation ${d.reservation.id}`]
+    : [];
+  return [head, ...d.reasons.map((r) => `  ${r.startsWith('skipped:') ? skippedText(d.skipped) : r}`), ...d.warnings.map((w) => `  warning: ${w}`), ...reserved, ...(launch ? [launch] : [])];
 }
 
 /** Keep operational skips visible while bounding profile diagnostics in text only. */
@@ -280,7 +303,7 @@ function skippedText(skipped: Decision['skipped']): string {
 // --- verify and rejected --------------------------------------------------------------------
 
 async function verifyCommand(args: string[], io: IO, deps: MainDeps): Promise<number> {
-  const v = parse(args, { dispatch: { type: 'string' }, wait: { type: 'string' }, json: { type: 'boolean' } });
+  const v = parse(args, { dispatch: { type: 'string' }, reservation: { type: 'string' }, wait: { type: 'string' }, json: { type: 'boolean' } });
   if (!v.dispatch) throw new UsageError('--dispatch <id> is required (the dispatchId worker-start printed)');
   const wait = v.wait === undefined ? 60 : Number(v.wait);
   if (!Number.isFinite(wait) || wait < 0 || wait > 60) throw new UsageError(`--wait must be between 0 and 60 seconds (got "${v.wait}")`);
@@ -296,9 +319,69 @@ async function verifyCommand(args: string[], io: IO, deps: MainDeps): Promise<nu
     recordRejection({ agent: verdict.agent, model: verdict.model, message: verdict.message, at: clock() }, config.rejectionTtlHours);
     skipHours = config.rejectionTtlHours;
   }
+  // The worker's reservation follows the verdict: confirmed running, ended, or released because nothing launched.
+  const reservation = settleReservation(verdict, v.reservation, clock(), deps.cacheDir ?? cacheDir());
   const next = verifyNext(verdict, skipHours);
-  if (v.json) io.out(JSON.stringify({ ...verdict, ...(skipHours !== undefined ? { skippedForHours: skipHours } : {}), next }, null, 2));
-  else io.out(verifyText(verdict, next).join('\n'));
+  if (v.json) {
+    io.out(JSON.stringify({
+      ...verdict, ...(skipHours !== undefined ? { skippedForHours: skipHours } : {}),
+      reservation: reservation.record ? { id: reservation.record.id, state: reservation.record.state } : null,
+      ...(reservation.error ? { reservationError: reservation.error } : {}),
+      next,
+    }, null, 2));
+  } else io.out([...verifyText(verdict, next), ...reservationLines(reservation)].join('\n'));
+  return 0;
+}
+
+interface Settled { record?: Reservation; from?: Reservation['state']; error?: string }
+
+/**
+ * Moves the worker's reservation on. A refused model consumed nothing, so its reservation is released at
+ * once. A worker that started is marked running under the same record. One that ended keeps its
+ * reservation until a fresh usage snapshot covers it.
+ */
+function settleReservation(d: Verdict, reservationId: string | undefined, now: number, dir: string): Settled {
+  const q = { reservationId, dispatchId: d.dispatchId, agent: d.agent, model: d.model };
+  try {
+    let change: LifecycleChange;
+    if (d.status === 'rejected') change = endWorker(q, 'failed-before-launch', now, dir, 'the agent refused the model at launch');
+    else if (d.status === 'reported') change = endWorker(q, 'completed', now, dir);
+    else if (d.status === 'failed') change = endWorker(q, 'cancelled', now, dir, 'the worker ended without worker_done');
+    else if (d.agent || reservationId) change = markRunning(q, now, dir);
+    else return {};
+    return { record: change.reservation, from: change.from };
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+}
+
+function reservationLines(s: Settled): string[] {
+  if (s.error) return [`reservation: could not be updated: ${s.error}`];
+  if (!s.record) return ['reservation: none matched this worker (route with orcacompass to reserve quota)'];
+  const state = s.record.state.replace(/_/g, ' ');
+  const held = s.record.state === 'completed' || s.record.state === 'cancelled_after_consumption' ? ', held until a fresh usage snapshot covers it' : '';
+  return [`reservation ${s.record.id}: ${s.from && s.from !== s.record.state ? `${s.from.replace(/_/g, ' ')} → ` : ''}${state}${held}`];
+}
+
+const OUTCOMES: readonly ReleaseOutcome[] = ['completed', 'cancelled', 'failed-before-launch'];
+
+async function releaseCommand(args: string[], io: IO, deps: MainDeps): Promise<number> {
+  const v = parse(args, { reservation: { type: 'string' }, dispatch: { type: 'string' }, all: { type: 'boolean' }, outcome: { type: 'string' }, json: { type: 'boolean' } });
+  const dir = deps.cacheDir ?? cacheDir();
+  if (v.all) {
+    if (v.reservation || v.dispatch || v.outcome) throw new UsageError('use "release --all" on its own');
+    const cleared = clearReservations(dir);
+    io.out(v.json ? JSON.stringify({ cleared }, null, 2) : `forgot ${cleared} live reservation${cleared === 1 ? '' : 's'}`);
+    return 0;
+  }
+  if (!v.reservation && !v.dispatch) throw new UsageError('--reservation <id> or --dispatch <id> is required (or --all)');
+  const outcome = (v.outcome ?? 'completed') as ReleaseOutcome;
+  if (!OUTCOMES.includes(outcome)) throw new UsageError(`unknown outcome "${v.outcome}" (expected ${OUTCOMES.join(', ')})`);
+  const now = (deps.clock ?? Date.now)();
+  const change = endWorker({ reservationId: v.reservation, dispatchId: v.dispatch }, outcome, now, dir);
+  const settled: Settled = { record: change.reservation, from: change.from };
+  if (v.json) io.out(JSON.stringify({ reservation: change.reservation ?? null }, null, 2));
+  else io.out(reservationLines(settled).join('\n'));
   return 0;
 }
 
@@ -380,7 +463,7 @@ interface TierView {
   pick?: { agent: string; model: string; effort: Effort | null; confidence?: string; reason: string };
   alternatives: Alternative[];
   warnings: string[];
-  waitUntil?: number;
+  options?: Decision['options'];
 }
 
 function buildStatus(gathered: Gathered, config: Config) {
@@ -389,7 +472,7 @@ function buildStatus(gathered: Gathered, config: Config) {
   const banned = new Map<string, { agent: string; model: string }>();
   const tiers = {} as Record<Tier, TierView>;
   for (const tier of TIERS) {
-    const d = route({ tier, noDowngrade: true }, env, config);
+    const d = route({ tier }, env, config);
     for (const s of d.skipped) {
       if (s.model) {
         if (s.reason === 'banned by you') banned.set(`${s.agent} ${s.model}`, { agent: s.agent, model: s.model });
@@ -406,20 +489,21 @@ function buildStatus(gathered: Gathered, config: Config) {
       const costLabel = d.tier && d.tier !== tier ? ` (${d.tier} cost tier)` : '';
       view.pick = { ...d.route, confidence: d.confidence, reason: (reason.startsWith(prefix) ? reason.slice(prefix.length) : reason) + costLabel };
     }
-    if (own && d.waitUntil !== undefined) view.waitUntil = d.waitUntil;
+    if (own && d.options) view.options = d.options;
     tiers[tier] = view;
   }
 
+  const quota = buildQuotaView(env.usage, env.reservations ?? [], config, env.now);
   const agents = env.discoveries.map((disc) => {
     const u = env.usage[disc.agent];
     const usage = u && {
       status: u.status,
       ...(u.updatedAt !== undefined ? { updatedAt: u.updatedAt } : {}),
       ...(u.error ? { error: u.error } : {}),
-      pools: Object.values(u.pools).map((p) => {
-        const s = poolState(p, env.now);
-        return { ...p, headroom: Math.round(s.headroom * 100) / 100, expired: s.expired, blocked: s.blocked };
-      }),
+      ...(u.plan ? { plan: u.plan } : {}),
+      ...(u.retained ? { retained: true } : {}),
+      // Reported usage, what is reserved on top of it, and the effective result, kept apart for every quota bucket.
+      pools: quota.buckets.filter((b) => b.agent === disc.agent).map((b) => ({ name: b.pool, usedPercent: b.reported, ...b })),
     };
     const reason = skipped.get(disc.agent);
     return {
@@ -442,9 +526,18 @@ function buildStatus(gathered: Gathered, config: Config) {
 
   return {
     now: env.now,
-    handouts: gathered.handouts,
-    handoutMinutes: config.handoutMinutes,
-    handoutPercent: config.handoutPercent,
+    riskThresholds: config.riskThresholds,
+    // Every reservation record, with the percentage points it holds on each bucket right now.
+    reservations: gathered.reservations.map((r) => ({
+      ...r,
+      live: isLive(r),
+      buckets: r.pools.map((pool) => ({
+        // The window's name as Orca reports it, when the bucket is in the current snapshot.
+        pool: quota.buckets.find((b) => b.id === bucketId(r.agent, r.scope, pool))?.pool ?? pool,
+        percentPoints: bufferFor(config.reservations, { agent: r.agent, plan: env.usage[r.agent]?.plan, pool, tier: r.tier, effort: r.effort }),
+      })),
+    })),
+    ...(gathered.ledgerError ? { ledgerError: gathered.ledgerError } : {}),
     evidence: table.sources.evidence,
     placements: placementsView(gathered, env.now),
     orcaAgents: env.orcaAgents ?? null,
@@ -480,11 +573,19 @@ function statusText(s: Status, sources: SnapshotSource[]): string[] {
     lines.push(`  ${name}  ${a.models} models, ${usage}${a.skipped ? ` — skipped: ${a.skipped}` : ''}`);
     if (a.note) lines.push(`  ${' '.repeat(width)}  ${a.note}`);
     for (const p of u?.pools ?? []) {
-      const state = p.expired ? ' (expired)' : p.blocked ? ' (blocked)' : '';
-      lines.push(`    ${p.name.replace(/^bucket:/, '')}: ${percent(p.usedPercent)} used, resets in ${duration(p.resetsAt - now)}, headroom ${headroomText(p.headroom)}${state}`);
+      const reset = p.resetsAt === null ? 'no reset time reported' : `resets in ${duration(p.resetsAt - now)}`;
+      lines.push(`    ${bucketText(p)}; ${reset}`);
     }
   }
-  if (s.handouts.length) lines.push(`hand-outs (last ${s.handoutMinutes}m): ${s.handouts.map((h) => `${h.agent} ${h.model} ${duration(now - h.at)} ago (${h.pools.map((p) => `${p.replace(/^bucket:/, '')} +${s.handoutPercent}%`).join(', ')})`).join('; ')}`);
+  const live = s.reservations.filter((r) => r.live);
+  if (live.length) {
+    lines.push(`reservations (${live.length} counting against quota):`);
+    for (const r of live) {
+      const held = r.buckets.map((b) => `${displayPool(b.pool)} +${pointsText(b.percentPoints)}`).join(', ');
+      lines.push(`  ${r.id}  ${r.agent} ${r.model}  ${r.state.replace(/_/g, ' ')} for ${duration(now - (r.endedAt ?? r.startedAt ?? r.createdAt))}  (${held})`);
+    }
+  }
+  if (s.ledgerError) lines.push(`  warning: the reservation ledger could not be written: ${s.ledgerError}`);
   lines.push('tiers:');
   for (const tier of TIERS) {
     const t = s.tiers[tier];
@@ -492,14 +593,20 @@ function statusText(s: Status, sources: SnapshotSource[]): string[] {
     if (t.pick) {
       const { agent, model, effort, confidence, reason } = t.pick;
       lines.push(`  ${label}  ${agent} · ${model}${effort ? ` · ${effort}` : ''} (${confidence}) — ${reason}`);
-    } else if (t.status === 'wait' && t.waitUntil !== undefined) {
-      lines.push(`  ${label}  all blocked; wait ${duration(t.waitUntil - now)}`);
+    } else if (t.status === 'decide' && t.options) {
+      const until = t.options.wait?.until;
+      const parts = [
+        ...(t.options.wait ? [`wait${until !== undefined ? ` ${duration(until - now)}` : ''}`] : []),
+        ...(t.options.use.length ? [`use ${t.options.use.length} route${t.options.use.length === 1 ? '' : 's'} above the risk threshold`] : []),
+        ...(t.options.lower.length ? [`lower the requirements (${t.options.lower.length} route${t.options.lower.length === 1 ? '' : 's'})`] : []),
+      ];
+      lines.push(`  ${label}  nothing below the risk threshold; your decision: ${parts.join(', ')}`);
     } else {
       lines.push(`  ${label}  no candidates`);
     }
     for (const w of t.warnings) lines.push(`  ${' '.repeat(8)}    warning: ${w}`);
     for (const alt of t.alternatives.slice(0, 3)) {
-      lines.push(`  ${' '.repeat(8)}    alt: ${alt.agent} · ${alt.model}${alt.effort ? ` · ${alt.effort}` : ''}${alt.blocked ? ' (blocked)' : ''} — ${alt.reason}`);
+      lines.push(`  ${' '.repeat(8)}    alt: ${alt.agent} · ${alt.model}${alt.effort ? ` · ${alt.effort}` : ''}${alt.blocked ? ' (exhausted)' : ''} — ${alt.reason}`);
     }
   }
   if (s.banned.length > 0) lines.push(`banned by you: ${s.banned.map((b) => `${b.agent} ${b.model}`).join(', ')}`);
@@ -653,7 +760,7 @@ async function preferCommand(args: string[], io: IO, deps: MainDeps): Promise<nu
       io.out(JSON.stringify({ configPath: configPath(), preferRiskLimit: config.preferRiskLimit, pins: config.pins }, null, 2));
       return;
     }
-    const lines = [`preferred routes (above ${config.preferRiskLimit}% projected usage, switch only to a known within-limit alternative):`];
+    const lines = [`preferred routes (used while their usage, with reserved workers and one more, stays below ${config.preferRiskLimit}%):`];
     for (const tier of TIERS) lines.push(`  ${tier.padEnd(8)}  ${prefLabel(config.pins[tier])}`);
     io.out(lines.join('\n'));
   };
@@ -986,8 +1093,6 @@ Agents used now: ${used.join(', ') || 'none'} (${orca}).`);
 }
 
 // --- formatting -----------------------------------------------------------------------------
-
-const percent = (n: number): string => `${Number.isInteger(n) ? n : n.toFixed(1)}%`;
 
 function duration(ms: number): string {
   if (ms <= 0) return '0m';

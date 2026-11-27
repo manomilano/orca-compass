@@ -8,6 +8,8 @@ const fixtureText = readFileSync(new URL('../fixtures/orca-account-list.json', i
 const fake = (stdout: string, code: number | null = 0): Runner => async () => ({ code, stdout, stderr: '' });
 const fixture = () => JSON.parse(fixtureText);
 const AGENTS = ['antigravity', 'claude', 'codex', 'cursor', 'grok', 'muse'];
+/** The quota identity: a hash of account, runtime and plan, so the ledger holds no account id. */
+const SCOPE = expect.stringMatching(/^[0-9a-f]{12}$/);
 
 describe('readOrcaUsage', () => {
   it('reads the account list with a 20 second timeout', async () => {
@@ -23,7 +25,7 @@ describe('readOrcaUsage', () => {
   it('maps Claude pools and retains the update timestamp', async () => {
     const usage = await readOrcaUsage(fake(fixtureText));
     expect(usage.claude).toEqual({
-      agent: 'claude', status: 'ok', updatedAt: 1793232000000,
+      agent: 'claude', status: 'ok', updatedAt: 1793232000000, scope: SCOPE,
       pools: {
         session: { name: 'session', kind: 'session', usedPercent: 10, windowMinutes: 300, resetsAt: 1793239200000 },
         weekly: { name: 'weekly', kind: 'long', usedPercent: 50, windowMinutes: 10080, resetsAt: 1793282400000 },
@@ -35,7 +37,7 @@ describe('readOrcaUsage', () => {
   it('omits the null Codex session and ignores reset credits', async () => {
     const usage = await readOrcaUsage(fake(fixtureText));
     expect(usage.codex).toEqual({
-      agent: 'codex', status: 'ok', updatedAt: 1793232000000,
+      agent: 'codex', status: 'ok', updatedAt: 1793232000000, scope: SCOPE,
       pools: { weekly: { name: 'weekly', kind: 'long', usedPercent: 20, windowMinutes: 10080, resetsAt: 1793736000000 } },
     });
   });
@@ -52,7 +54,7 @@ describe('readOrcaUsage', () => {
   it('maps Cursor monthly and every named bucket as long pools', async () => {
     const usage = await readOrcaUsage(fake(fixtureText));
     expect(usage.cursor).toEqual({
-      agent: 'cursor', status: 'ok', updatedAt: 1793232000000,
+      agent: 'cursor', status: 'ok', updatedAt: 1793232000000, scope: SCOPE,
       pools: {
         monthly: { name: 'monthly', kind: 'long', usedPercent: 2.5, windowMinutes: 44640, resetsAt: 1795132800000 },
         'bucket:Cursor Models': { name: 'bucket:Cursor Models', kind: 'long', usedPercent: 1.25, windowMinutes: 44640, resetsAt: 1795132800000 },
@@ -72,7 +74,7 @@ describe('readOrcaUsage', () => {
     });
     const usage = await readOrcaUsage(fake(JSON.stringify(data)));
     expect(usage.grok).toEqual({
-      agent: 'grok', status: 'ok', updatedAt: 1793232000000,
+      agent: 'grok', status: 'ok', updatedAt: 1793232000000, scope: SCOPE,
       pools: {
         weekly: { name: 'weekly', kind: 'long', usedPercent: 30, windowMinutes: 10080, resetsAt: 1793500000000 },
         monthly: { name: 'monthly', kind: 'long', usedPercent: 12.5, windowMinutes: 43200, resetsAt: 1795000000000 },
@@ -100,7 +102,7 @@ describe('readOrcaUsage', () => {
     ]);
     const usage = await readOrcaUsage(fake(JSON.stringify(data)));
     expect(usage.antigravity).toEqual({
-      agent: 'antigravity', status: 'ok', updatedAt: 1793232000000,
+      agent: 'antigravity', status: 'ok', updatedAt: 1793232000000, scope: SCOPE,
       pools: {
         'bucket:Gemini Models': { name: 'bucket:Gemini Models', kind: 'long', usedPercent: 10, windowMinutes: 10080, resetsAt: 1793800000000 },
         'bucket:Claude and GPT models': { name: 'bucket:Claude and GPT models', kind: 'long', usedPercent: 30, windowMinutes: 10080, resetsAt: 1793700000000 },
@@ -121,6 +123,8 @@ describe('readOrcaUsage', () => {
       'bucket:Gemini Models 5h': { name: 'bucket:Gemini Models 5h', kind: 'session', usedPercent: 40, windowMinutes: 300, resetsAt: 1793290000000 },
       // The tightest of two buckets in the same group and window.
       'bucket:Gemini Models': { name: 'bucket:Gemini Models', kind: 'long', usedPercent: 15, windowMinutes: 10080, resetsAt: 1793800000000 },
+      // No reset time yet: the window is kept, with no reset time.
+      'bucket:Claude and GPT models': { name: 'bucket:Claude and GPT models', kind: 'long', usedPercent: 5, windowMinutes: 10080, resetsAt: null },
     });
   });
 
@@ -132,6 +136,7 @@ describe('readOrcaUsage', () => {
     const usage = await readOrcaUsage(fake(JSON.stringify(data)));
     expect(usage.antigravity.pools).toEqual({
       session: { name: 'session', kind: 'session', usedPercent: 40, windowMinutes: 300, resetsAt: 1793290000000 },
+      weekly: { name: 'weekly', kind: 'long', usedPercent: 70, windowMinutes: 10080, resetsAt: null },
     });
   });
 
@@ -139,7 +144,7 @@ describe('readOrcaUsage', () => {
     const usage = await readOrcaUsage(fake(fixtureText));
     expect(usage.grok).toMatchObject({ status: 'unavailable', pools: {}, error: 'Not signed in to Grok — run grok login' });
     expect(usage.antigravity).toMatchObject({ status: 'unavailable', pools: {}, error: expect.stringMatching(/agy/) });
-    expect(usage.muse).toEqual({ agent: 'muse', status: 'unknown', pools: {}, error: 'Orca reports no usage for muse' });
+    expect(usage.muse).toEqual({ agent: 'muse', status: 'unknown', pools: {}, scope: SCOPE, error: 'Orca reports no usage for muse' });
   });
 
   it('skips null pools for every provider', async () => {
@@ -159,7 +164,7 @@ describe('readOrcaUsage', () => {
     expect(usage.codex.status).toBe('ok');
   });
 
-  it.each(['error', 'loading', 'stale', undefined])('maps provider status %s to unknown with an error', async (status) => {
+  it.each(['loading', 'stale', undefined])('maps provider status %s to unknown with an error', async (status) => {
     const data = fixture();
     data.result.rateLimits.claude.status = status;
     data.result.rateLimits.claude.error = null;
@@ -168,27 +173,96 @@ describe('readOrcaUsage', () => {
     expect(usage.codex.status).toBe('ok');
   });
 
+  it('keeps the windows Orca retains after a failed refresh, with their old timestamp and the error', async () => {
+    // Orca reports 'error' and keeps its last good windows and their updatedAt: still valid usage, only older.
+    const data = fixture();
+    Object.assign(data.result.rateLimits.claude, { status: 'error', error: 'Claude usage is unavailable.', updatedAt: 1793231000000 });
+    const usage = await readOrcaUsage(fake(JSON.stringify(data)));
+    expect(usage.claude).toMatchObject({ status: 'ok', updatedAt: 1793231000000, error: 'Claude usage is unavailable.' });
+    expect(usage.claude.pools.weekly.usedPercent).toBe(50);
+    // With nothing retained there is no usage: unknown, never an empty 0%.
+    Object.assign(data.result.rateLimits.claude, { session: null, weekly: null, fableWeekly: null });
+    expect((await readOrcaUsage(fake(JSON.stringify(data)))).claude).toMatchObject({ status: 'unknown', pools: {}, error: 'Claude usage is unavailable.' });
+  });
+
   it('maps a missing provider entry to unknown', async () => {
     const data = fixture();
     delete data.result.rateLimits.cursor;
     const usage = await readOrcaUsage(fake(JSON.stringify(data)));
-    expect(usage.cursor).toEqual({ agent: 'cursor', status: 'unknown', pools: {}, error: expect.stringMatching(/.+/) });
+    expect(usage.cursor).toEqual({ agent: 'cursor', status: 'unknown', pools: {}, scope: SCOPE, error: expect.stringMatching(/.+/) });
     expect(usage.claude.status).toBe('ok');
   });
 
-  it('skips pools with non-numeric fields and buckets without a name', async () => {
+  it('#3 #4 keeps a window with a missing number as unknown, never 0, and a missing reset as no reset', async () => {
     const data = fixture();
     const limits = data.result.rateLimits;
     limits.claude.fableWeekly.usedPercent = null;
     limits.claude.weekly.windowMinutes = 'soon';
     limits.claude.session.resetsAt = undefined;
     limits.codex.weekly.usedPercent = Number.NaN;
+    limits.cursor.monthly.usedPercent = -3;
     limits.cursor.buckets[0].name = undefined;
     limits.cursor.buckets[1].name = 42;
     const usage = await readOrcaUsage(fake(JSON.stringify(data)));
-    expect(usage.claude.pools).toEqual({});
-    expect(usage.codex.pools).toEqual({});
+    expect(usage.claude.pools).toEqual({
+      session: { name: 'session', kind: 'session', usedPercent: 10, windowMinutes: 300, resetsAt: null },
+      weekly: { name: 'weekly', kind: 'long', usedPercent: 50, windowMinutes: null, resetsAt: 1793282400000 },
+      fableWeekly: { name: 'fableWeekly', kind: 'long', usedPercent: null, windowMinutes: 10080, resetsAt: 1793282400000 },
+    });
+    expect(usage.codex.pools.weekly.usedPercent).toBeNull();
+    expect(usage.cursor.pools.monthly.usedPercent).toBeNull();
     expect(Object.keys(usage.cursor.pools)).toEqual(['monthly']);
+  });
+
+  it('#1 #4 reads a valid 0% as 0, and a reset time of 0 or null as no reset time', async () => {
+    // As Orca reports an untouched Claude session and unstarted Antigravity groups.
+    const data = fixture();
+    data.result.rateLimits.claude.session = { usedPercent: 0, windowMinutes: 300, resetsAt: null, resetDescription: null };
+    data.result.rateLimits.antigravity = agyUsage([agyBucket('Claude and GPT models', 0, 10080, 0), agyBucket('Claude and GPT models', 0, 300, 0)]);
+    const usage = await readOrcaUsage(fake(JSON.stringify(data)));
+    expect(usage.claude.pools.session).toEqual({ name: 'session', kind: 'session', usedPercent: 0, windowMinutes: 300, resetsAt: null });
+    expect(usage.antigravity.pools).toEqual({
+      'bucket:Claude and GPT models': { name: 'bucket:Claude and GPT models', kind: 'long', usedPercent: 0, windowMinutes: 10080, resetsAt: null },
+      'bucket:Claude and GPT models 5h': { name: 'bucket:Claude and GPT models 5h', kind: 'session', usedPercent: 0, windowMinutes: 300, resetsAt: null },
+    });
+    data.result.rateLimits.claude.weekly.usedPercent = 140;
+    expect((await readOrcaUsage(fake(JSON.stringify(data)))).claude.pools.weekly.usedPercent).toBe(100);
+  });
+
+  it('#29 folds two names of one window into one pool, keeping the tighter known reading', async () => {
+    const data = fixture();
+    data.result.rateLimits.cursor.buckets = [
+      { name: 'Other Models', usedPercent: 6.25, windowMinutes: 44640, resetsAt: 1795132800000 },
+      { name: 'other  models', usedPercent: 9, windowMinutes: 44640, resetsAt: 1795132800000 },
+      { name: 'OTHER MODELS', usedPercent: null, windowMinutes: 44640, resetsAt: 1795132800000 },
+    ];
+    const usage = await readOrcaUsage(fake(JSON.stringify(data)));
+    expect(Object.keys(usage.cursor.pools)).toEqual(['monthly', 'bucket:other  models']);
+    expect(usage.cursor.pools['bucket:other  models'].usedPercent).toBe(9);
+  });
+
+  it('#24 gives each account, runtime and plan its own quota identity, and reports the plan', async () => {
+    const scopeOf = async (edit: (result: ReturnType<typeof fixture>['result']) => void, agent = 'claude') => {
+      const data = fixture();
+      edit(data.result);
+      return (await readOrcaUsage(fake(JSON.stringify(data))))[agent];
+    };
+    const base = await scopeOf(() => {});
+    expect(base.scope).toMatch(/^[0-9a-f]{12}$/);
+    // Reading the same data again is the same identity.
+    expect((await scopeOf(() => {})).scope).toBe(base.scope);
+    const plan = await scopeOf((r) => { r.rateLimits.claude.planType = 'max_20x'; });
+    expect(plan).toMatchObject({ plan: 'max_20x' });
+    const account = await scopeOf((r) => { r.claude = { accounts: [], activeAccountId: 'acct_other' }; });
+    const runtime = await scopeOf((r) => { r.rateLimits.claudeTarget = { runtime: 'wsl', wslDistro: 'Ubuntu' }; });
+    const provenance = await scopeOf((r) => { r.rateLimits.claude.usageMetadata = { authProvenance: 'managed:acct_other' }; });
+    expect(new Set([base.scope, plan.scope, account.scope, runtime.scope, provenance.scope]).size).toBe(5);
+    // Another provider's account does not change this one's identity; each provider has its own.
+    const codexAccount = await scopeOf((r) => { r.codex = { accounts: [], activeAccountId: null, systemDefault: { providerAccountId: 'acct_codex' } }; });
+    expect(codexAccount.scope).toBe(base.scope);
+    expect((await scopeOf(() => {}, 'codex')).scope).not.toBe(base.scope);
+    // The identity is a hash: no account id leaves Orca.
+    expect(JSON.stringify(account)).not.toContain('acct_other');
   });
 
   it('provides an error when an unavailable provider supplies none', async () => {
@@ -212,7 +286,8 @@ describe('readOrcaUsage', () => {
     const usage = await readOrcaUsage(async () => result);
     expect(Object.keys(usage).sort()).toEqual(AGENTS);
     for (const agent of AGENTS) {
-      expect(usage[agent]).toEqual({ agent, status: 'unknown', pools: {}, error: expect.stringMatching(/^Orca not reachable: .+/) });
+      // Unknown, with no pools: a failed read is never an empty 0% (#23).
+      expect(usage[agent]).toEqual({ agent, status: 'unknown', pools: {}, error: expect.stringMatching(/^Orca not reachable: .+/), unreachable: true });
       expect(usage[agent].error).toContain(reason);
     }
   });

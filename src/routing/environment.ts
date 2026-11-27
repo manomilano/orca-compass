@@ -6,14 +6,16 @@ import { cacheDir } from '../paths.js';
 import { findExecutable, runCommand } from '../system/run.js';
 import type { Config, Environment, OrcaAgents, PlacementTable } from '../types.js';
 import { VERSION } from '../version.js';
-import { applyHandouts, liveHandouts, readHandouts, type Handout } from './handouts.js';
+import { syncReservations, workerStatesFor } from './allocate.js';
+import { isLive, type Reservation } from './quota.js';
 import { readOrcaAgents } from './orca-settings.js';
 import { readOrcaUsage } from './orca-usage.js';
 import { activeRejections } from './rejection.js';
 import { readRejections } from './rejections.js';
 
 // Part 2 of OrcaCompass: the placement table (rebuilt only when stale) plus what changes between
-// calls: Orca's usage, Orca's agent switches, and the models agents refused at launch.
+// calls: Orca's usage, the reservations of allocated workers, Orca's agent switches, and the models agents
+// refused at launch.
 
 export type GatherDeps = Partial<AgentDeps & {
   fetchImpl: typeof fetch;
@@ -29,7 +31,10 @@ export type GatherDeps = Partial<AgentDeps & {
 
 export interface Gathered {
   env: Environment;
-  handouts: Handout[];
+  /** Every reservation record in the ledger, live or recently ended, after reconciling with this call's usage. */
+  reservations: Reservation[];
+  /** Set when the reservation ledger could not be written. */
+  ledgerError?: string;
   table: PlacementTable;
   /** Why the table was rebuilt on this call; undefined when the cached one was used. */
   rebuilt: Staleness | 'refresh' | undefined;
@@ -38,7 +43,7 @@ export interface Gathered {
 }
 
 /** The cached table when it is fresh, else a rebuilt one. */
-export async function loadPlacements(config: Config, deps: GatherDeps = {}): Promise<Omit<Gathered, 'env' | 'handouts'>> {
+export async function loadPlacements(config: Config, deps: GatherDeps = {}): Promise<Omit<Gathered, 'env' | 'reservations' | 'ledgerError'>> {
   const now = deps.now ?? Date.now();
   const find = deps.find ?? findExecutable;
   const dir = deps.cacheDir ?? cacheDir();
@@ -62,20 +67,24 @@ export async function loadPlacements(config: Config, deps: GatherDeps = {}): Pro
 export async function gather(config: Config, deps: GatherDeps = {}): Promise<Gathered> {
   const now = deps.now ?? Date.now();
   const run = deps.run ?? runCommand;
-  const [placements, usage, orcaAgents] = await Promise.all([
+  const dir = deps.cacheDir ?? cacheDir();
+  const [placements, reported, orcaAgents, workers] = await Promise.all([
     loadPlacements(config, { ...deps, now }),
     readOrcaUsage(run),
     (deps.readOrcaAgents ?? readOrcaAgents)(),
+    workerStatesFor(run, dir),
   ]);
   const { table } = placements;
-  const handouts = liveHandouts(readHandouts(deps.readFile ?? readTextFile, deps.cacheDir ?? cacheDir()), now, config.handoutMinutes);
+  // Reported usage is never adjusted. Reservations travel next to it and the quota view is rebuilt from both.
+  const synced = syncReservations(reported, now, config, dir, workers);
   const rejections = activeRejections(readRejections(deps.readFile ?? readTextFile, deps.cacheDir ?? cacheDir()), now, config.rejectionTtlHours);
   const env: Environment = {
     now,
     bands: table.bands,
     ...(table.topBands ? { topBands: table.topBands } : {}),
     discoveries: table.agents,
-    usage: applyHandouts(usage, handouts, config.handoutPercent),
+    usage: synced.usage,
+    reservations: synced.reservations.filter(isLive),
     orcaAgents,
     placementsBuiltAt: table.builtAt,
     evidenceSource: table.sources.evidence.source,
@@ -84,7 +93,7 @@ export async function gather(config: Config, deps: GatherDeps = {}): Promise<Gat
     scoreSource: table.sources.evidence.source,
     ...(rejections.length > 0 ? { rejections } : {}),
   };
-  return { env, handouts, ...placements };
+  return { env, reservations: synced.reservations, ...(synced.error ? { ledgerError: synced.error } : {}), ...placements };
 }
 
 export async function gatherEnvironment(config: Config, deps: GatherDeps = {}): Promise<Environment> {

@@ -30,12 +30,12 @@ terminal; it asks the same questions.
    added agent with `enabledInOrca: "no"` must also be switched on in Orca's
    settings; say so.
 3. **Favorites (optional).** For each tier in `tiers`, show `pick`,
-   `preferred`, and `options` (agent, model, `onPacePercent`, `blocked`), and
-   ask whether to set a favorite. An available, unblocked favorite is used.
-   When it is on pace to exceed `config.preferRiskLimit` percent of a usage
-   window (default `defaultPreferRiskLimit`, 100), choose the best unblocked
-   qualifying alternative with known usage within the limit. If none exists,
-   retain the favorite and report the risk in the route output. Apply with
+   `preferred`, and `options` (agent, model, `usagePercent`, `blocked`), and
+   ask whether to set a favorite. `usagePercent` is the route's usage with the
+   workers already reserved and one more. A favorite is used while that stays
+   below `config.preferRiskLimit` percent (default `defaultPreferRiskLimit`,
+   90) on every quota it draws on, and never when a quota is exhausted;
+   otherwise routing goes on without it and the route output says why. Apply with
    `orcacompass prefer <tier> <agent> <model>` (the option's `model`),
    `orcacompass prefer clear <tier>`, and, if the user wants another limit,
    `orcacompass prefer --risk-limit <percent>`.
@@ -74,9 +74,9 @@ Use the commands above to write the config; never edit the file yourself.
   `orcacompass ban <model-or-family>...` (`orcacompass unban` lifts it). For a
   whole agent use `orcacompass agents disable <id>` instead.
 - A route's `warnings` may say a preference was skipped, for example
-  `preferred codex gpt-6.1-terra skipped: weekly on pace for 150% (limit 100%),
-  resets in 2d`. Tell the user that line: their preference would have used more
-  than the limit before the window resets, so another route was chosen.
+  `preferred codex gpt-6.1-terra skipped: weekly would be 90.5% used with this
+  worker (limit 90%); resets in 2d`. Tell the user that line: their preference
+  is at its limit on that quota, so another route was chosen.
 - An agent the user has not enabled in Orca is never routed (`not enabled in
   Orca`). Do not work around it; tell the user to enable it in Orca's settings
   if they want it. If `agents` reports the Orca setting as `unknown`, say so:
@@ -170,15 +170,16 @@ Costly failure calls for tests and review in the task spec, not only more
 thinking. Do not lower demand because the model is strong: a Light model can
 get `high` and a Frontier model `low`.
 
-Pass `--demand <d>`; OrcaCompass maps it to an effort the chosen model
-supports and reports what it applied.
+Pass `--demand <d>`; OrcaCompass maps it to an effort and routes only to
+models that can apply that effort or the next higher one they offer. A model
+that tops out below it is not eligible: effort is never lowered silently.
 
 Pass `--effort <e>` only when the user asked for a specific effort. Valid
 levels are `none`, `minimal`, `low`, `medium`, `high`, `xhigh` (also spelled
 `extra-high`) and `max`; anything else, such as `ultra`, exits 1. It is never
-snapped: routes that cannot apply it are left out, and if no route in the tier
-can, `status` is `none` with the levels each route offers. Ask the user before
-relaxing or removing their explicit effort requirement.
+snapped: routes that cannot apply it are left out, and if no route can,
+`status` is `decide` with the levels each route offers under `options.lower`.
+Ask the user before relaxing or removing their explicit effort requirement.
 
 ## Route, then launch
 
@@ -191,9 +192,9 @@ relaxing or removing their explicit effort requirement.
 
    `--demand` takes `low`, `moderate`, `high` or `exceptional`. Restrict agents
    with repeated `--agent <id>` or `--exclude-agent <id>`. Use `--effort <e>` only
-   for an effort the user asked for; `--no-downgrade` prevents capability
-   shortfalls and Cursor auto fallback. A cheaper cost tier that covers the
-   needs is still allowed. Agent ids are `claude`, `codex`, `cursor`,
+   for an effort the user asked for. Capability needs and effort are never
+   lowered automatically; a cheaper cost tier that covers the needs is always
+   allowed. `--dry-run` decides without reserving quota. Agent ids are `claude`, `codex`, `cursor`,
    `grok`, `antigravity`, `opencode`, and `muse` (routed from a built-in model list, since
    neither Muse nor Orca lists Muse models). An unknown id adds a warning with a likely match
    (`did you mean cursor?`); fix the id and route again.
@@ -205,15 +206,19 @@ relaxing or removing their explicit effort requirement.
    If the user specifies an exact model, honor that choice directly; the CLI
    has no model selection flag.
 
-3. Compare all qualifying routes across cost tiers. Among unblocked routes,
-   known usage takes priority. A pool blocks only at 100% reported usage.
-   OrcaCompass ranks covering routes by headroom in points, minus a price
-   adjustment of up to five points and, for automatic effort, 2.5 points per
-   downward effort step from the target. Use its selected route; explicit
-   `--effort` filters instead of applying an effort penalty.
+3. OrcaCompass routes by quota first, on what is known now, never on a
+   forecast. A route is eligible only when its model meets all three needs and
+   can apply the effort. For every quota bucket a route draws on (provider,
+   account and usage window) it adds up `reported` usage, what is `reserved`
+   for workers already allocated, and the `buffer` this worker would reserve:
+   the `prospective` usage. The bucket with the most capacity left comes
+   first; in it the most economical eligible route below the risk threshold is
+   taken. Below 85% is available, 85% to below 90% is caution (used only when
+   nothing is available, with a warning), 90% and above is never routed
+   automatically. A quota is exhausted only at 100% reported usage.
    Parse JSON and inspect `status`, `reasons`, `warnings`, `confidence`,
-   `downgraded`, `upgraded`, and `effort`. Exit code 0 alone does not mean a
-   route exists.
+   `quota`, `downgraded`, `upgraded`, and `effort`. Exit code 0 alone does
+   not mean a route exists.
 4. For `status: "ok"`, append the returned `launchArgs` array to:
 
    ```sh
@@ -225,14 +230,29 @@ relaxing or removing their explicit effort requirement.
    string is a readable template with a `<task>` placeholder, not task content.
    `route` contains agent/model/effort; Cursor effort is encoded in its model id,
    so `route.effort` is null and its `launchArgs` omit `--effort`. The same
-   holds for Antigravity Gemini ids such as `gemini-3.8-flash-high`. Cursor `auto` is a fallback, not a recommendation: Cursor picks the model
-   when no named model could be routed.
+   holds for Antigravity Gemini ids such as `gemini-3.8-flash-high`. Cursor `auto` is never routed on its own: Cursor picks the model,
+   so it only appears as an option under `options.lower`.
+
+   An `ok` route has already reserved its quota: `reservation.id` names it,
+   and other route calls, in any process, count it from now on. Start the
+   worker promptly; a reservation nobody confirms is abandoned after
+   `reservations.pendingMinutes` (default 10). If you decide not to launch,
+   give it back at once:
+
+   ```sh
+   orcacompass release --reservation <reservation.id> --outcome failed-before-launch
+   ```
 5. Right after `worker-start` returns a `dispatchId`, check that the agent
    accepted the model:
 
    ```sh
-   orcacompass verify --dispatch <dispatchId> --json
+   orcacompass verify --dispatch <dispatchId> --reservation <reservation.id> --json
    ```
+
+   This also settles the reservation: a worker that started is marked
+   running, a refused model releases its quota at once. Without
+   `--reservation` the worker is matched to the pending reservation for the
+   same agent and model.
 
    Orca does not check this: `worker-start` reports the requested model as
    effective even when the agent cannot use it. Codex and Claude then print a
@@ -268,29 +288,51 @@ relaxing or removing their explicit effort requirement.
 
    Follow the `next` list it returns. Never start the replacement before the
    cleanup succeeded, and never stop a worker `verify` called `started`.
+6. When a worker reports `worker_done`, or you stop it, end its reservation:
+
+   ```sh
+   orcacompass release --dispatch <dispatchId>
+   ```
+
+   Add `--outcome cancelled` for a worker you stopped after it had worked. The
+   quota stays reserved until Orca's next real usage refresh covers what the
+   worker consumed, then it is released by itself; nothing accumulates. A
+   worker you forget to release is closed when Orca reports it finished.
 
 ## Handle the result
 
-- `downgraded: true`: mention the downgrade and reason in the worker task spec.
-  Effort is not raised to make up for the weaker model; narrow the task or add
-  checks, as the warning says.
+- `downgraded: true`: only for a route you or the user chose that falls short
+  of the needs (`--use`, or a preferred model). Mention it and the reason in the
+  worker task spec. Effort is not raised to make up for the weaker model;
+  narrow the task or add checks, as the warning says.
 - `effort`: `applied` says how effort reaches the worker (`flag`, `model-id`,
   or `provider-default` when the agent decides). Never claim an effort was set
   when `applied` is `provider-default`.
-- `effort.adjusted: true`: the selected route cannot apply the exact target.
-  Report the target and resolved effort when relevant, especially for
-  `exceptional` demand. Do not reroute solely because of the adjustment;
-  OrcaCompass already accounts for downward effort steps in its ranking.
+- `effort.adjusted: true`: the selected route does not offer the exact target
+  and applies the next higher effort it has (a lower one only when neither
+  `--demand` nor `--effort` was given). Report the target and resolved effort
+  when relevant. Do not reroute because of it.
 - A warning `… is a last-resort agent (lastResortAgents) …`: the route costs
   money per token or runs on this machine; tell the user before launching
   several workers on it.
 - `upgraded: true`: surface the warning. The covering pick's cost tier is
   higher than the requested tier because no cheaper route covers the job.
-- A quota or forecast warning means the selected route is close to its
-  usage limit or expected to exceed the configured forecast threshold.
-  Relay the warning to the user.
-- `status: "wait"`: inspect `waitUntil` (epoch milliseconds); wait until reset
-  or retry without `--no-downgrade` if user constraints permit a downgrade.
+- A warning `<window> quota would be N% used with this worker (caution)`: the
+  route is in the caution range because nothing was available below it. Relay
+  the warning and keep the job small.
+- `status: "decide"`: no suitable route is below the risk threshold, and
+  nothing was picked for you. Read `options` and choose, asking the user when
+  the choice is theirs:
+  - **WAIT** (`options.wait`): for the quota to reset or for a fresh usage
+    snapshot to free reserved capacity. `until` (epoch milliseconds) is there
+    only when Orca reports a reset time; never invent a waiting time.
+  - **USE** (`options.use`): a suitable route at high usage. Take it with its
+    `use` flag on the same route call, for example
+    `--use claude/claude-opus-5-5`. It is refused when the quota is exhausted.
+  - **LOWER** (`options.lower`): routes that take the job with lower
+    requirements; `shortfall` says what each lacks. Route again with a lower
+    `--need` or `--demand`, or take one as it is with its `use` flag.
+  Do not launch on `decide`: there are no `launchArgs`.
 - `status: "none"`: state that no recommendation was available. Use Orca's
   normal defaults only where they respect explicit user constraints; preserve
   any explicit agent or model choice. If no route can honor an explicit effort,
@@ -300,11 +342,13 @@ relaxing or removing their explicit effort requirement.
   only if it can honor explicit user constraints; otherwise ask before launching.
 - Exit 1 means a command usage or runtime error; fix the command or report it. Exit 2 means invalid config;
   report `config error: <path>: <message>` and resolve it before retrying.
-- Low confidence: surface that usage is unknown or more than 4x
-  `usageStaleMinutes` old. Medium confidence can mean usage is moderately stale;
-  the reason then notes its age ("usage 45m old"). Stale usage still blocks.
-  Do not invent headroom or percentages. `catalogSource` is `network`, `cache`,
-  or `snapshot`.
+- Low confidence: usage is unknown (Orca gave none, the snapshot is more than
+  4x `usageStaleMinutes` old, or a window reset since it was taken). The route
+  was then taken without a quota check, and a warning says so. Medium
+  confidence means the snapshot is moderately stale ("usage 45m old") or is the
+  last one OrcaCompass kept because Orca could not be read. Unknown usage is
+  never read as 0% or as exhausted. Do not invent percentages. `catalogSource`
+  is `network`, `cache`, or `snapshot`.
 - `evidenceSource: "snapshot"` means the bundled evidence was used; run
   `orcacompass refresh` when online. Profiles use raw LLMBenchmark evidence;
   evidence class is the highest axis band. Cost tier comes from a user override,
@@ -319,8 +363,11 @@ relaxing or removing their explicit effort requirement.
   `(daily cost tier)`, for example. Cursor auto has no quality or cost tier;
   `ranking` and `tiers` list it as `unranked` with no price, and it never
   competes with ranked models in any cost tier.
+- `quota` holds, for each bucket the route draws on, `reported`, `reserved`,
+  `effective`, `buffer` and `prospective` usage and its status; `buckets`
+  lists every quota bucket considered, most capacity left first.
 
-Use `orcacompass status --json` to inspect discovery, pools, and skipped agents
+Use `orcacompass status --json` to inspect discovery, pools, live reservations, and skipped agents
 (each skipped agent carries its reason, such as `excluded by config` or
 `not enabled in Orca`, and banned models show as `banned by you`, models an
 agent refused at launch as `refused by <agent> …`; `orcacompass rejected`
@@ -330,6 +377,7 @@ table, and `orcacompass tiers --axis coding` to inspect evidence bands.
 Send only the short classification explanation via `--tier-reason`. Keep the full task specification and repository
 contents in the worker launch.
 
-Recent hand-outs are remembered and applied to usage, so spreading workers
-by hand over `alternatives` is unnecessary. Alternatives carry no `launchArgs`;
-route again with `--agent` if choosing one explicitly.
+Every route reserves its worker's share of each quota until a fresh usage
+snapshot covers it, so spreading workers by hand over `alternatives` is
+unnecessary. Alternatives carry no `launchArgs`; route again with `--agent`
+if choosing one explicitly.

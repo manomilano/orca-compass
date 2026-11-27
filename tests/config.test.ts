@@ -37,20 +37,32 @@ describe('DEFAULT_CONFIG', () => {
       denyAgents: [],
       pins: {},
       tierOverrides: {},
-      thresholds: { longPercent: 95, sessionPercent: 90 },
       defaultEffort: { light: 'low', daily: 'medium', advanced: 'medium', frontier: 'high' },
       effortPolicy: 'balanced',
       costBands: [1, 5, 12],
-      handoutMinutes: 10,
-      handoutPercent: 5,
       evidenceTtlHours: 24,
       placementsTtlHours: 5,
       usageStaleMinutes: 30,
       rejectionTtlHours: 168,
       excludeNoZdr: false,
       cursorAuto: true,
-      preferRiskLimit: 100,
-      usageRiskLimit: 90,
+      preferRiskLimit: 90,
+      riskThresholds: { cautionPercent: 85, highPercent: 90 },
+      reservations: {
+        // Percentage points per worker and quota bucket: rows are buffer tiers, columns efforts.
+        buffers: {
+          minimal: { low: 0.5, medium: 0.5, high: 0.75, xhigh: 1 },
+          light: { low: 0.5, medium: 1, high: 1.25, xhigh: 1.5 },
+          daily: { low: 1, medium: 1.5, high: 1.75, xhigh: 2 },
+          advanced: { low: 1.5, medium: 2, high: 2.5, xhigh: 3 },
+          frontier: { low: 2, medium: 2.5, high: 3, xhigh: 3.5 },
+        },
+        overrides: [],
+        modelTiers: {},
+        pendingMinutes: 10,
+        settleSeconds: 60,
+        maxRunningHours: 24,
+      },
       banModels: [],
       lastResortAgents: ['opencode'],
     });
@@ -75,10 +87,10 @@ describe('loadConfig', () => {
   });
 
   it('deep-merges the file over the defaults', () => {
-    write('{"denyAgents":["cursor"],"thresholds":{"longPercent":90}}');
+    write('{"denyAgents":["cursor"],"riskThresholds":{"cautionPercent":80}}');
     const cfg = loadConfig();
     expect(cfg.denyAgents).toEqual(['cursor']);
-    expect(cfg.thresholds).toEqual({ longPercent: 90, sessionPercent: 90 });
+    expect(cfg.riskThresholds).toEqual({ cautionPercent: 80, highPercent: 90 });
     expect(cfg.defaultEffort).toEqual(DEFAULT_CONFIG.defaultEffort);
   });
 
@@ -89,8 +101,7 @@ describe('loadConfig', () => {
       tierOverrides: { 'grok-4.7': 'advanced' },
       defaultEffort: { light: 'minimal' },
       costBands: [0.5, 4, 10],
-      handoutMinutes: 0,
-      handoutPercent: 12.5,
+      riskThresholds: { cautionPercent: 70, highPercent: 82.5 },
       evidenceTtlHours: 1,
       usageStaleMinutes: 15,
       excludeNoZdr: true,
@@ -101,7 +112,7 @@ describe('loadConfig', () => {
     expect(cfg.pins.frontier).toEqual({ agent: 'claude', model: 'claude-fable-5-1' });
     expect(cfg.tierOverrides).toEqual({ 'grok-4.7': 'advanced' });
     expect(cfg.defaultEffort).toEqual({ ...DEFAULT_CONFIG.defaultEffort, light: 'minimal' });
-    expect(cfg).toMatchObject({ costBands: [0.5, 4, 10], handoutMinutes: 0, handoutPercent: 12.5, evidenceTtlHours: 1, usageStaleMinutes: 15, excludeNoZdr: true, cursorAuto: false });
+    expect(cfg).toMatchObject({ costBands: [0.5, 4, 10], riskThresholds: { cautionPercent: 70, highPercent: 82.5 }, evidenceTtlHours: 1, usageStaleMinutes: 15, excludeNoZdr: true, cursorAuto: false });
   });
 
   it('ignores the retired priceThresholds key', () => {
@@ -121,7 +132,7 @@ describe('loadConfig', () => {
     ]);
   });
 
-  it.each([['costBands', [5, 1, 12]], ['costBands', [1, 5]], ['costBands', ['1', 5, 12]], ['costBands', [-1, 5, 12]], ['costBands', [1, 1, 12]], ['costBands', [1, 5, 1e309]], ['costBands', null], ['handoutMinutes', -1]])('reports invalid %s', (key, value) => {
+  it.each([['costBands', [5, 1, 12]], ['costBands', [1, 5]], ['costBands', ['1', 5, 12]], ['costBands', [-1, 5, 12]], ['costBands', [1, 1, 12]], ['costBands', [1, 5, 1e309]], ['costBands', null], ['usageStaleMinutes', -1]])('reports invalid %s', (key, value) => {
     write(JSON.stringify({ [key]: value }));
     expect(configErrorOf(() => loadConfig()).message).toContain(key);
   });
@@ -144,9 +155,43 @@ describe('loadConfig', () => {
 
   it('does not let a loaded config mutate the defaults', () => {
     write('{"denyAgents":["cursor"]}');
-    loadConfig().thresholds.longPercent = 1;
-    expect(DEFAULT_CONFIG.thresholds.longPercent).toBe(95);
+    const loaded = loadConfig();
+    loaded.riskThresholds.cautionPercent = 1;
+    loaded.reservations.buffers.frontier.xhigh = 99;
+    loaded.reservations.overrides.push({ agent: 'claude', scale: 2 });
+    expect(DEFAULT_CONFIG.riskThresholds.cautionPercent).toBe(85);
+    expect(DEFAULT_CONFIG.reservations.buffers.frontier.xhigh).toBe(3.5);
+    expect(DEFAULT_CONFIG.reservations.overrides).toEqual([]);
     expect(DEFAULT_CONFIG.denyAgents).toEqual([]);
+  });
+
+  it('merges reservation buffers cell by cell and reads overrides, model rows and timings', () => {
+    write(JSON.stringify({
+      reservations: {
+        buffers: { daily: { high: 2.25 }, minimal: { low: 0.25 } },
+        overrides: [{ agent: 'claude', plan: 'max_5x', pool: 'session', scale: 3 }, { pool: 'bucket:Other Models', buffers: { frontier: { xhigh: 5 } } }],
+        modelTiers: { 'claude-haiku-5-5': 'minimal', 'gpt-luna': 'minimal' },
+        pendingMinutes: 5, settleSeconds: 120, maxRunningHours: 6,
+      },
+    }));
+    const { reservations } = loadConfig();
+    // Only the named cells change; the rest of the table keeps its defaults.
+    expect(reservations.buffers.daily).toEqual({ low: 1, medium: 1.5, high: 2.25, xhigh: 2 });
+    expect(reservations.buffers.minimal).toEqual({ low: 0.25, medium: 0.5, high: 0.75, xhigh: 1 });
+    expect(reservations.buffers.frontier).toEqual(DEFAULT_CONFIG.reservations.buffers.frontier);
+    expect(reservations.overrides).toEqual([{ agent: 'claude', plan: 'max_5x', pool: 'session', scale: 3 }, { pool: 'bucket:Other Models', buffers: { frontier: { xhigh: 5 } } }]);
+    expect(reservations.modelTiers).toEqual({ 'claude-haiku-5-5': 'minimal', 'gpt-luna': 'minimal' });
+    expect(reservations).toMatchObject({ pendingMinutes: 5, settleSeconds: 120, maxRunningHours: 6 });
+  });
+
+  it('ignores the keys of the removed headroom projection and flat hand-out buffer, with a warning each', () => {
+    write('{"thresholds":{"longPercent":90},"usageRiskLimit":80,"handoutMinutes":5,"handoutPercent":"x","preferRiskLimit":95}');
+    const warnings: string[] = [];
+    const cfg = loadConfig(undefined, (m) => warnings.push(m));
+    expect(cfg).toEqual({ ...DEFAULT_CONFIG, preferRiskLimit: 95 });
+    expect(warnings).toEqual(['thresholds', 'usageRiskLimit', 'handoutMinutes', 'handoutPercent']
+      .map((key) => `${key} is no longer used (usage is no longer projected; see riskThresholds and reservations)`));
+    for (const key of ['thresholds', 'usageRiskLimit', 'handoutMinutes', 'handoutPercent']) expect(cfg).not.toHaveProperty(key);
   });
 
   it('rejects invalid JSON with a message starting with the path', () => {
@@ -180,9 +225,22 @@ describe('loadConfig', () => {
       'null',
       '{"denyAgents":"cursor"}',
       '{"allowAgents":[1]}',
-      '{"thresholds":{"longPercent":"95"}}',
-      '{"thresholds":5}',
-      '{"handoutMinutes":-1}',
+      '{"riskThresholds":{"cautionPercent":"85"}}',
+      '{"riskThresholds":5}',
+      '{"riskThresholds":{"highPercent":120}}',
+      '{"riskThresholds":{"cautionPercent":95,"highPercent":90}}',
+      '{"reservations":[]}',
+      '{"reservations":{"buffers":{"huge":{"low":1}}}}',
+      '{"reservations":{"buffers":{"daily":{"max":1}}}}',
+      '{"reservations":{"buffers":{"daily":{"low":-1}}}}',
+      '{"reservations":{"buffers":{"daily":{"low":"1"}}}}',
+      '{"reservations":{"overrides":{}}}',
+      '{"reservations":{"overrides":[{"agent":"claude"}]}}',
+      '{"reservations":{"overrides":[{"pool":"","scale":2}]}}',
+      '{"reservations":{"overrides":[{"scale":-1}]}}',
+      '{"reservations":{"modelTiers":{"claude-haiku-5-5":"tiny"}}}',
+      '{"reservations":{"pendingMinutes":"10"}}',
+      '{"reservations":{"settleSeconds":-1}}',
       '{"placementsTtlHours":-1}',
       '{"placementsTtlHours":"5"}',
       '{"usageStaleMinutes":-1}',
@@ -194,7 +252,6 @@ describe('loadConfig', () => {
       '{"tierOverrides":[]}',
       '{"preferRiskLimit":-1}',
       '{"preferRiskLimit":"100"}',
-      '{"usageRiskLimit":"90"}',
       '{"banModels":"grok"}',
       '{"lastResortAgents":"opencode"}',
     ]) {

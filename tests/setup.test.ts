@@ -93,7 +93,7 @@ describe('setup --json', () => {
     expect(await main(['setup', '--json'], io, deps)).toBe(0);
     const j = JSON.parse(stdout.join('\n'));
     expect(Object.keys(j)).toEqual(['configPath', 'configExists', 'orcaAgents', 'config', 'defaultPreferRiskLimit', 'agents', 'tiers', 'families']);
-    expect(j).toMatchObject({ configPath: configPath(), configExists: true, defaultPreferRiskLimit: 100 });
+    expect(j).toMatchObject({ configPath: configPath(), configExists: true, defaultPreferRiskLimit: 90 });
     expect(j.orcaAgents).toEqual({ known: true, disabled: ['cursor'], source: '/fake/orca/profile-state.db' });
     expect(j.config).toEqual({ allowAgents: null, ...CONFIGURED });
 
@@ -125,7 +125,7 @@ describe('setup --json', () => {
       for (const o of t.options as unknown[]) {
         expect(o).toEqual({
           agent: expect.any(String), model: expect.any(String), blocked: expect.any(Boolean),
-          onPacePercent: expect.toBeOneOf([null, expect.any(Number)]), reason: expect.any(String),
+          usagePercent: expect.toBeOneOf([null, expect.any(Number)]), reason: expect.any(String),
         });
       }
       expect(t.warnings).toEqual(expect.any(Array));
@@ -135,7 +135,7 @@ describe('setup --json', () => {
       preferred: { agent: 'claude', model: 'claude-sonnet-5-5' },
       // Sonnet covers Advanced needs at Daily cost; older Opus 5 shares Opus 5.5's cost tier and is hidden.
       options: expect.arrayContaining(['claude-sonnet-5-5', 'claude-opus-5-5'].map((model) =>
-        expect.objectContaining({ agent: 'claude', model, blocked: false, onPacePercent: 55 }))),
+        expect.objectContaining({ agent: 'claude', model, blocked: false, usagePercent: 52 }))),
     });
     expect(j.tiers.light.preferred).toBeNull();
 
@@ -203,16 +203,17 @@ describe('setup wizard', () => {
     expect(screen).toMatch(/^ {2}#\s+agent\s+installed\s+enabled in Orca\s+Orca usage\s+models$/m);
     expect(screen).toMatch(/^ {2}3\s+cursor\s+yes\s+no\s+ok\s+\d+$/m);
     expect(screen).toMatch(/Use which agents\? Numbers or names, separated by commas \[claude, codex\]: /);
-    expect(screen).toMatch(/100% \(the default\) projected usage, a known within-limit alternative replaces it/);
+    expect(screen).toMatch(/stays below 90% \(the default\) on every quota it draws on/);
     expect(screen).toMatch(/Set favorites\? \[y\/N\]: /);
     expect(screen).toMatch(/^ {2}\d+\s+claude-haiku\s+claude-haiku-5-5, /m);
     expect(screen).toMatch(/^Agents used: claude, codex$/m);
     expect(screen).toMatch(/^Not used: cursor \(not enabled in Orca\), grok \(not signed in or unavailable\), /m);
     expect(screen).toMatch(/^Favorites: none; every tier takes the route with the most room$/m);
     expect(screen).toMatch(/^Never used: nothing$/m);
-    expect(screen).toMatch(/^ {2}light\s+claude · claude-haiku-5-5 · low$/m);
-    expect(screen).toMatch(/^ {2}frontier\s+claude · claude-opus-5-5 · high \(advanced cost tier\)$/m);
-    expect(screen).toMatch(/^ {2}advanced\s+claude · claude-sonnet-5-5 · medium \(daily cost tier\)$/m);
+    // Codex's weekly quota has more room left (80%) than Claude's (50%), so every tier starts there.
+    expect(screen).toMatch(/^ {2}light\s+codex · gpt-6-luna · low$/m);
+    expect(screen).toMatch(/^ {2}frontier\s+codex · gpt-6-astra · high$/m);
+    expect(screen).toMatch(/^ {2}advanced\s+codex · gpt-6\.1-sol · medium \(daily cost tier\)$/m);
     expect(screen).toMatch(new RegExp(`Saved ${escape(configPath())}$`, 'm'));
     expect(config()).toEqual({});
   });
@@ -223,8 +224,8 @@ describe('setup wizard', () => {
     const { code, screen } = await wizard(['1', 'y', '', '', '1', '', '120%', '2, grok-9', 'y']);
     expect(code).toBe(0);
     expect(screen).toMatch(/^Advanced: now claude · claude-sonnet-5-5 · medium; favorite: none$/m);
-    expect(screen).toMatch(/^ {2}1\s+claude claude-sonnet-5-5\s+on pace for 55%$/m);
-    expect(screen).toMatch(/^Favorites: Advanced claude claude-sonnet-5-5; above 120%, switch only to a known within-limit alternative$/m);
+    expect(screen).toMatch(/^ {2}1\s+claude claude-sonnet-5-5\s+52% used with one more worker$/m);
+    expect(screen).toMatch(/^Favorites: Advanced claude claude-sonnet-5-5; used while their usage stays below 120%$/m);
     expect(screen).toMatch(/^Never used: claude-haiku, grok-9$/m);
     // Haiku is banned and Codex is off; the next cost tier is Daily Sonnet 5.5.
     expect(screen).toMatch(/^ {2}light\s+claude · claude-sonnet-5-5 · low \(upgraded to daily\)$/m);
@@ -250,11 +251,11 @@ describe('setup wizard', () => {
     const { code, screen } = await wizard(['', '', '', '', '', '', '', '']);
     expect(code).toBe(0);
     expect(screen).toMatch(/Use which agents\? Numbers or names, separated by commas \[claude\]: /);
-    expect(screen).toMatch(/120% \(the default is 100%\)/);
+    expect(screen).toMatch(/120% \(the default is 90%\)/);
     expect(screen).toMatch(/Set favorites\? \[Y\/n\]: /);
     expect(screen).toMatch(/^Advanced: now claude · claude-sonnet-5-5 · medium; favorite: claude claude-sonnet-5-5$/m);
     expect(screen).toMatch(/Favorite for Advanced\? Number, 0 for none \[keep\]: /);
-    expect(screen).toMatch(/more than what percent\? \[120\]: /);
+    expect(screen).toMatch(/would reach what percent\? \[120\]: /);
     expect(screen).toMatch(/"none" for no bans \[claude-haiku\]: /);
     expect(screen).toMatch(/^Nothing changed\. Config: /m);
     expect(screen).not.toMatch(/Save to/);

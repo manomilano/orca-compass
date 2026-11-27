@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readTextFile } from '../src/placements/agents/deps.js';
-import { fakeDeps, fixture, NOW, orcaDownRunner, runner } from './helpers/fakes.js';
+import { fakeDeps, fakeRunner, fixture, NOW, orcaDownRunner, orcaFixture, runner } from './helpers/fakes.js';
 import { createHash } from 'node:crypto';
 import { EVIDENCE_MANIFEST_URL } from '../src/evidence/source.js';
 import type { Runner } from '../src/system/run.js';
@@ -82,7 +82,7 @@ describe('route', () => {
     expect(stdout).toEqual([]);
   });
 
-  it('accepts reordered needs and preserves quality, sources and hand-outs', async () => {
+  it('accepts reordered needs, preserves quality and sources, and reserves the route', async () => {
     expect(await main(['route', '--need', 'reasoning=low,coding=high,agentic=mid', '--json'], io, deps)).toBe(0);
     const d = JSON.parse(out());
     expect(d).toMatchObject({ needs: { coding: 'high', agentic: 'mid', reasoning: 'low' }, needsSource: 'need', evidenceSource: 'snapshot', scoreSource: 'snapshot', catalogSource: 'snapshot', placementsBuiltAt: NOW });
@@ -90,9 +90,10 @@ describe('route', () => {
     for (const quality of [d.quality, ...d.alternatives.map((a: { quality: unknown }) => a.quality)]) {
       expect(quality.axes.coding).toMatchObject({ score: expect.any(Number), band: expect.any(String), evidence: expect.any(String), benchmarks: expect.any(Number), need: 'high', cut: 82 });
     }
-    const entries = JSON.parse(readFileSync(join(process.env.ORCACOMPASS_HOME!, 'cache', 'handouts.json'), 'utf8')).handouts;
-    expect(entries).toHaveLength(1);
-    expect(entries[0].needs).toEqual(d.needs);
+    const { reservations } = JSON.parse(readFileSync(join(process.env.ORCACOMPASS_HOME!, 'cache', 'reservations.json'), 'utf8'));
+    expect(reservations).toHaveLength(1);
+    expect(reservations[0]).toMatchObject({ id: d.reservation.id, state: 'pending', agent: d.route.agent, model: d.route.model, createdAt: NOW });
+    expect(d.reservation.buckets.map((b: { bucket: string }) => b.bucket)).toEqual(d.quota.buckets.map((b: { id: string }) => b.id));
   });
 
   it('requires exactly one of need and tier', async () => {
@@ -127,7 +128,7 @@ describe('route', () => {
           : { code: 1, stdout: '', stderr: 'offline' };
       },
     };
-    const args = ['route', '--tier', 'daily', '--agent', agent, ...(agent === 'opencode' ? [] : ['--effort', 'high']), '--json'];
+    const args = ['route', '--tier', 'light', '--agent', agent, ...(agent === 'opencode' ? [] : ['--effort', 'high']), '--json'];
     expect(await main(args, io, testDeps)).toBe(0);
     const live = JSON.parse(out());
     expect(live.route, JSON.stringify(live)).toEqual({ agent, model, effort: effort ?? null });
@@ -166,13 +167,12 @@ describe('route', () => {
     const code = await main(['route', '--tier', 'frontier', '--json'], io, deps);
     expect(code).toBe(0);
     const d = JSON.parse(out());
-    expect(d).toMatchObject({
-      status: 'ok',
-      route: { agent: 'claude', model: 'claude-opus-5-5' },
-      catalogSource: 'snapshot',
-      scoreSource: 'snapshot',
-    });
-    expect(d.launch).toBe('orca orchestration worker-start --spec "<task>" --agent claude --model claude-opus-5-5 --effort high');
+    expect(d).toMatchObject({ status: 'ok', catalogSource: 'snapshot', scoreSource: 'snapshot' });
+    // Cursor's Other Models bucket has the most room left (93.75%), ahead of Codex (80%) and Claude (50%).
+    expect(d.route).toEqual({ agent: 'cursor', model: 'claude-opus-5-5-high', effort: null });
+    expect(d.launch).toBe('orca orchestration worker-start --spec "<task>" --agent cursor --model claude-opus-5-5-high');
+    expect(d.quota).toMatchObject({ status: 'available', binding: expect.stringMatching(/^cursor:[0-9a-f]{12}:bucket:other models$/), remaining: 93.75 });
+    expect(d.buckets.map((b: { agent: string; pool: string; reported: number }) => `${b.agent} ${b.pool} ${b.reported}`)).toContain('claude fableWeekly 75');
     expect(d.skipped.some((x: { agent: string }) => x.agent === 'gemini')).toBe(false);
     // Orca's "unavailable" outranks "not installed".
     expect(d.skipped).toContainEqual({ agent: 'grok', reason: 'not signed in or unavailable: Not signed in to Grok — run grok login' });
@@ -183,10 +183,12 @@ describe('route', () => {
   it('prints a compact text decision', async () => {
     expect(await main(['route', '--tier', 'daily'], io, deps)).toBe(0);
     const lines = out().split('\n');
-    // Sonnet now competes at Daily cost and wins on subscription headroom.
-    expect(lines[0]).toBe('daily → claude · claude-sonnet-5-5 · medium (high confidence)');
+    // Sonnet competes at Daily cost, on the bucket with the most room left.
+    expect(lines[0]).toBe('daily → cursor · claude-sonnet-5-5-medium (high confidence)');
     expect(lines.slice(1, -1).every((l) => l.startsWith('  '))).toBe(true);
-    expect(lines.at(-1)).toBe('orca orchestration worker-start --spec "<task>" --agent claude --model claude-sonnet-5-5 --effort medium');
+    expect(lines[1]).toBe('  cursor claude-sonnet-5-5-medium: Other Models 6.25% reported + 1.5 pp for this worker = 7.75% prospective (available), resets in 22d; monthly 2.5% reported + 1.5 pp for this worker = 4% prospective (available), resets in 22d');
+    expect(lines.at(-2)).toMatch(/^ {2}reserved rsv_[0-9a-f]{12}: monthly \+1\.5 pp, Other Models \+1\.5 pp; after worker-start run: orcacompass verify --dispatch <id> --reservation rsv_[0-9a-f]{12}$/);
+    expect(lines.at(-1)).toBe('orca orchestration worker-start --spec "<task>" --agent cursor --model claude-sonnet-5-5-medium');
   });
 
   it('passes agent, exclude-agent, effort and no-downgrade through to the router', async () => {
@@ -273,11 +275,13 @@ describe('status', () => {
     expect(await main(['status', '--json'], io, deps)).toBe(0);
     expect(JSON.parse(out()).evidenceWarning).toBeNull();
   });
-  it('reports evidence and hand-outs without legacy score metadata', async () => {
+  it('reports evidence, thresholds and reservations without legacy score metadata', async () => {
     expect(await main(['status', '--json'], io, deps)).toBe(0);
     const s = JSON.parse(out());
     expect(s.evidence).toMatchObject({ source: 'snapshot', generatedAt: expect.any(String), models: expect.any(Number) });
-    expect(s.handouts).toEqual([]);
+    expect(s.reservations).toEqual([]);
+    expect(s.riskThresholds).toEqual({ cautionPercent: 85, highPercent: 90 });
+    for (const key of ['handouts', 'handoutMinutes', 'handoutPercent']) expect(s).not.toHaveProperty(key);
     for (const key of ['catalog', 'scores', 'scored', 'scoreScale']) expect(s).not.toHaveProperty(key);
     expect(s.placements).not.toHaveProperty('scoreScale');
     stdout = [];
@@ -292,15 +296,23 @@ describe('status', () => {
     const claude = s.agents.find((a: { agent: string }) => a.agent === 'claude');
     expect(claude).toMatchObject({ installed: true, usage: { status: 'ok' } });
     expect(claude.models).toBeGreaterThan(0);
+    // Reported, reserved and effective usage are separate fields; nothing is projected.
     expect(claude.usage.pools.find((p: { name: string }) => p.name === 'fableWeekly')).toMatchObject({
       usedPercent: 75,
+      reported: 75,
+      reserved: 0,
+      workers: 0,
+      effective: 75,
+      remaining: 25,
+      status: 'available',
       resetsAt: 1793282400000,
-      blocked: false,
-      expired: false,
+      snapshotAt: NOW,
+      stale: false,
     });
+    expect(claude.usage.pools[0]).not.toHaveProperty('headroom');
     // Advanced needs are covered by Daily-cost Sonnet; Frontier needs by Advanced-cost Opus.
-    expect(s.tiers.advanced.pick).toMatchObject({ agent: 'claude', model: 'claude-sonnet-5-5', reason: expect.stringContaining('(daily cost tier)') });
-    expect(s.tiers.frontier.pick).toMatchObject({ agent: 'claude', model: 'claude-opus-5-5' });
+    expect(s.tiers.advanced.pick).toMatchObject({ agent: 'cursor', model: 'claude-sonnet-5-5-medium', reason: expect.stringContaining('(daily cost tier)') });
+    expect(s.tiers.frontier.pick).toMatchObject({ agent: 'cursor', model: 'claude-opus-5-5-high' });
     expect(s.tiers.light.pick.agent).toBeDefined();
     expect(s.unclassified.length).toBeGreaterThan(0);
     expect(s.evidence).toMatchObject({ source: 'snapshot' });
@@ -416,7 +428,7 @@ describe('placement table in the CLI', () => {
     const d = JSON.parse(out());
     expect(d.quality.cost).toEqual({ tier: 'daily', blended: 4, source: 'price' });
     expect(d.reasons).toContain('cost: daily ($4.00/M blended, maker price)');
-    expect(d.reasons.some((s: string) => /covering routes: \d+ across all cost tiers$/.test(s))).toBe(true);
+    expect(d.reasons.some((s: string) => /eligible routes: \d+ across all cost tiers$/.test(s))).toBe(true);
   });
 
   it('ranks deduplicated profiles and exposes the snapshot sources', async () => {
@@ -639,12 +651,12 @@ describe('prefer', () => {
 
     stdout = [];
     expect(await main(['prefer', '--json'], io, deps)).toBe(0);
-    expect(JSON.parse(out())).toMatchObject({ preferRiskLimit: 100, pins: { daily: { agent: 'claude', model: 'claude-sonnet-5-5' }, frontier: { agent: 'codex' } } });
+    expect(JSON.parse(out())).toMatchObject({ preferRiskLimit: 90, pins: { daily: { agent: 'claude', model: 'claude-sonnet-5-5' }, frontier: { agent: 'codex' } } });
     stdout = [];
     await main(['prefer'], io, deps);
     expect(out()).toMatch(/^ {2}light\s+none$/m);
     expect(out()).toMatch(/^ {2}frontier\s+codex \(its best model\)$/m);
-    expect(out()).toMatch(/above 100% projected usage, switch only to a known within-limit alternative/);
+    expect(out()).toMatch(/^preferred routes \(used while their usage, with reserved workers and one more, stays below 90%\):$/m);
 
     await main(['prefer', 'clear', 'daily'], io, deps);
     expect(config()).toEqual({ cursorAuto: false, pins: { frontier: { agent: 'codex' } } });
@@ -658,14 +670,17 @@ describe('prefer', () => {
     await main(['route', '--tier', 'frontier', '--json'], io, deps);
     const d = JSON.parse(out());
     expect(d.route).toMatchObject({ agent: 'claude', model: 'claude-fable-5-2' });
-    expect(d.reasons).toContain('preferred route, on pace for 82%');
-    expect(d.risk).toMatchObject({ pool: 'fableWeekly' });
-    expect(d.alternatives[0].risk).toMatchObject({ projectedPercent: expect.any(Number) });
+    expect(d.reasons).toContain('preferred route, available');
+    // Fable's own weekly quota binds it: 75% reported, 3 pp for a Frontier worker at high effort.
+    expect(d.quota).toMatchObject({ status: 'available', binding: expect.stringMatching(/:fableweekly$/), remaining: 25, prospective: 78 });
+    expect(d.alternatives[0].quota).toMatchObject({ prospective: expect.any(Number), buckets: expect.any(Array) });
+    expect(d).not.toHaveProperty('risk');
 
     await main(['prefer', 'advanced', 'codex', 'gpt-6.1-terra'], io, deps);
+    await main(['prefer', '--risk-limit', '20'], io, deps);
     stdout = [];
-    await main(['route', '--tier', 'advanced'], io, deps);
-    expect(out()).toMatch(/warning: preferred codex gpt-6\.1-terra skipped: weekly on pace for 120% \(limit 100%\), resets in 5d/);
+    await main(['route', '--tier', 'advanced', '--dry-run'], io, deps);
+    expect(out()).toMatch(/warning: preferred codex gpt-6\.1-terra skipped: weekly would be 21\.5% used with this worker \(limit 20%\); resets in 5d/);
   });
 
   it('validates tier, agent and the model of an installed agent, and warns for an agent not installed', async () => {
@@ -684,12 +699,12 @@ describe('prefer', () => {
 
   it('sets the risk limit, and the default removes the key', async () => {
     writeFileSync(configPath(), '{"cursorAuto":false}');
-    expect(await main(['prefer', '--risk-limit', '120%'], io, deps)).toBe(0);
-    expect(config()).toEqual({ cursorAuto: false, preferRiskLimit: 120 });
-    expect(out()).toMatch(/above 120% projected usage, switch only to a known within-limit alternative/);
+    expect(await main(['prefer', '--risk-limit', '95%'], io, deps)).toBe(0);
+    expect(config()).toEqual({ cursorAuto: false, preferRiskLimit: 95 });
+    expect(out()).toMatch(/stays below 95%\):$/m);
     stdout = [];
-    expect(await main(['prefer', '--risk-limit', '100', '--json'], io, deps)).toBe(0);
-    expect(JSON.parse(out())).toMatchObject({ preferRiskLimit: 100 });
+    expect(await main(['prefer', '--risk-limit', '90', '--json'], io, deps)).toBe(0);
+    expect(JSON.parse(out())).toMatchObject({ preferRiskLimit: 90 });
     expect(config()).toEqual({ cursorAuto: false });
 
     expect(await main(['prefer', '--risk-limit', 'lots'], io, deps)).toBe(1);
@@ -857,20 +872,142 @@ describe('verify and rejected', () => {
   });
 });
 
-it('records a route and shows live hand-outs in status', async () => {
-  expect(await main(['route', '--tier', 'daily', '--agent', 'claude', '--json'], io, deps)).toBe(0);
-  const decision = JSON.parse(out());
-  const file = join(process.env.ORCACOMPASS_HOME!, 'cache', 'handouts.json');
-  const entries = JSON.parse(readFileSync(file, 'utf8')).handouts;
-  expect(entries).toHaveLength(1);
-  expect(entries[0]).toMatchObject({ agent: 'claude', model: decision.route.model, needs: { coding: 'low', agentic: 'low', reasoning: 'low' } });
-  expect(entries[0].pools).toContain('weekly');
-  stdout = [];
-  await main(['status', '--json'], io, deps);
-  const status = JSON.parse(out());
-  expect(status.handouts).toHaveLength(1);
-  expect(status.agents.find((a: { agent: string }) => a.agent === 'claude').usage.pools.find((p: { name: string }) => p.name === 'weekly').handouts).toBe(1);
-  stdout = [];
-  await main(['status'], io, deps);
-  expect(out()).toMatch(/hand-outs \(last 10m\): claude .*0m ago/);
+describe('quota reservations', () => {
+  const ledger = () => JSON.parse(readFileSync(join(process.env.ORCACOMPASS_HOME!, 'cache', 'reservations.json'), 'utf8')) as { reservations: { id: string; state: string; dispatchId?: string }[] };
+  const claudeRoute = ['route', '--tier', 'daily', '--agent', 'claude', '--json'];
+  const routed = async (args = claudeRoute) => {
+    stdout = [];
+    expect(await main(args, io, deps)).toBe(0);
+    return JSON.parse(out());
+  };
+  const weekly = async () => {
+    stdout = [];
+    await main(['status', '--json'], io, deps);
+    const s = JSON.parse(out());
+    return { status: s, pool: s.agents.find((a: { agent: string }) => a.agent === 'claude').usage.pools.find((p: { name: string }) => p.name === 'weekly') };
+  };
+  /** Orca's answers for one worker: the launch it was started with, and what its terminal shows. */
+  const worker = (projection: object, tail: string[] = ['=== TASK ===', 'working']): MainDeps => ({
+    ...deps, sleep: async () => {}, clock: () => NOW + 60_000,
+    run: async (cmd, args, opts) => {
+      if (args[0] !== 'orchestration') return runner(cmd, args, opts);
+      const launch = { agent: 'claude', model: 'claude-sonnet-5-5' };
+      const result = args[1] === 'worker-show'
+        ? { dispatch: { taskId: 'task_1' }, worker: { startOptions: { launch: { effective: launch } } } }
+        : { projection, terminal: { tail } };
+      return { code: 0, stderr: '', stdout: JSON.stringify({ ok: true, result }) };
+    },
+  });
+
+  it('route reserves the worker\'s buffer per quota bucket, and status shows reported, reserved and effective apart', async () => {
+    const d = await routed();
+    expect(d.route).toEqual({ agent: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' });
+    expect(d.reservation).toMatchObject({ id: expect.stringMatching(/^rsv_/), state: 'pending', expiresAt: NOW + 600_000 });
+    expect(d.reservation.buckets.map((b: { percentPoints: number }) => b.percentPoints)).toEqual([1.5, 1.5]);
+    expect(ledger().reservations).toMatchObject([{ id: d.reservation.id, state: 'pending' }]);
+    const { status, pool } = await weekly();
+    expect(pool).toMatchObject({ reported: 50, usedPercent: 50, reserved: 1.5, workers: 1, effective: 51.5, status: 'available' });
+    expect(status.reservations).toMatchObject([{ id: d.reservation.id, state: 'pending', live: true, agent: 'claude', model: 'claude-sonnet-5-5', tier: 'daily', effort: 'medium', buckets: [{ pool: 'session', percentPoints: 1.5 }, { pool: 'weekly', percentPoints: 1.5 }] }]);
+    stdout = [];
+    await main(['status'], io, deps);
+    expect(out()).toContain('    weekly 50% reported + 1.5 pp reserved (1 worker) = 51.5% effective, available; resets in 14h');
+    expect(out()).toContain('    fableWeekly 75% reported, available; resets in 14h');
+    expect(out()).toMatch(/^reservations \(1 counting against quota\):\n {2}rsv_[0-9a-f]{12} {2}claude claude-sonnet-5-5 {2}pending for 0m {2}\(session \+1\.5 pp, weekly \+1\.5 pp\)$/m);
+    // A second route sees the first one's reservation; a dry run reserves nothing.
+    const second = await routed();
+    expect(second.quota.buckets.find((b: { pool: string }) => b.pool === 'weekly')).toMatchObject({ reported: 50, reserved: 1.5, effective: 51.5, prospective: 53 });
+    expect((await routed([...claudeRoute, '--dry-run'])).reservation).toBeUndefined();
+    expect(ledger().reservations).toHaveLength(2);
+  });
+
+  it('verify marks the same reservation running once the worker has started (#12)', async () => {
+    const d = await routed();
+    stdout = [];
+    const started = worker({ stage: { activity: 'working' }, outcome: 'in_progress', liveness: { verdict: 'live' } });
+    let now = NOW + 60_000;
+    expect(await main(['verify', '--dispatch', 'ctx_7', '--reservation', d.reservation.id, '--json'], io, { ...started, clock: () => (now += 5_000) })).toBe(0);
+    const v = JSON.parse(out());
+    expect(v).toMatchObject({ status: 'started', reservation: { id: d.reservation.id, state: 'running' } });
+    expect(ledger().reservations).toMatchObject([{ id: d.reservation.id, state: 'running', dispatchId: 'ctx_7' }]);
+    expect((await weekly()).pool).toMatchObject({ reserved: 1.5, workers: 1 });
+  });
+
+  it('verify releases the reservation at once when the agent refused the model (#11)', async () => {
+    const d = await routed();
+    const refusal = "There's an issue with the selected model (claude-sonnet-5-5). It may not exist or you may not have access to it.";
+    stdout = [];
+    const refused = worker({ stage: { activity: 'done' }, outcome: 'in_progress', liveness: { verdict: 'live' } }, ['=== TASK ===', `● ${refusal}`]);
+    // Without --reservation the worker is matched to the pending reservation for the same agent and model.
+    expect(await main(['verify', '--dispatch', 'ctx_8'], io, refused)).toBe(0);
+    expect(out()).toMatch(new RegExp(`^reservation ${d.reservation.id}: pending → failed before launch$`, 'm'));
+    expect(ledger().reservations).toMatchObject([{ id: d.reservation.id, state: 'failed_before_launch', dispatchId: 'ctx_8' }]);
+    expect((await weekly()).pool).toMatchObject({ reported: 50, reserved: 0, workers: 0, effective: 50 });
+  });
+
+  it('release ends a reservation: held until a fresh snapshot, or freed at once when nothing launched (#10 #32)', async () => {
+    const first = await routed();
+    const second = await routed();
+    stdout = [];
+    expect(await main(['release', '--reservation', first.reservation.id], io, deps)).toBe(0);
+    expect(out()).toBe(`reservation ${first.reservation.id}: pending → completed, held until a fresh usage snapshot covers it`);
+    stdout = [];
+    expect(await main(['release', '--reservation', second.reservation.id, '--outcome', 'cancelled', '--json'], io, deps)).toBe(0);
+    expect(JSON.parse(out()).reservation).toMatchObject({ id: second.reservation.id, state: 'cancelled_after_consumption' });
+    // Both workers are gone, but Orca's snapshot is still the one from before: both stay counted.
+    expect((await weekly()).pool).toMatchObject({ reserved: 3, workers: 2, effective: 53 });
+    const third = await routed();
+    stdout = [];
+    expect(await main(['release', '--reservation', third.reservation.id, '--outcome', 'failed-before-launch'], io, deps)).toBe(0);
+    expect(out()).toBe(`reservation ${third.reservation.id}: pending → failed before launch`);
+    expect((await weekly()).pool).toMatchObject({ reserved: 3, workers: 2 });
+
+    stdout = [];
+    expect(await main(['release', '--dispatch', 'ctx_unknown'], io, deps)).toBe(0);
+    expect(out()).toBe('reservation: none matched this worker (route with orcacompass to reserve quota)');
+    expect(await main(['release'], io, deps)).toBe(1);
+    expect(err()).toContain('--reservation <id> or --dispatch <id> is required (or --all)');
+    expect(await main(['release', '--reservation', 'x', '--outcome', 'maybe'], io, deps)).toBe(1);
+    expect(err()).toContain('unknown outcome "maybe" (expected completed, cancelled, failed-before-launch)');
+    stdout = [];
+    expect(await main(['release', '--all'], io, deps)).toBe(0);
+    expect(out()).toBe('forgot 2 live reservations');
+    expect((await weekly()).pool).toMatchObject({ reserved: 0, workers: 0, effective: 50 });
+  });
+
+  it('returns the decision to the Orchestrator and takes --use as its answer (#22)', async () => {
+    const tight = JSON.parse(orcaFixture);
+    tight.result.rateLimits.claude.weekly.usedPercent = 93;
+    const tightDeps: MainDeps = { ...deps, run: fakeRunner(() => ({ code: 0, stdout: JSON.stringify(tight), stderr: '' })) };
+    stdout = [];
+    expect(await main(['route', '--tier', 'daily', '--agent', 'claude'], io, tightDeps)).toBe(0);
+    const lines = out().split('\n');
+    expect(lines[0]).toBe('daily → your decision: WAIT (14h), USE or LOWER');
+    expect(lines).toContain('  USE: claude claude-sonnet-5-5 with --use claude/claude-sonnet-5-5 (weekly 94.5% prospective, high risk)');
+    expect(lines.some((l) => l.startsWith('orca orchestration worker-start'))).toBe(false);
+    stdout = [];
+    expect(await main(['route', '--tier', 'daily', '--agent', 'claude', '--json'], io, tightDeps)).toBe(0);
+    const d = JSON.parse(out());
+    expect(d).toMatchObject({ status: 'decide', launch: null, options: { wait: { until: 1793282400000 }, lower: [] } });
+    expect(d).not.toHaveProperty('reservation');
+    stdout = [];
+    expect(await main(['route', '--tier', 'daily', '--agent', 'claude', '--use', 'claude/claude-sonnet-5-5', '--json'], io, tightDeps)).toBe(0);
+    const used = JSON.parse(out());
+    expect(used).toMatchObject({ status: 'ok', route: { agent: 'claude', model: 'claude-sonnet-5-5' }, quota: { status: 'high' }, reservation: { state: 'pending' } });
+    expect(used.warnings).toContain('weekly quota would be 94.5% used with this worker (high risk); resets in 14h');
+    expect(await main(['route', '--tier', 'daily', '--use', 'claude'], io, tightDeps)).toBe(1);
+    expect(err()).toContain('--use takes <agent>/<model> (got "claude")');
+  });
+
+  it('keeps the last valid usage when Orca cannot be read, and still routes when the ledger cannot be written (#23)', async () => {
+    await routed([...claudeRoute, '--dry-run']);
+    stdout = [];
+    expect(await main(claudeRoute, io, { ...deps, run: orcaDownRunner, now: NOW + 5 * 60_000 })).toBe(0);
+    const down = JSON.parse(out());
+    // The snapshot of five minutes ago stands in, at lower confidence: never 0% used.
+    expect(down).toMatchObject({ status: 'ok', confidence: 'medium' });
+    expect(down.quota.buckets.find((b: { pool: string }) => b.pool === 'weekly')).toMatchObject({ reported: 50, snapshotAt: NOW });
+    stdout = [];
+    await main(['status', '--json'], io, { ...deps, run: orcaDownRunner, now: NOW + 5 * 60_000 });
+    expect(JSON.parse(out()).agents.find((a: { agent: string }) => a.agent === 'claude').usage).toMatchObject({ status: 'ok', retained: true, error: expect.stringMatching(/^Orca not reachable/) });
+  });
 });

@@ -14,6 +14,10 @@ import { fakeDeps, fixture, NOW } from '../helpers/fakes.js';
 import { machineEnv, placed } from '../helpers/env.js';
 
 const HOUR = 3_600_000;
+// A job Fable 5.1 and Astra cover in the fixture evidence (their coding misses the Frontier cut by a point).
+// Requirements are never lowered silently, so these tests ask for what the models can take.
+const job = { needs: { coding: 'mid', agentic: 'high', reasoning: 'high' }, agents: ['claude'] } as const;
+const forClaude = () => ({ ...job, agents: [...job.agents] });
 const saved = process.env.ORCACOMPASS_HOME;
 let home: string;
 beforeEach(() => { home = mkdtempSync(join(tmpdir(), 'oc-local-models-')); process.env.ORCACOMPASS_HOME = home; });
@@ -46,7 +50,7 @@ it('discovers a new local Fable after five hours while reusing 24-hour metadata 
     },
   };
   const first = await gather(DEFAULT_CONFIG, deps);
-  expect(route({ tier: 'frontier', agents: ['claude'] }, first.env, DEFAULT_CONFIG).route?.model).toBe('claude-fable-5-1');
+  expect(route(forClaude(), first.env, DEFAULT_CONFIG).route?.model).toBe('claude-fable-5-1');
   models = ['claude-fable-5-1', 'claude-fable-5-5'];
   const fresh = await gather(DEFAULT_CONFIG, { ...deps, now: NOW + 4 * HOUR });
   expect(fresh.rebuilt).toBeUndefined();
@@ -58,10 +62,10 @@ it('discovers a new local Fable after five hours while reusing 24-hour metadata 
   expect(added.meta).toBeUndefined();
   expect(added.poolNames).toEqual(['session', 'weekly', 'fableWeekly']);
   expect(added.profile.hint).toEqual({ tier: 'frontier', source: 'family' });
-  const decision = route({ tier: 'frontier', agents: ['claude'] }, updated.env, DEFAULT_CONFIG);
+  const decision = route(forClaude(), updated.env, DEFAULT_CONFIG);
   expect(decision.route?.model).toBe('claude-fable-5-5');
   expect(decision.alternatives.map((a) => a.model)).not.toContain('claude-fable-5-1');
-  const bannedNew = route({ tier: 'frontier', agents: ['claude'] }, updated.env, { ...DEFAULT_CONFIG, banModels: ['claude-fable-5-5'] });
+  const bannedNew = route(forClaude(), updated.env, { ...DEFAULT_CONFIG, banModels: ['claude-fable-5-5'] });
   expect(bannedNew.route?.model).toBe('claude-fable-5-1');
 });
 
@@ -71,7 +75,7 @@ it.each([
 ])('compares numeric versions within %s family even when the new release has no catalog date', (older, newer, family) => {
   const old = { ...launch(older), meta: { id: older, name: older, provider: 'test', family, releaseDate: '2026-11-01' } };
   const env = placed({ ...machineEnv(), discoveries: [{ agent: 'claude', installed: true, models: [old, launch(newer, 'Frontier intelligence for the most demanding work.')] }] });
-  expect(route({ tier: 'frontier', agents: ['claude'] }, env, DEFAULT_CONFIG).route?.model).toBe(newer);
+  expect(route(forClaude(), env, DEFAULT_CONFIG).route?.model).toBe(newer);
 });
 
 it('applies family bans and overrides to newly discovered versions without metadata', () => {

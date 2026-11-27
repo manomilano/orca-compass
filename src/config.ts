@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { EFFORT_LADDER } from './routing/effort.js';
+import { BUFFER_EFFORTS, BUFFER_TIERS, DEFAULT_BUFFERS, type BufferEffort, type BufferOverride, type BufferTier } from './routing/quota.js';
 import { EFFORT_POLICIES, TIERS, type AgentId, type Config, type Effort, type EffortPolicy, type Preference, type Tier } from './types.js';
 import { configPath } from './paths.js';
 
@@ -8,20 +9,25 @@ export const DEFAULT_CONFIG: Config = {
   denyAgents: [],
   pins: {},
   tierOverrides: {},
-  thresholds: { longPercent: 95, sessionPercent: 90 },
   defaultEffort: { light: 'low', daily: 'medium', advanced: 'medium', frontier: 'high' },
   effortPolicy: 'balanced',
   costBands: [1, 5, 12],
-  handoutMinutes: 10,
-  handoutPercent: 5,
   evidenceTtlHours: 24,
   placementsTtlHours: 5,
   usageStaleMinutes: 30,
   rejectionTtlHours: 168,
   excludeNoZdr: false,
   cursorAuto: true,
-  preferRiskLimit: 100,
-  usageRiskLimit: 90,
+  preferRiskLimit: 90,
+  riskThresholds: { cautionPercent: 85, highPercent: 90 },
+  reservations: {
+    buffers: DEFAULT_BUFFERS,
+    overrides: [],
+    modelTiers: {},
+    pendingMinutes: 10,
+    settleSeconds: 60,
+    maxRunningHours: 24,
+  },
   banModels: [],
   lastResortAgents: ['opencode'],
 };
@@ -54,6 +60,9 @@ export function loadConfig(path = configPath(), warn?: (message: string) => void
       if (Object.hasOwn(raw, 'scoreWeight')) warn?.('scoreWeight is no longer used (OrcaCompass 0.2.2 ranks models by benchmark evidence; see costBands)');
       if (Object.hasOwn(raw, 'classWeight')) warn?.('classWeight is no longer used (OrcaCompass 0.2.2 scores models by evidence alone; cost tiers come from price, see costBands)');
       if (Object.hasOwn(raw, 'modelsDevTtlHours')) warn?.('modelsDevTtlHours is no longer used (the evidence snapshot is the catalog; see evidenceTtlHours)');
+      for (const key of REMOVED_QUOTA_KEYS) {
+        if (Object.hasOwn(raw, key)) warn?.(`${key} is no longer used (usage is no longer projected; see riskThresholds and reservations)`);
+      }
     }
     return merge(raw);
   } catch (e) {
@@ -61,6 +70,9 @@ export function loadConfig(path = configPath(), warn?: (message: string) => void
     throw e;
   }
 }
+
+/** Keys of the predictive headroom and flat hand-out buffer, ignored since the quota redesign. */
+const REMOVED_QUOTA_KEYS = ['thresholds', 'usageRiskLimit', 'handoutMinutes', 'handoutPercent'] as const;
 
 class Invalid extends Error {}
 
@@ -103,6 +115,48 @@ function effort(v: unknown, key: string): Effort {
   return v as Effort;
 }
 
+function percent(v: unknown, key: string): number {
+  const n = num(v, key);
+  if (n > 100) throw new Invalid(`${key} must be between 0 and 100`);
+  return n;
+}
+
+function bufferTier(v: unknown, key: string): BufferTier {
+  if (!BUFFER_TIERS.includes(v as BufferTier)) throw new Invalid(`${key} must be one of ${BUFFER_TIERS.join(', ')} (got ${JSON.stringify(v)})`);
+  return v as BufferTier;
+}
+
+/** A partial buffer table: rows are buffer tiers, columns low, medium, high and xhigh, cells percentage points. */
+function bufferCells(v: unknown, key: string): Partial<Record<BufferTier, Partial<Record<BufferEffort, number>>>> {
+  const out: Partial<Record<BufferTier, Partial<Record<BufferEffort, number>>>> = {};
+  for (const [row, cells] of Object.entries(obj(v, key))) {
+    const tier = bufferTier(row, `${key} key`);
+    const target: Partial<Record<BufferEffort, number>> = {};
+    for (const [column, value] of Object.entries(obj(cells, `${key}.${row}`))) {
+      if (!BUFFER_EFFORTS.includes(column as BufferEffort)) {
+        throw new Invalid(`${key}.${row} key must be one of ${BUFFER_EFFORTS.join(', ')} (got ${JSON.stringify(column)})`);
+      }
+      target[column as BufferEffort] = percent(value, `${key}.${row}.${column}`);
+    }
+    out[tier] = target;
+  }
+  return out;
+}
+
+function bufferOverride(v: unknown, key: string): BufferOverride {
+  const o = obj(v, key);
+  const out: BufferOverride = {};
+  for (const field of ['agent', 'plan', 'pool'] as const) {
+    if (o[field] === undefined) continue;
+    if (typeof o[field] !== 'string' || o[field] === '') throw new Invalid(`${key}.${field} must be a non-empty string`);
+    out[field] = o[field];
+  }
+  if (o.scale !== undefined) out.scale = num(o.scale, `${key}.scale`);
+  if (o.buffers !== undefined) out.buffers = bufferCells(o.buffers, `${key}.buffers`);
+  if (out.scale === undefined && out.buffers === undefined) throw new Invalid(`${key} must have "scale" or "buffers"`);
+  return out;
+}
+
 function tierKey(k: string, key: string): Tier {
   return tier(k, `${key} key`);
 }
@@ -124,10 +178,29 @@ function merge(raw: unknown): Config {
   if (r.tierOverrides !== undefined) {
     for (const [k, v] of Object.entries(obj(r.tierOverrides, 'tierOverrides'))) c.tierOverrides[k] = tier(v, `tierOverrides.${k}`);
   }
-  if (r.thresholds !== undefined) {
-    const t = obj(r.thresholds, 'thresholds');
-    for (const k of ['longPercent', 'sessionPercent'] as const) {
-      if (t[k] !== undefined) c.thresholds[k] = num(t[k], `thresholds.${k}`);
+  if (r.riskThresholds !== undefined) {
+    const t = obj(r.riskThresholds, 'riskThresholds');
+    for (const k of ['cautionPercent', 'highPercent'] as const) {
+      if (t[k] !== undefined) c.riskThresholds[k] = percent(t[k], `riskThresholds.${k}`);
+    }
+    if (c.riskThresholds.cautionPercent > c.riskThresholds.highPercent) throw new Invalid('riskThresholds.cautionPercent must not exceed riskThresholds.highPercent');
+  }
+  if (r.reservations !== undefined) {
+    const v = obj(r.reservations, 'reservations');
+    if (v.buffers !== undefined) {
+      for (const [tier, cells] of Object.entries(bufferCells(v.buffers, 'reservations.buffers'))) {
+        c.reservations.buffers[tier as BufferTier] = { ...c.reservations.buffers[tier as BufferTier], ...cells };
+      }
+    }
+    if (v.overrides !== undefined) {
+      if (!Array.isArray(v.overrides)) throw new Invalid('reservations.overrides must be an array');
+      c.reservations.overrides = v.overrides.map((o, i) => bufferOverride(o, `reservations.overrides[${i}]`));
+    }
+    if (v.modelTiers !== undefined) {
+      for (const [k, tier] of Object.entries(obj(v.modelTiers, 'reservations.modelTiers'))) c.reservations.modelTiers[k] = bufferTier(tier, `reservations.modelTiers.${k}`);
+    }
+    for (const k of ['pendingMinutes', 'settleSeconds', 'maxRunningHours'] as const) {
+      if (v[k] !== undefined) c.reservations[k] = num(v[k], `reservations.${k}`);
     }
   }
   if (r.defaultEffort !== undefined) {
@@ -140,8 +213,6 @@ function merge(raw: unknown): Config {
     c.effortPolicy = r.effortPolicy as EffortPolicy;
   }
   if (r.costBands !== undefined) c.costBands = bands(r.costBands, 'costBands');
-  if (r.handoutMinutes !== undefined) c.handoutMinutes = num(r.handoutMinutes, 'handoutMinutes');
-  if (r.handoutPercent !== undefined) c.handoutPercent = num(r.handoutPercent, 'handoutPercent');
   if (r.evidenceTtlHours !== undefined) c.evidenceTtlHours = num(r.evidenceTtlHours, 'evidenceTtlHours');
   if (r.placementsTtlHours !== undefined) c.placementsTtlHours = num(r.placementsTtlHours, 'placementsTtlHours');
   if (r.usageStaleMinutes !== undefined) c.usageStaleMinutes = num(r.usageStaleMinutes, 'usageStaleMinutes');
@@ -155,7 +226,6 @@ function merge(raw: unknown): Config {
     c.cursorAuto = r.cursorAuto;
   }
   if (r.preferRiskLimit !== undefined) c.preferRiskLimit = num(r.preferRiskLimit, 'preferRiskLimit');
-  if (r.usageRiskLimit !== undefined) c.usageRiskLimit = num(r.usageRiskLimit, 'usageRiskLimit');
   if (r.banModels !== undefined) c.banModels = strings(r.banModels, 'banModels');
   if (r.lastResortAgents !== undefined) c.lastResortAgents = strings(r.lastResortAgents, 'lastResortAgents');
   return c;
