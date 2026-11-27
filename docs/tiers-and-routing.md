@@ -89,7 +89,7 @@ inherit.
 ## When placement runs
 
 OrcaCompass computes every model's profiles into the placement table
-(`placements.json`, schema 4, in the cache folder) and reuses it for
+(`placements.json`, schema 5, in the cache folder) and reuses it for
 `placementsTtlHours` (5 by default; `0` rebuilds on every command). It is
 rebuilt when:
 

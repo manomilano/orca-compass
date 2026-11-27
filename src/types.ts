@@ -128,7 +128,7 @@ export type BuiltWith = Pick<Config, 'tierOverrides' | 'costBands'>;
 
 /** Every discovered model's profile, cached for `placementsTtlHours`. */
 export interface PlacementTable {
-  schemaVersion: 4;
+  schemaVersion: 5;
   version: string;
   builtAt: number;
   builtWith: BuiltWith;

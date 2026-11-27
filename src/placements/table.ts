@@ -7,7 +7,9 @@ import { AGENT_IDS, CLASSIFICATION_SOURCES, TIERS, type AgentId, type BuiltWith,
 // The placement table: every model's profile, computed from the snapshot and reused until stale.
 
 export const PLACEMENTS_FILE = 'placements.json';
-export const PLACEMENTS_SCHEMA = 4;
+// Bump when a build would group or profile the same models differently, so a cached table is rebuilt.
+// 5: Antigravity `-xhigh` ids became an effort of their model; a schema 4 table lists them as unknown models.
+export const PLACEMENTS_SCHEMA = 5;
 
 export const builtWith = (config: Config): BuiltWith =>
   structuredClone({ tierOverrides: config.tierOverrides, costBands: config.costBands });

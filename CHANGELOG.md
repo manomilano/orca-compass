@@ -19,7 +19,9 @@
 - Antigravity's `-xhigh` model ids (Gemini 4 Neon and Hydrogen) are grouped
   with their model as its `xhigh` effort instead of being listed as unknown
   models that were never routed. Claude and GPT models in Antigravity take
-  their efforts from Orca's model catalog when it lists them.
+  their efforts from Orca's model catalog when it lists them. Placement table
+  schema 5 is rebuilt on first run, so a table cached before this change does
+  not keep the old grouping until it expires.
 - Ranking prefers a route that can apply the effort a job asks for. Each
   effort step a route would be snapped down from the `--demand` or tier-default
   target costs 2.5 points of its score, so on the same usage windows an

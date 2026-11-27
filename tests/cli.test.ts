@@ -510,7 +510,7 @@ describe('placement table in the CLI', () => {
     stdout = [];
     expect(await main(['tiers', '--json'], io, { ...deps, now: NOW + HOUR })).toBe(0);
     const t = JSON.parse(out());
-    expect(t).toMatchObject({ schemaVersion: 4, version: VERSION, builtAt: NOW, age: HOUR });
+    expect(t).toMatchObject({ schemaVersion: 5, version: VERSION, builtAt: NOW, age: HOUR });
     expect(t.agents.map((a: { agent: string }) => a.agent)).toContain('codex');
   });
 
