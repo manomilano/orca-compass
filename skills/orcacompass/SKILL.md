@@ -234,7 +234,14 @@ Ask the user before relaxing or removing their explicit effort requirement.
    so it only appears as an option under `options.lower`.
 
    An `ok` route has already reserved its quota: `reservation.id` names it,
-   and other route calls, in any process, count it from now on. Start the
+   and other route calls, in any process, count it from now on. When the
+   quota cannot be reserved (the reservation ledger in the cache folder cannot
+   be locked, read or written), `route` prints nothing on stdout and exits 1
+   with `quota could not be reserved`: nothing was routed, so do not launch.
+   Report the error; `--dry-run` still gives an unreserved decision, which
+   other route calls do not count. A ledger file that is not valid is kept as
+   `reservations.json.corrupt` and rebuilt from the workers Orca reports live,
+   with a warning. Start the
    worker promptly; a reservation nobody confirms is abandoned after
    `reservations.pendingMinutes` (default 10). If you decide not to launch,
    give it back at once:
@@ -283,9 +290,13 @@ Ask the user before relaxing or removing their explicit effort requirement.
      for example by finishing its first-time setup. Nothing is remembered,
      so a later route may pick that agent again.
    - `unknown`: no verdict within `--wait` seconds (default and maximum 60).
+     The reservation is bound to the Dispatch but stays `pending`: Orca's
+     worker list moves it on at the next `route` or `status`.
      Report that verification timed out and continue normal Orca supervision.
      Do not repeatedly call `verify` to extend the startup verification budget.
 
+   A `reservationError` saying the reservation is bound to another dispatch
+   means you passed the wrong `--reservation`: nothing changed.
    Follow the `next` list it returns. Never start the replacement before the
    cleanup succeeded, and never stop a worker `verify` called `started`.
 6. When a worker reports `worker_done`, or you stop it, end its reservation:
@@ -295,9 +306,11 @@ Ask the user before relaxing or removing their explicit effort requirement.
    ```
 
    Add `--outcome cancelled` for a worker you stopped after it had worked. The
-   quota stays reserved until Orca's next real usage refresh covers what the
-   worker consumed, then it is released by itself; nothing accumulates. A
-   worker you forget to release is closed when Orca reports it finished.
+   quota stays reserved on each usage window until Orca's next real usage
+   refresh of that window covers what the worker consumed, then it is released
+   by itself; nothing accumulates. A worker you forget to release is closed
+   when Orca reports it finished. A worker Orca still reports live is never
+   closed for running too long (`reservations.maxRunningHours`).
 
 ## Handle the result
 
@@ -345,7 +358,8 @@ Ask the user before relaxing or removing their explicit effort requirement.
   or without one. Do not silently bypass other explicit constraints.
 - Command missing: say OrcaCompass was absent. Use the same default fallback
   only if it can honor explicit user constraints; otherwise ask before launching.
-- Exit 1 means a command usage or runtime error; fix the command or report it. Exit 2 means invalid config;
+- Exit 1 means a command usage or runtime error, including a route whose quota could not be reserved
+  (nothing on stdout, nothing routed); fix the command or report it. Exit 2 means invalid config;
   report `config error: <path>: <message>` and resolve it before retrying.
 - Low confidence: usage is unknown (Orca gave none, the snapshot is more than
   4x `usageStaleMinutes` old, or a window reset since it was taken). The route

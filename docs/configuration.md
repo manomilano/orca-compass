@@ -123,8 +123,8 @@ exhaustion is always 100% reported usage.
 | `reservations.overrides` | `[]` | Changes for some workers or buckets, applied in order. Each rule matches by any of `agent`, `plan` (Orca's plan type, such as `max_5x`) and `pool` (a usage window, such as `session` or `bucket:Other Models`), and gives a `scale` to multiply by, `buffers` cells to replace, or both |
 | `reservations.modelTiers` | `{}` | Model id or family to a buffer tier, when a model should reserve another row than its cost tier's: `{ "claude-haiku-5-5": "minimal" }` |
 | `reservations.pendingMinutes` | `10` | A reservation whose launch nobody confirmed (`verify`) is abandoned after this long, then released by the next fresh usage snapshot |
-| `reservations.settleSeconds` | `60` | A finished worker's reservation is released by a usage snapshot Orca took at least this long after the worker ended |
-| `reservations.maxRunningHours` | `24` | A running reservation is closed after this long, in case its worker was never released and Orca no longer lists it |
+| `reservations.settleSeconds` | `60` | A finished worker's reservation is released, window by window, by readings Orca took at least this long after the worker ended (a window Claude's live session carries forward unchanged waits at least 20 minutes) |
+| `reservations.maxRunningHours` | `24` | A running reservation is closed after this long, in case its worker was never released and Orca no longer lists it. A worker Orca confirms is still live is never closed. A finished record still held is dropped seven days after the worker ended |
 
 Default `buffers`, in percentage points per worker:
 

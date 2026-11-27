@@ -141,6 +141,8 @@ Orca to the front, or open its usage view, to refresh it. See
 ## A route says `decide` or `none` {#a-route-says-decide-or-none}
 
 `route` exits 0 for `ok`, `decide` and `none`; check `status` in the output.
+It exits 1 with nothing on stdout only when the route's quota could not be
+reserved; see [`route` exits 1](#route-exits-1-quota-could-not-be-reserved).
 
 - `none` with `no usable agent`: no agent passed the checks above. Run
   `orcacompass agents`.
@@ -176,6 +178,21 @@ requested needs or have no usable evidence. JSON keeps the full list; text
 groups and limits the profile diagnostics. Superseded releases and no-ZDR exclusions are omitted. Preference
 exclusions appear in `warnings`.
 See [Outcomes](tiers-and-routing.md#outcomes-ok-decide-none).
+
+## `route` exits 1: quota could not be reserved {#route-exits-1-quota-could-not-be-reserved}
+
+`error: quota could not be reserved (<cause>): nothing was routed` means the
+reservation ledger, `reservations.json` in the cache folder, could not be
+locked, read or written. Nothing was reserved, so no route is printed: do not
+launch a worker. Check that the cache folder exists and is writable, and that
+`reservations.json` is a file. `reservations.lock` is taken over by itself once
+its owner has exited. `route --dry-run` still decides, without reserving, and
+warns that the ledger could not be written.
+
+A `reservations.json` that is not a valid ledger is handled without an error:
+it is kept as `reservations.json.corrupt`, a fresh ledger is written, the
+workers Orca reports live are reconstructed in it, and `route` and `status`
+warn `the reservation ledger was unreadable (…) and was reset`.
 
 ## The worker refused its model
 

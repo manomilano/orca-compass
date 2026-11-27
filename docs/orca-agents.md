@@ -110,7 +110,10 @@ Source: `src/routing/environment.ts` and `src/placements/agents/*.ts`, `src/rout
    (`src/placements/build.ts`).
 4. **Check usage in parallel with loading the table and agent switches** with `orca account list --json` (`src/routing/orca-usage.ts`):
    each model draws on named usage pools; a pool missing a finite usage percentage, window length or reset time is
-   skipped, never read as 0%. OpenCode has no usage entry.
+   skipped, never read as 0%. OpenCode has no usage entry: Orca's
+   `rateLimits.opencodeGo` (the OpenCode Go subscription, which needs a cookie
+   configured in Orca) is ignored for now, because which OpenCode models bill to
+   it is not known yet; OpenCode routes say they have no usage window.
 5. **Skip the agent** when it is turned off in Orca's Settings → Agents
    (`disabledTuiAgents`, read-only from Orca's profile state,
    `src/routing/orca-settings.ts`), when Orca reports it `unavailable`, or when
@@ -139,7 +142,7 @@ Source: `src/routing/environment.ts` and `src/placements/agents/*.ts`, `src/rout
 | **Grouping** | — | — | Variants grouped by base id: effort, `-thinking` and `-fast` are stripped; `cursor-` prefix and old `claude-4.6-sonnet` ids normalized | `-low/-medium/-high` ids grouped; `-thinking` dropped only when the plain ID is in the evidence index and the suffixed ID is not | — | A model listed by several providers kept once, from the cheapest (local, then free, then paid) | — |
 | **Effort** | Orca's catalog levels + default, else the account catalog; on the evidence snapshot fallback, assumed `low` to `max` | Orca's catalog levels + default, else the Codex cache's; on the evidence snapshot fallback, assumed `low` to `max` | Inside the model id (`…-high`); the plain id stands for `medium`; fast-only levels dropped | Gemini: inside the id. Others: Orca's `low`/`medium`/`high` via `--effort` | Grok cache levels + default (none for multi-agent models); from `grok models`: `low` to `xhigh`, capped as in Orca's seed (4.5 up to `high`) | None (Orca passes no effort to OpenCode) | `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; default `high` |
 | **`launchArgs`** | `--model --effort` | `--model --effort` | `--model <variant id>` | `--model <variant id>` (Gemini) or `--model --effort` | `--model --effort` | `--model <provider/model>` | `--model --effort` |
-| **Usage pools** | `session`, `weekly`, plus `fableWeekly` for Fable | `session`, `weekly` | `monthly` + `Cursor Models` or `Other Models` bucket (which models draw on which is inferred) | Per quota group (`Gemini Models`, `Claude and GPT models`): 5-hour and long; else Orca's `session`/`weekly` | `weekly`, `monthly` | None: pay per use or local; the route says how it is paid | `session`, `weekly` requested, but no Muse usage reported by Orca |
+| **Usage pools** | `session`, `weekly`, `monthly` (a spend window Orca reports only for an account with neither of the other two), plus `fableWeekly` for Fable | `session`, `weekly` | `monthly` + `Cursor Models` or `Other Models` bucket (which models draw on which is inferred) | Per quota group (`Gemini Models`, `Claude and GPT models`): 5-hour and long; else Orca's `session`/`weekly` | `weekly`, `monthly` | None: pay per use or local; the route says how it is paid | `session`, `weekly` requested, but no Muse usage reported by Orca |
 | **Refusal `verify` matches** | `There's an issue with the selected model` (idles) | `model is not supported when using Codex…` (idles) | `Cannot use this model` (exits) | `invalid model selection` / `not recognized as a known model` (exits) | `Couldn't set model … unknown model id` (exits) | `Model unavailable` | — |
 | **Special rule** | — | — | Cursor `auto` has no profile or cost tier: offered as an option, never routed on its own | — | — | Last resort by default (`lastResortAgents`); routes note that Orca needs an existing worktree | — |
 

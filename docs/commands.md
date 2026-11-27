@@ -112,8 +112,8 @@ Unknown agent ids are handled differently by command:
 
 | Code | Meaning |
 | --- | --- |
-| 0 | Answered. For `route` this covers `ok`, `wait` **and** `none`: check `status` in the output |
-| 1 | Usage error (bad flag, unknown agent, missing argument) or runtime error; also `setup` canceled with Ctrl+C (answering no to "Save" exits 0) |
+| 0 | Answered. For `route` this covers `ok`, `decide` **and** `none`: check `status` in the output |
+| 1 | Usage error (bad flag, unknown agent, missing argument) or runtime error; also `setup` canceled with Ctrl+C (answering no to "Save" exits 0), and a `route` whose quota could not be reserved (nothing on stdout, nothing routed) |
 | 2 | Config error: `config error: <path>: <message>` |
 
 ## `install`
@@ -286,6 +286,21 @@ Reported usage is never adjusted: what is reserved for workers is a separate
 number next to it, and the effective and prospective usage are derived from
 both. See [Quota buckets, reservations and risk](tiers-and-routing.md#quota-reservations-and-risk).
 
+A route is never printed without its reservation. When the reservation ledger
+(`reservations.json` in the cache folder) cannot be locked, read or written,
+`route` prints nothing on stdout, exits 1, and says on stderr:
+
+```text
+error: quota could not be reserved (<cause>): nothing was routed. Fix <cache dir>, or route with --dry-run for an unreserved decision
+```
+
+`--dry-run` is the explicit unreserved path: it decides without writing the
+ledger and, when the ledger could not be written, adds the warning
+`the reservation ledger could not be written: <cause>`. A ledger file that is
+not a valid ledger is not an error: it is kept as `reservations.json.corrupt`,
+a fresh ledger is written, the workers Orca reports live are reconstructed in
+it, and a warning says so.
+
 ## `verify`
 
 Checks whether a newly started worker's agent accepted its model, records any
@@ -325,10 +340,15 @@ Output fields:
 
 The JSON also carries `reservation` (`{ id, state }`, or `null` when none
 matched). The verdict moves the reservation on: a worker that `started` is
-marked `running` (the same record, nothing is reserved twice); `reported`
+marked `running` (the same record, nothing is reserved twice), and so is a
+`stalled` one; `unknown` (for example with `--wait 0`) binds the reservation
+to the Dispatch but leaves it `pending`, so Orca's worker list moves it on at
+the next `route` or `status`, or `pendingMinutes` abandons it; `reported`
 marks it `completed`; a `rejected` model consumed nothing, so its
 reservation is released at once; a `failed` worker keeps its reservation
-until a fresh usage snapshot covers it.
+until a fresh usage snapshot covers it. A reservation already bound to
+another Dispatch is never moved: `reservationError` says
+`reservation <id> is bound to dispatch <x>, not <y>; nothing changed`.
 
 OrcaCompass saves a `rejected` verdict to the cache when Orca reports the
 worker's agent and model (`skippedForHours` is then present). Every route then skips
@@ -354,7 +374,9 @@ orcacompass release --all                                   # forget every reser
 
 A worker that is never released is closed when Orca reports it as finished
 (checked on later calls), and a reservation nobody confirmed is abandoned
-after `reservations.pendingMinutes`. `--json` returns `{ reservation }` (or
+after `reservations.pendingMinutes`. `--reservation` with a `--dispatch` other
+than the one the reservation is bound to changes nothing and exits 1:
+`reservation <id> is bound to dispatch <x>, not <y>; nothing changed`. `--json` returns `{ reservation }` (or
 `{ cleared }` with `--all`). See
 [Reservations](tiers-and-routing.md#reservations).
 
@@ -386,11 +408,16 @@ Text output contains:
 - A warning under the evidence line when the evidence in use is older than
   the snapshot bundled with the installed release.
 - Orca's agent switches.
-- Each agent with its note, model count, usage state and, per quota, a line
+- Each agent with its note, model count, usage state (`usage ok, updated 3m
+  ago`; `usage retained (<error>), updated 12m ago` when the windows shown are
+  kept from an earlier reading because Orca's refresh failed or Orca could not
+  be read) and, per quota, a line
   such as `weekly 50% reported + 3 pp reserved (2 workers) = 53% effective,
   available; resets in 14h`.
 - The reservations that count against quota: id, route, state and the points
-  held on each bucket.
+  held on each bucket not yet settled.
+- A warning when the reservation ledger could not be written, or was
+  unreadable and rebuilt.
 - The pick and up to three alternatives per requested tier, from any cost
   tier that is eligible, or the decision that would come back. A pick with no
   benchmark data on a needed axis gets a `note:` line with the informational
@@ -406,13 +433,14 @@ Text output contains:
 | --- | --- |
 | `now` | Epoch ms of the call |
 | `riskThresholds` | The configured `cautionPercent` and `highPercent` |
-| `reservations` | Every reservation record: `id`, `state`, `live` (whether it counts), `agent`, `model`, `tier`, `effort`, `dispatchId`, timestamps, and `buckets` with the `percentPoints` held on each |
+| `reservations` | Every reservation record: `id`, `state`, `live` (whether it counts), `agent`, `model`, `tier`, `effort`, `pools` (every window the model is declared to draw on), `settled` (windows a fresh reading already covers), `plan`, `dispatchId`, timestamps, and `buckets` with the `percentPoints` held on each: `0` when the record is not live or the window is settled (`settled: true`), else the buffer for the plan the record was reserved on |
 | `ledgerError` | Present when the reservation ledger could not be written |
+| `ledgerRecovered` | Present when the ledger file was unreadable: it was kept as `reservations.json.corrupt` and rebuilt, and this says what was reconstructed |
 | `evidence` | The evidence summary: `source`, `fetchedAt`, `models`, `generatedAt` |
 | `evidenceWarning` | `null`, or a warning when the evidence in use is older than the snapshot bundled with the installed release. The same text is added to `route` warnings; `orcacompass refresh` clears it |
 | `placements` | `builtAt`, `age` in ms, `version`, `rebuilt` (why this call rebuilt it, or `null`), `saveError` (or `null`) |
 | `orcaAgents` | Orca's agent switches as read, or `null` |
-| `agents` | One row per agent: `agent`, `installed`, `enabledInOrca`, `models` (count), `usage` (`null` or `status`, `updatedAt`, `plan`, `error`, `retained` when the last valid snapshot stands in for an unreadable Orca, and `pools`: per quota bucket `name`, `reported` (also as `usedPercent`), `reserved`, `workers`, `effective`, `remaining`, `status`, `resetsAt`, `snapshotAt`, `stale`), plus `note` and `skipped` when they apply |
+| `agents` | One row per agent: `agent`, `installed`, `enabledInOrca`, `models` (count), `usage` (`null` or `status`, `updatedAt`, `plan`, `error`, `retained` when the windows are kept from an earlier reading (Orca's refresh failed, or Orca could not be read and the last valid snapshot stands in), and `pools`: per quota bucket `name`, `reported` (also as `usedPercent`), `reserved`, `workers`, `effective`, `remaining`, `status`, `resetsAt`, `snapshotAt`, `stale`), plus `note` and `skipped` when they apply |
 | `banned` | `{ agent, model }` pairs |
 | `rejected` | Active refusals |
 | `tiers` | Per tier: `status`, `pick` (with `note` when the pick's task coverage could not be verified, see `coverageNote` under `route`), `alternatives`, `warnings`, and `options` when the status is `decide` |

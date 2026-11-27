@@ -304,18 +304,52 @@ points each:
 | 12:10 | 55% | 1 | 2.5 pp | 57.5% |
 | 12:15 | 58% | 0 | 0 pp | 58% |
 
-A finished worker's reservation is released only by a snapshot that Orca took
-at least `settleSeconds` after the worker ended, for the same provider and
-account. The snapshot's own timestamp decides: reading the same cached snapshot
-again releases nothing, however much time passed, and a fresh snapshot
-releases even when it reports the same percentage. A provider whose refresh
-failed keeps its reservations while the others are reconciled.
+A record lists every window its model is declared to draw on (`pools`), not
+only the windows reported when it was made: a window missing from that
+snapshot (a Claude `session` between windows, for example) counts the worker
+as soon as it is reported again. A declared window the account never has
+counts for nothing.
+
+A finished worker's reservation is released **window by window**. A window
+is settled once a reading of it was taken at least `settleSeconds` after the
+worker ended, and after the snapshot the worker was allocated on, for the same
+provider and account; the record's `settled` lists the windows done, which no
+longer count. A declared window the provider does not report settles with
+any snapshot taken that long after the end. Once every window is settled the
+record is `released`. The reading's own timestamp decides: reading the same
+cached snapshot again releases nothing, however much time passed, and a fresh
+reading releases even when it reports the same percentage. A window missing
+from one refresh keeps its last reading (aging to stale, then unknown) instead
+of disappearing. A provider whose refresh failed, or whose windows Orca only
+kept from an earlier reading, keeps its reservations while the others are
+reconciled.
+
+Some windows are carried forward rather than re-read: while a Claude Code
+session is open, Orca's status-line updates (`source: live-session`) refresh
+`session` and `weekly` but copy `fableWeekly` and `monthly` from the last
+full refresh. Such a window counts as re-read only when its value changed
+since the previous reading, or once a healthy snapshot that reports it is at
+least 20 minutes past the worker's end.
+
+A running worker is closed after `reservations.maxRunningHours` only when
+Orca does not confirm it is still live; a worker Orca lists as live keeps its
+reservation however long it runs. A finished record that is still held is
+dropped seven days after the worker ended (`endedAt`), not after it was
+created, so a long worker is never dropped the moment it finishes; a held
+record nobody reconciled within seven days of its end stops counting. A record
+that no longer counts is kept for an hour, for `status`.
 
 The records live in `reservations.json` in the cache folder. Every change is
 made under a lock file and written through a temporary file, so OrcaCompass
 processes running at the same moment cannot lose or duplicate a reservation,
 and the route is decided again on the locked ledger before its capacity is
-reserved: ten simultaneous calls take exactly as many routes as fit.
+reserved: ten simultaneous calls take exactly as many routes as fit. A route
+whose quota cannot be reserved because the ledger cannot be locked, read or
+written is not printed at all: `route` exits 1 (see
+[Outcomes](#outcomes-ok-decide-none)). A file that is not a valid ledger is
+kept as `reservations.json.corrupt` and replaced by a fresh one, in which the
+workers Orca reports live are reconstructed as `running` records; `route`
+and `status` say so in a warning.
 
 ### Risk thresholds {#risk-thresholds}
 
@@ -443,4 +477,7 @@ picked because its bucket has more room is not an upgrade.
 pick only when a route can be taken automatically; the example routes in
 `setup` mark `(upgraded to X)` and `(downgraded to X)`.
 
-`route` exits 0 for every outcome; read `status`.
+`route` exits 0 for `ok`, `decide` and `none`; read `status`. It exits 1,
+with nothing on stdout, when an `ok` route's quota cannot be reserved
+(`quota could not be reserved (…): nothing was routed`): never launch on it.
+`route --dry-run` gives an unreserved decision in that case, with a warning.

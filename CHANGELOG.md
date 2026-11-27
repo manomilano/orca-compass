@@ -74,6 +74,57 @@
 - A preference or `--use` naming an older release in the same family and cost
   tier as a newer one routes it, instead of reporting it as not available.
   Automatic routing still sees only the newest release.
+- **`route` fails closed when quota cannot be reserved.** If the reservation
+  ledger cannot be locked, read or written, `route` prints nothing on stdout,
+  exits 1 and says `quota could not be reserved (…): nothing was routed`.
+  Before, it printed the route with `status: "ok"` and only a warning, so a
+  worker could be launched unreserved. `--dry-run` is the explicit unreserved
+  path and warns when the ledger could not be written. A ledger file that is
+  not valid is kept as `reservations.json.corrupt` and rebuilt, with the
+  workers Orca reports live reconstructed; `route` and `status` say so.
+- The ledger lock records its owner. A lock left by a process that has exited
+  is taken over at once; a live owner is respected for 30 seconds; a holder
+  whose lock was taken over writes nothing and removes nothing.
+- An older usage reading no longer overwrites a newer one in the ledger, and a
+  window missing from one refresh keeps its last reading until it ages out.
+  The ledger is now version 2; version 1 files are read and rewritten.
+- **Reservations are released window by window.** A finished worker stops
+  counting on a window only once that window was re-read after the worker
+  ended and after the snapshot it was allocated on (`settled` lists them);
+  `settleSeconds: 0` no longer releases on the allocation snapshot itself.
+  Claude windows that Orca's live session carries forward (`fableWeekly`,
+  `monthly`) count as re-read when their value changed, or once a healthy
+  snapshot is 20 minutes past the end.
+- A reservation records every window its model is declared to draw on, plus
+  the account and plan, so a window missing at allocation (a Claude
+  `session` between windows) counts the worker once it is reported again.
+- Usage identity follows the account Orca read, including WSL accounts.
+  Switching or signing out of an account drops the previous account's stored
+  snapshot, so its numbers never stand in for another account.
+- Claude's `monthly` spend window is read and declared: a monthly-only account
+  at 100% gets `decide` instead of an unknown route. Antigravity windows of
+  other lengths stay apart from the 5-hour and weekly ones, and bucket names
+  are normalized. Orca's `rateLimits.opencodeGo` is ignored for now.
+- `verify` with an `unknown` verdict (for example `--wait 0`) binds the
+  Dispatch but leaves the reservation `pending` instead of marking it running.
+  A reservation bound to one Dispatch is never moved to another: `verify`
+  reports it as `reservationError` and `release` exits 1, changing nothing.
+- A worker Orca confirms is still live is no longer closed after
+  `maxRunningHours`. Finished records are kept seven days from `endedAt`
+  instead of `createdAt`, and one Dispatch counts once.
+- One agent's malformed usage no longer makes every agent unreachable. Windows
+  Orca kept after a failed refresh are `retained` (medium confidence at most),
+  and `status` shows `usage retained (<error>), updated 12m ago`. A snapshot
+  without a time is treated as stale.
+- `status` holds no points for a record that no longer counts or for a
+  settled window, and uses the plan each record was reserved on.
+- `--use` with an effort variant (`cursor/claude-sonnet-5-5-high`) launches
+  that variant and reserves its effort. A model whose effort cannot be set and
+  whose reported default is `none` or `minimal` no longer counts as meeting a
+  higher demand. The selection reason names windows that could not be read.
+- `reservations.overrides[].scale` must be between 0 and 100, and a warning
+  says when `preferRiskLimit` is above `riskThresholds.highPercent`.
+- `npm run build` cleans `dist` first, so deleted modules no longer ship.
 
 ## 0.2.5
 
