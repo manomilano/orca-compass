@@ -342,7 +342,8 @@ describe('status', () => {
     expect(out()).toMatch(/frontier/);
     expect(out()).toMatch(/evidence: snapshot/);
     expect(out()).toMatch(/evidence: snapshot, \d+ models/);
-    expect(out()).toContain('unclassified (never routed):');
+    expect(out()).toContain('unclassified (not routed automatically):');
+    expect(out()).not.toContain('never routed');
   });
 });
 
@@ -709,6 +710,47 @@ describe('prefer', () => {
     expect(out()).toContain(`  ${reason}`);
     expect(out()).not.toContain('falls short');
     expect(out()).not.toContain('cursor mystery-9 (unranked');
+  });
+
+  it('shows a preferred unranked model consistently in status: routed for its tier, listed as not routed automatically', async () => {
+    const reason = 'Manually preferred model; benchmark data unavailable. Task coverage could not be verified.';
+    const withMystery: MainDeps = {
+      ...deps,
+      run: async (cmd, args) => args[0] === 'models'
+        ? { code: 0, stdout: `${fixture('cursor-list-models.txt')}\nmystery-9 - Mystery 9\n`, stderr: '' }
+        : runner(cmd, args),
+    };
+    expect(await main(['prefer', 'frontier', 'cursor', 'mystery-9'], io, withMystery)).toBe(0);
+    stdout = [];
+    expect(await main(['status', '--json'], io, withMystery)).toBe(0);
+    const s = JSON.parse(out());
+    expect(s.tiers.frontier.pick).toMatchObject({ agent: 'cursor', model: 'mystery-9', note: reason });
+    for (const tier of ['light', 'daily', 'advanced']) expect(s.tiers[tier].pick, tier).not.toHaveProperty('note');
+    expect(s.unclassified).toContainEqual({ agent: 'cursor', model: 'mystery-9', preferredFor: ['frontier'] });
+    expect(s.unclassified).toContainEqual({ agent: 'cursor', model: 'auto' });
+
+    stdout = [];
+    expect(await main(['status'], io, withMystery)).toBe(0);
+    const text = out();
+    expect(text).toMatch(/^ {2}frontier {2}cursor · mystery-9\b.*$\n {14}note: Manually preferred model; benchmark data unavailable\. Task coverage could not be verified\.$/m);
+    expect(text).not.toContain('never routed');
+    expect(text).toMatch(/^unclassified \(not routed automatically\): \d+$/m);
+    // The preferred one is named first and annotated, so the list never contradicts the route above it.
+    expect(text).toMatch(/^ {2}cursor: mystery-9 \(preferred for frontier\), /m);
+  });
+
+  it('keeps the informational reason when --use takes an unranked model', async () => {
+    const withMystery: MainDeps = {
+      ...deps,
+      run: async (cmd, args) => args[0] === 'models'
+        ? { code: 0, stdout: `${fixture('cursor-list-models.txt')}\nmystery-9 - Mystery 9\n`, stderr: '' }
+        : runner(cmd, args),
+    };
+    expect(await main(['route', '--tier', 'daily', '--use', 'cursor/mystery-9', '--dry-run', '--json'], io, withMystery)).toBe(0);
+    const d = JSON.parse(out());
+    const chosen = 'Explicitly chosen model (--use); benchmark data unavailable. Task coverage could not be verified.';
+    expect(d).toMatchObject({ status: 'ok', downgraded: false, route: { agent: 'cursor', model: 'mystery-9' }, coverageNote: chosen });
+    expect(d.reasons).toContain(chosen);
   });
 
   it('validates tier, agent and the model of an installed agent, and warns for an agent not installed', async () => {

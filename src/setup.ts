@@ -41,6 +41,8 @@ export interface TierOption {
   /** The route's highest prospective usage (reported + reserved + this worker's buffer) across its quotas; null when unknown. */
   usagePercent: number | null;
   reason: string;
+  /** Set on the pick when benchmark data is missing on a needed axis, so task coverage could not be verified. */
+  note?: string;
 }
 
 export interface TierChoice {
@@ -94,6 +96,7 @@ function tierChoice(tier: Tier, env: Environment, config: Config): TierChoice {
     options.push({
       agent: d.route.agent, model: baseModel(env, d.route.agent, d.route.model), blocked: false, usagePercent: usageOf(d.quota),
       reason: reason.startsWith(prefix) ? reason.slice(prefix.length) : reason,
+      ...(d.coverageNote ? { note: d.coverageNote } : {}),
     });
   }
   if (own) {
@@ -274,6 +277,7 @@ export async function setupWizard(term: Terminal, env: Environment, config: Conf
           continue;
         }
         for (const line of table(t.options.map((o, i) => [String(i + 1), `${o.agent} ${o.model}`, paceLabel(o)]))) say(line);
+        for (const [i, o] of t.options.entries()) if (o.note) say(`  note on ${i + 1}: ${o.note}`);
         for (;;) {
           const a = await ask(`Favorite for ${TIER_NAMES[tier]}? Number, 0 for none [${pins[tier] ? 'keep' : 'none'}]: `);
           if (a === '') break;
@@ -362,6 +366,7 @@ export async function setupWizard(term: Terminal, env: Environment, config: Conf
         ? d.downgraded ? ` (downgraded to ${d.tier})` : d.upgraded ? ` (upgraded to ${d.tier})` : ` (${d.tier} cost tier)`
         : '';
       say(`  ${tier.padEnd(8)}  ${r ? `${r.agent} · ${r.model}${r.effort ? ` · ${r.effort}` : ''}${moved}` : 'no route'}`);
+      if (d.coverageNote) say(`  ${' '.repeat(8)}  note: ${d.coverageNote}`);
       for (const w of d.warnings) say(`  ${' '.repeat(8)}  warning: ${w}`);
     }
 

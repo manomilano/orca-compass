@@ -190,6 +190,47 @@ describe('setup --complete', () => {
   });
 });
 
+describe('setup with a preferred unranked model', () => {
+  const REASON = 'Manually preferred model; benchmark data unavailable. Task coverage could not be verified.';
+  // Codex also lists a model no benchmark covers.
+  const withMystery: MainDeps = {
+    ...deps,
+    readFile: (p) => {
+      if (!p.endsWith('models_cache.json')) return deps.readFile!(p);
+      const cache = JSON.parse(codexCache);
+      const levels = ['low', 'medium', 'high'].map((effort) => ({ effort, description: effort }));
+      cache.models.push({ slug: 'mystery-9', display_name: 'Mystery 9', visibility: 'list', priority: 99, default_reasoning_level: 'medium', supported_reasoning_levels: levels });
+      return JSON.stringify(cache);
+    },
+  };
+  const PINNED = { pins: { frontier: { agent: 'codex', model: 'mystery-9' } } };
+
+  it('keeps the informational reason on the pick in setup --json, and only there', async () => {
+    writeFileSync(configPath(), JSON.stringify(PINNED));
+    expect(await main(['setup', '--json'], io, withMystery)).toBe(0);
+    const j = JSON.parse(stdout.join('\n'));
+    expect(j.tiers.frontier.pick).toMatchObject({ agent: 'codex', model: 'mystery-9' });
+    expect(j.tiers.frontier.options[0]).toMatchObject({ agent: 'codex', model: 'mystery-9', note: REASON });
+    expect(j.tiers.frontier.warnings.some((w: string) => w.includes('falls short'))).toBe(false);
+    for (const o of j.tiers.frontier.options.slice(1)) expect(o).not.toHaveProperty('note');
+    for (const tier of ['light', 'daily', 'advanced']) {
+      for (const o of j.tiers[tier].options) expect(o, tier).not.toHaveProperty('note');
+    }
+  });
+
+  it('shows the informational reason in the wizard next to the favorite and in the example routes', async () => {
+    writeFileSync(configPath(), JSON.stringify(PINNED, null, 2));
+    const { code, screen } = await wizard(['', '', '', '', '', '', '', ''], withMystery);
+    expect(code).toBe(0);
+    expect(screen).toMatch(/^Frontier: now codex · mystery-9 · high; favorite: codex mystery-9$/m);
+    expect(screen).toContain(`  note on 1: ${REASON}`);
+    expect(screen).toMatch(new RegExp(`^ {2}frontier\\s+codex · mystery-9 · high\\n {12}note: ${escape(REASON)}$`, 'm'));
+    // Ranked routes carry no note.
+    expect(screen.match(/note: /g)).toHaveLength(1);
+    expect(screen).toMatch(/^Nothing changed\. Config: /m);
+  });
+});
+
 describe('setup wizard', () => {
   it('exits 1 without a terminal and points to the chat flow and the commands', async () => {
     expect(await main(['setup'], io, deps)).toBe(1);

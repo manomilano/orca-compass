@@ -460,7 +460,8 @@ async function rejectedCommand(args: string[], io: IO, deps: MainDeps): Promise<
 
 interface TierView {
   status: Decision['status'];
-  pick?: { agent: string; model: string; effort: Effort | null; confidence?: string; reason: string };
+  /** `note`: why task coverage of the pick could not be verified (benchmark data unavailable); absent when it was checked. */
+  pick?: { agent: string; model: string; effort: Effort | null; confidence?: string; reason: string; note?: string };
   alternatives: Alternative[];
   warnings: string[];
   options?: Decision['options'];
@@ -487,7 +488,10 @@ function buildStatus(gathered: Gathered, config: Config) {
       const prefix = `${d.route.agent} ${d.route.model}: `;
       const reason = d.reasons[0] ?? '';
       const costLabel = d.tier && d.tier !== tier ? ` (${d.tier} cost tier)` : '';
-      view.pick = { ...d.route, confidence: d.confidence, reason: (reason.startsWith(prefix) ? reason.slice(prefix.length) : reason) + costLabel };
+      view.pick = {
+        ...d.route, confidence: d.confidence, reason: (reason.startsWith(prefix) ? reason.slice(prefix.length) : reason) + costLabel,
+        ...(d.coverageNote ? { note: d.coverageNote } : {}),
+      };
     }
     if (own && d.options) view.options = d.options;
     tiers[tier] = view;
@@ -517,10 +521,13 @@ function buildStatus(gathered: Gathered, config: Config) {
     };
   });
 
-  const unclassified: { agent: string; model: string }[] = [];
+  // Never routed automatically; an explicit preference still routes one for its tier (`preferredFor`).
+  const unclassified: { agent: string; model: string; preferredFor?: Tier[] }[] = [];
   for (const disc of env.discoveries) {
     for (const m of disc.models) {
-      if (m.profile.class === null) unclassified.push({ agent: disc.agent, model: m.modelId });
+      if (m.profile.class !== null) continue;
+      const preferredFor = TIERS.filter((t) => config.pins[t]?.agent === disc.agent && config.pins[t]?.model !== undefined && launchIds(m).includes(config.pins[t]!.model!));
+      unclassified.push({ agent: disc.agent, model: m.modelId, ...(preferredFor.length > 0 ? { preferredFor } : {}) });
     }
   }
 
@@ -593,6 +600,7 @@ function statusText(s: Status, sources: SnapshotSource[]): string[] {
     if (t.pick) {
       const { agent, model, effort, confidence, reason } = t.pick;
       lines.push(`  ${label}  ${agent} · ${model}${effort ? ` · ${effort}` : ''} (${confidence}) — ${reason}`);
+      if (t.pick.note) lines.push(`  ${' '.repeat(8)}    note: ${t.pick.note}`);
     } else if (t.status === 'decide' && t.options) {
       const until = t.options.wait?.until;
       const parts = [
@@ -612,9 +620,13 @@ function statusText(s: Status, sources: SnapshotSource[]): string[] {
   if (s.banned.length > 0) lines.push(`banned by you: ${s.banned.map((b) => `${b.agent} ${b.model}`).join(', ')}`);
   for (const r of s.rejected) lines.push(`skipped ${r.agent} ${r.model}, ${rejectedText(r, now)} (orcacompass rejected --clear forgets it)`);
   if (s.unclassified.length > 0) {
-    lines.push(`unclassified (never routed): ${s.unclassified.length}`);
+    lines.push(`unclassified (not routed automatically): ${s.unclassified.length}`);
     const byAgent = new Map<string, string[]>();
-    for (const u of s.unclassified) byAgent.set(u.agent, [...(byAgent.get(u.agent) ?? []), u.model]);
+    // Preferred ones first, so the 15 shown per agent always include them.
+    for (const u of [...s.unclassified].sort((a, b) => Number(!a.preferredFor) - Number(!b.preferredFor))) {
+      const label = u.preferredFor ? `${u.model} (preferred for ${u.preferredFor.join(', ')})` : u.model;
+      byAgent.set(u.agent, [...(byAgent.get(u.agent) ?? []), label]);
+    }
     // OpenCode can list hundreds of OpenRouter models; status --json has them all.
     for (const [agent, models] of byAgent) {
       const more = models.length > 15 ? `, … ${models.length - 15} more` : '';

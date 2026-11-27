@@ -248,6 +248,10 @@ export interface RouteOption {
   /** The flag that makes this choice on the same route call: `--use <agent>/<model>`. */
   use: string;
   lastResort?: true;
+  /** The tier's preferred route, held back only by preferRiskLimit. */
+  preferred?: true;
+  /** Set when benchmark data is missing on a needed axis, so task coverage could not be verified. */
+  coverageNote?: string;
 }
 
 /** What the Orchestrator can do when no suitable route is below the automatic-routing threshold. */
@@ -284,6 +288,11 @@ export interface Decision {
   tier?: Tier;
   downgraded: boolean;
   upgraded: boolean;
+  /**
+   * Informational: benchmark data is missing on a needed axis of a manually preferred or --use model, so task
+   * coverage could not be verified. Not a shortfall and not a downgrade; absent for routes whose coverage was checked.
+   */
+  coverageNote?: string;
   route?: { agent: AgentId; model: string; effort: Effort | null };
   /** How the route's effort was chosen and applied; present with `route`. */
   effort?: EffortResolution;

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG } from '../../src/config.js';
 import { parseSnapshot, type SnapshotModel } from '../../src/evidence/snapshot.js';
 import { fixture } from '../helpers/fakes.js';
-import { agentSkipReason, formatLaunch, route } from '../../src/routing/router.js';
+import { agentSkipReason, CHOSEN_UNVERIFIED, formatLaunch, route } from '../../src/routing/router.js';
 import type { Config, Effort, Environment, LaunchModel, Reservation, RouteRequest } from '../../src/types.js';
 import {
   CURSOR_AUTO, cursorVariant, machineEnv, onlyModels, placed, withCursorModels, withPool, withUsageStatus, withUsageUpdatedAt,
@@ -1265,6 +1265,129 @@ describe('unranked models with manual preferences', () => {
     expect(covering).toMatchObject({ status: 'ok', downgraded: false, route: { model: 'mystery-9' }, quality: { class: 'frontier', covers: true, shortfall: 0, evidence: 'measured' } });
     expect(covering.reasons).not.toContain(UNAVAILABLE_REASON);
     expect(covering.warnings).toEqual([]);
+  });
+
+  it('exposes the informational reason as coverageNote only when coverage could not be verified', () => {
+    const e = withCursorModels(onlyModels(env, 'cursor', []), [mystery]);
+    const preferred = route({ tier: 'frontier' }, e, { ...DEFAULT_CONFIG, pins: { frontier: { agent: 'cursor', model: 'mystery-9' } } });
+    expect(preferred.coverageNote).toBe(UNAVAILABLE_REASON);
+    // A ranked route, automatic or preferred, has its coverage checked: no note.
+    expect(r({ tier: 'daily' })).not.toHaveProperty('coverageNote');
+    expect(route({ tier: 'daily' }, env, { ...DEFAULT_CONFIG, pins: { daily: { agent: 'codex', model: 'gpt-6.1-terra' } } })).not.toHaveProperty('coverageNote');
+  });
+
+  it('keeps the informational reason when --use selects an unranked model', () => {
+    const e = withCursorModels(onlyModels(env, 'cursor', []), [mystery]);
+    // Not preferred: the Orchestrator names it, so the reason says so instead of claiming a manual preference.
+    const chosen = route({ tier: 'frontier', use: { agent: 'cursor', model: 'mystery-9' } }, e, DEFAULT_CONFIG);
+    expect(chosen).toMatchObject({ status: 'ok', downgraded: false, route: { model: 'mystery-9' }, quality: { covers: null, shortfall: 0 }, coverageNote: CHOSEN_UNVERIFIED });
+    expect(chosen.reasons).toContain(CHOSEN_UNVERIFIED);
+    expect(chosen.reasons).not.toContain(UNAVAILABLE_REASON);
+    expect(chosen.warnings.some((w) => w.includes('falls short'))).toBe(false);
+    // Preferred for the tier and taken with --use: the exact manual-preference reason.
+    const pinned = route({ tier: 'frontier', use: { agent: 'cursor', model: 'mystery-9' } }, e, { ...DEFAULT_CONFIG, pins: { frontier: { agent: 'cursor', model: 'mystery-9' } } });
+    expect(pinned).toMatchObject({ status: 'ok', downgraded: false, coverageNote: UNAVAILABLE_REASON });
+    expect(pinned.reasons).toContain(UNAVAILABLE_REASON);
+    expect(pinned.reasons).toContain('chosen by the Orchestrator (--use cursor/mystery-9): risk thresholds and requirements were not applied');
+    // A ranked model taken with --use has its coverage checked: no note.
+    expect(route({ tier: 'daily', use: { agent: 'codex', model: 'gpt-6.1-terra' } }, env, DEFAULT_CONFIG)).not.toHaveProperty('coverageNote');
+  });
+
+  it('hands a preferred unranked model over the preference limit back to the Orchestrator as WAIT and USE', () => {
+    const config: Config = { ...DEFAULT_CONFIG, pins: { frontier: { agent: 'cursor', model: 'mystery-9' } } };
+    const e = withCursorModels(onlyModels(env, 'cursor', []), [mystery], 95);
+    const resetsAt = e.usage.cursor.pools['bucket:Cursor Models'].resetsAt!;
+    const d = route({ tier: 'frontier', agents: ['cursor'] }, e, config);
+    expect(d.status).toBe('decide');
+    expect(d.route).toBeUndefined();
+    expect(d.warnings.some((w) => w.startsWith('preferred cursor mystery-9 skipped: Cursor Models would be'))).toBe(true);
+    expect(d.options!.use).toHaveLength(1);
+    expect(d.options!.use[0]).toMatchObject({
+      agent: 'cursor', model: 'mystery-9', use: '--use cursor/mystery-9', preferred: true, coverageNote: UNAVAILABLE_REASON,
+      reason: expect.stringMatching(/^preferred route, Cursor Models 9\d(\.\d+)?% prospective is at or above the 90% preference limit$/),
+    });
+    expect(d.options!.wait).toMatchObject({ until: resetsAt });
+    // Never offered as a lower-requirement route, and never routed automatically.
+    expect(d.options!.lower.some((l) => l.model === 'mystery-9')).toBe(false);
+    expect(d.alternatives).toEqual([]);
+    expect(d.reasons[0]).toBe('preferred cursor mystery-9 is over the 90% preference limit and no other route can take the job automatically');
+    expect(d.reasons.some((x) => x.startsWith('USE: cursor mystery-9 with --use cursor/mystery-9 (preferred route') && x.endsWith(UNAVAILABLE_REASON))).toBe(true);
+    // The Orchestrator takes it: routed with the manual-preference reason.
+    const used = route({ tier: 'frontier', agents: ['cursor'], use: { agent: 'cursor', model: 'mystery-9' } }, e, config);
+    expect(used).toMatchObject({ status: 'ok', downgraded: false, route: { model: 'mystery-9' }, coverageNote: UNAVAILABLE_REASON });
+    // Without the preference it stays out entirely.
+    expect(route({ tier: 'frontier', agents: ['cursor'] }, e, DEFAULT_CONFIG).status).toBe('none');
+  });
+
+  it('offers a preferred unranked model held back by a lower preference limit, waiting for the bucket over it', () => {
+    // 60% is below every risk threshold, but at or above the user's own 50% limit for preferences.
+    const config: Config = { ...DEFAULT_CONFIG, preferRiskLimit: 50, pins: { daily: { agent: 'cursor', model: 'mystery-9' } } };
+    const e = withCursorModels(onlyModels(env, 'cursor', []), [mystery], 60);
+    const d = route({ tier: 'daily', agents: ['cursor'] }, e, config);
+    expect(d.status).toBe('decide');
+    expect(d.options!.use[0]).toMatchObject({ model: 'mystery-9', preferred: true, reason: expect.stringContaining('at or above the 50% preference limit') });
+    expect(d.options!.wait).toMatchObject({ until: e.usage.cursor.pools['bucket:Cursor Models'].resetsAt });
+  });
+
+  it('puts the held preference before other routes over the risk threshold', () => {
+    const config: Config = { ...DEFAULT_CONFIG, pins: { daily: { agent: 'cursor', model: 'mystery-9' } } };
+    // Cursor's own routes are on Other Models; push both buckets and the monthly over the threshold.
+    let e = withCursorModels(onlyModels(env, 'cursor', ['claude-sonnet-5-5']), [mystery], 95);
+    e = withPool(withPool(e, 'cursor', 'bucket:Other Models', { usedPercent: 95 }), 'cursor', 'monthly', { usedPercent: 95 });
+    const d = route({ tier: 'daily', agents: ['cursor'] }, e, config);
+    expect(d.status).toBe('decide');
+    expect(d.options!.use.map((u) => u.model)).toEqual(['mystery-9', 'claude-sonnet-5-5-medium']);
+    expect(d.options!.use[1]).not.toHaveProperty('preferred');
+    expect(d.reasons[0]).toMatch(/^no eligible route is below the 90% risk threshold: cursor claude-sonnet-5-5/);
+  });
+
+  it('does not offer an exhausted or effort-incompatible preferred unranked model', () => {
+    const config: Config = { ...DEFAULT_CONFIG, pins: { daily: { agent: 'cursor', model: 'mystery-9' } } };
+    const exhausted = withCursorModels(onlyModels(env, 'cursor', []), [mystery], 100);
+    expect(route({ tier: 'daily', agents: ['cursor'] }, exhausted, config)).toMatchObject({ status: 'none' });
+    const tight = withCursorModels(onlyModels(env, 'cursor', []), [mystery], 95);
+    const effort = route({ tier: 'daily', agents: ['cursor'], effort: 'max' }, tight, config);
+    expect(effort.status).toBe('none');
+    expect(effort.warnings).toContain('preferred cursor mystery-9 skipped: does not support effort max (low/medium/high)');
+  });
+});
+
+describe('explicit preferences for older releases', () => {
+  // Opus 5 and 5.5 are both Advanced cost: automatic routing sees only 5.5.
+  const opus5: Config = { ...DEFAULT_CONFIG, pins: { advanced: { agent: 'claude', model: 'claude-opus-5' } } };
+
+  it('routes a preferred older release in the same cost tier instead of dropping it as not available', () => {
+    const d = route({ tier: 'advanced', agents: claude }, env, opus5);
+    expect(d).toMatchObject({ status: 'ok', route: { agent: 'claude', model: 'claude-opus-5' } });
+    expect(d.reasons).toContain('preferred route, available');
+    expect(d.warnings.some((w) => w.includes('not available'))).toBe(false);
+    expect(d).not.toHaveProperty('coverageNote');
+  });
+
+  it('takes an older release named with --use', () => {
+    expect(route({ tier: 'advanced', agents: claude, use: { agent: 'claude', model: 'claude-opus-5' } }, env, DEFAULT_CONFIG))
+      .toMatchObject({ status: 'ok', route: { model: 'claude-opus-5' } });
+  });
+
+  it('keeps the older release out of automatic routing, alternatives and other tiers', () => {
+    // The preference is skipped over its limit: routing goes on without it, and never to it.
+    const d = route({ tier: 'advanced' }, env, { ...opus5, preferRiskLimit: 10 });
+    expect(d.route?.model).not.toBe('claude-opus-5');
+    expect(d.alternatives.some((a) => a.model === 'claude-opus-5')).toBe(false);
+    expect(d.skipped.some((s) => s.model === 'claude-opus-5')).toBe(false);
+    // A preference for Advanced does not bring it into a Frontier route.
+    const frontier = route({ tier: 'frontier', agents: claude }, env, opus5);
+    expect(frontier.route?.model).not.toBe('claude-opus-5');
+    expect(frontier.alternatives.some((a) => a.model === 'claude-opus-5')).toBe(false);
+  });
+
+  it('hands a preferred older release over the limit back as USE when nothing else is below the threshold', () => {
+    const tight = withPool(env, 'claude', 'weekly', { usedPercent: 95 });
+    const d = route({ tier: 'advanced', agents: claude }, tight, opus5);
+    expect(d.status).toBe('decide');
+    expect(d.options!.use[0]).toMatchObject({ model: 'claude-opus-5', preferred: true });
+    expect(d.options!.use[0]).not.toHaveProperty('coverageNote');
+    expect(d.options!.lower.some((l) => l.model === 'claude-opus-5')).toBe(false);
   });
 });
 

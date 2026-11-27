@@ -64,7 +64,14 @@ interface Candidate {
   confidence: Confidence;
   /** Set when usage could not be evaluated (unknown, very stale, no matching pool, no usage window). */
   usageNote?: string;
+  /** An older release kept only because a preference or --use names it: never routed automatically. */
+  explicitOnly?: true;
 }
+
+/** Informational reason for a manually preferred model whose benchmark data is missing on a needed axis (Fix #6). */
+export const PREFERRED_UNVERIFIED = 'Manually preferred model; benchmark data unavailable. Task coverage could not be verified.';
+/** The same for a model the Orchestrator names with --use and the user has not preferred. */
+export const CHOSEN_UNVERIFIED = 'Explicitly chosen model (--use); benchmark data unavailable. Task coverage could not be verified.';
 
 interface Resolved {
   model: string;
@@ -219,7 +226,8 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
   const agents = eligibleAgents(req, env, config, skipped, deferred);
   const plan = effortPlan(req, config);
   const { candidates: all, fallback } = collectCandidates(agents, env, config, req, plan, skipped);
-  const named = all.filter((c) => c.tier !== null && c.model.profile.class !== null);
+  // Ranked models that compete automatically; older releases kept for a preference or --use stay out.
+  const named = all.filter((c) => !c.explicitOnly && c.tier !== null && c.model.profile.class !== null);
   const requested = req.tier;
   const warnings: string[] = [];
   // Eligible: meets every capability need and can apply an effort that satisfies the request.
@@ -239,12 +247,24 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
   });
   const skippedLine = (list: Skipped = skipped): string[] => list.length ? [`skipped: ${list.map((s) => `${s.agent}${s.model ? ` ${s.model}` : ''} (${s.reason})`).join(', ')}`] : [];
 
+  const pin = config.pins[requested];
+  // An explicit model preference for this tier names the candidate (an agent-only preference names no model).
+  const pinned = (c: Candidate): boolean => !!pin?.model && c.model.agent === pin.agent && launchIds(c.model).includes(pin.model);
+  // A preferred model held back only by preferRiskLimit, when automatic routing would never offer it: it goes
+  // back to the Orchestrator as a USE option (and with WAIT), never into automatic routing or LOWER.
+  let held: { cand: Candidate; over: CandidateBucket } | undefined;
+  /** Why coverage could not be checked: benchmark data is missing on a needed axis. Undefined when it was checked. */
+  const coverageNote = (c: Candidate, how: 'automatic' | 'preferred' | 'chosen'): string | undefined => {
+    if (c.quality === null || c.unknown.length === 0 || how === 'automatic') return undefined;
+    return how === 'preferred' || pinned(c) ? PREFERRED_UNVERIFIED : CHOSEN_UNVERIFIED;
+  };
+
   const finish = (cand: Candidate, how: 'automatic' | 'preferred' | 'chosen'): RoutePlan => {
     const chosen = cand.launch;
     const effort = effortResolution(cand, plan, chosen);
     const quality = cand.quality;
     const down = quality !== null && quality.covers === false;
-    const unverified = quality !== null && cand.unknown.length > 0;
+    const note = coverageNote(cand, how);
     const up = quality?.covers === true && cand.tier !== null && TIERS.indexOf(cand.tier) > TIERS.indexOf(requested)
       && !eligible.some((c) => TIERS.indexOf(c.tier!) <= TIERS.indexOf(requested));
     const others = eligible.filter((c) => c !== cand);
@@ -261,10 +281,13 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
     if (cand.model.agent === 'opencode') reasons.push('opencode: Orca takes --model for OpenCode only in an existing worktree (--worktree current or a selector)');
     if (how === 'preferred') {
       reasons.push(`preferred route, ${cand.quota ? statusText(cand.quota.status) : 'no usage window'}`);
-      if (unverified) reasons.push('Manually preferred model; benchmark data unavailable. Task coverage could not be verified.');
+      if (note) reasons.push(note);
       if (down) reasons.push(`preferred route does not cover the job: ${cand.below.map(({ axis, score, cut }) => `${axis} ${score ?? 'unranked'} < ${cut}`).join(', ')}`);
     }
-    if (how === 'chosen') reasons.push(`chosen by the Orchestrator (${useFlag(cand.model.agent, chosen.model)}): risk thresholds and requirements were not applied`);
+    if (how === 'chosen') {
+      reasons.push(`chosen by the Orchestrator (${useFlag(cand.model.agent, chosen.model)}): risk thresholds and requirements were not applied`);
+      if (note) reasons.push(note);
+    }
     reasons.push(effortText(effort, cand));
     if (down) {
       reasons.push(`downgraded from ${requested}: ${how === 'preferred' ? 'preferred route does not cover the job' : 'chosen route does not cover the job'}`);
@@ -296,6 +319,7 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
         ...base(), skipped: finalSkipped, status: 'ok', tier: cand.tier ?? undefined, quality,
         source: quality === null ? 'auto' : cand.model.profile.hint?.source ?? 'evidence',
         downgraded: down, upgraded: up,
+        ...(note ? { coverageNote: note } : {}),
         route: { agent: cand.model.agent, model: chosen.model, effort: chosen.effort },
         effort, launchArgs: chosen.args,
         confidence: quality === null && cand.confidence === 'high' ? 'medium' : cand.confidence,
@@ -325,7 +349,6 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
 
   const automatic = eligible.find((c) => AUTOMATIC.includes(standing(c)));
 
-  const pin = config.pins[requested];
   if (pin) {
     // An explicit model preference may name an unranked or non-covering model; an agent-only one takes the agent's best eligible route.
     const isPin = (c: Candidate) => c.model.agent === pin.agent && (pin.model ? launchIds(c.model).includes(pin.model) : true);
@@ -342,6 +365,7 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
     else {
       const over = match.quota?.buckets.find((b) => b.prospective !== null && b.prospective >= config.preferRiskLimit);
       if (!over) return finish(match, 'preferred');
+      if (!eligible.includes(match)) held = { cand: match, over };
       warnings.push(`${label} skipped: ${displayPool(over.pool)} would be ${percentText(over.prospective!)} used with this worker (limit ${config.preferRiskLimit}%); ${resetText(over, env.now)}`);
     }
   }
@@ -349,11 +373,13 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
   if (automatic) return finish(automatic, 'automatic');
 
   // Nothing can be routed automatically: the decision goes back to the Orchestrator.
-  const lower = rankCandidates(ineligible).sort((a, b) => shortfallOf(a) - shortfallOf(b));
+  const lower = rankCandidates(ineligible.filter((c) => c !== held?.cand)).sort((a, b) => shortfallOf(a) - shortfallOf(b));
   const options = decisionOptions(eligible, lower, config.cursorAuto ? fallback : undefined);
   const reasons: string[] = [];
   if (agents.length === 0) reasons.push('no usable agent');
-  else if (eligible.length > 0) {
+  else if (held && eligible.length === 0) {
+    reasons.push(`preferred ${pin!.agent} ${pin!.model} is over the ${config.preferRiskLimit}% preference limit and no other route can take the job automatically`);
+  } else if (eligible.length > 0) {
     reasons.push(`no eligible route is below the ${config.riskThresholds.highPercent}% risk threshold: ${eligible.slice(0, 6).map((c) => `${c.model.agent} ${c.model.modelId} (${summary(c)})`).join(', ')}`);
   } else if (req.effort && named.some((c) => c.quality?.covers)) {
     const offered = named.filter((c) => c.quality?.covers).slice(0, 6).map((c) => `${c.model.agent} ${c.model.modelId} (${supportedEfforts(c.model)})`).join(', ');
@@ -376,11 +402,23 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
     const option = (c: Candidate, reason: string): RouteOption => ({
       agent: c.model.agent, model: c.launch.model, effort: c.launch.effort, tier: c.tier, quota: c.quota, reason, use: useFlag(c.model.agent, c.launch.model),
     });
-    const use = suitable.filter((c) => !c.blocked && !AUTOMATIC.includes(standing(c))).slice(0, 5).map((c) => option(c, summary(c)));
+    const use = suitable.filter((c) => !c.blocked && !AUTOMATIC.includes(standing(c))).map((c) => option(c, summary(c)));
+    if (held) {
+      // The user's preference comes first: it is what they asked for, held back only by their own limit.
+      const { cand, over } = held;
+      const short = cand.below.length > 0 ? `; does not cover the job: ${shortfallText(cand)}` : '';
+      const note = coverageNote(cand, 'preferred');
+      use.unshift({
+        ...option(cand, `preferred route, ${displayPool(over.pool)} ${percentText(over.prospective!)} prospective is at or above the ${config.preferRiskLimit}% preference limit${short}`),
+        preferred: true, ...(note ? { coverageNote: note } : {}),
+      });
+    }
     const lowerOptions = lowerCandidates.filter((c) => AUTOMATIC.includes(standing(c))).slice(0, 5)
       .map((c) => ({ ...option(c, summary(c)), shortfall: shortfallText(c) }));
     if (auto && AUTOMATIC.includes(standing(auto))) lowerOptions.push({ ...option(auto, summary(auto)), shortfall: 'capability unknown: Cursor picks the model' });
-    return { wait: waitOption(suitable, env.now), use, lower: lowerOptions };
+    const holding = suitable.filter((c) => c.quota !== null && !AUTOMATIC.includes(c.quota.status)).map((c) => ({ cand: c, buckets: blockingBuckets(c) }));
+    if (held) holding.unshift({ cand: held.cand, buckets: held.cand.quota!.buckets.filter((b) => b.prospective !== null && b.prospective >= config.preferRiskLimit) });
+    return { wait: waitOption(holding, env.now), use: use.slice(0, 5), lower: lowerOptions };
   }
 }
 
@@ -393,20 +431,23 @@ function shortfallText(c: Candidate): string {
   return parts.join('; ');
 }
 
+/** Buckets holding a route back from automatic routing: high risk, fully reserved or exhausted. */
+const blockingBuckets = (c: Candidate): CandidateBucket[] =>
+  c.quota!.buckets.filter((b) => b.prospectiveStatus === 'high' || b.prospectiveStatus === 'reserved' || b.prospectiveStatus === 'exhausted');
+
 /**
- * WAIT: what waiting can bring. A reset time is named only when every bucket holding a route back reports
- * one; otherwise no time is given. Capacity held by reservations frees with a fresh usage snapshot.
+ * WAIT: what waiting can bring, for each route held back with the buckets holding it back. A reset time is
+ * named only when every bucket holding a route back reports one; otherwise no time is given. Capacity held
+ * by reservations frees with a fresh usage snapshot.
  */
-function waitOption(suitable: Candidate[], now: number): DecisionOptions['wait'] {
-  const held = suitable.filter((c) => c.quota !== null && !AUTOMATIC.includes(c.quota.status));
+function waitOption(held: { cand: Candidate; buckets: CandidateBucket[] }[], now: number): DecisionOptions['wait'] {
   if (held.length === 0) return null;
-  const blocking = (c: Candidate): CandidateBucket[] => c.quota!.buckets.filter((b) => b.prospectiveStatus === 'high' || b.prospectiveStatus === 'reserved' || b.prospectiveStatus === 'exhausted');
-  const times = held.map((c) => {
-    const resets = blocking(c).map((b) => b.resetsAt);
+  const times = held.map(({ buckets }) => {
+    const resets = buckets.map((b) => b.resetsAt);
     return resets.length > 0 && resets.every((t): t is number => t !== null && t > now) ? Math.max(...resets) : undefined;
   }).filter((t): t is number => t !== undefined);
   const until = times.length > 0 ? Math.min(...times) : undefined;
-  const reservedPoints = Math.max(0, ...held.flatMap((c) => blocking(c).map((b) => b.reserved)));
+  const reservedPoints = Math.max(0, ...held.flatMap(({ buckets }) => buckets.map((b) => b.reserved)));
   const parts: string[] = [];
   if (until !== undefined) parts.push(`the earliest quota reset is in ${duration(until - now)}`);
   else parts.push('no reset time is reported for the quota holding these routes back');
@@ -417,7 +458,7 @@ function waitOption(suitable: Candidate[], now: number): DecisionOptions['wait']
 function optionLines(o: DecisionOptions, now: number): string[] {
   const lines: string[] = [];
   if (o.wait) lines.push(`WAIT: ${o.wait.until !== undefined ? `until ${new Date(o.wait.until).toISOString()} (${duration(o.wait.until - now)}); ` : ''}${o.wait.reason}`);
-  for (const u of o.use) lines.push(`USE: ${u.agent} ${u.model} with ${u.use} (${u.reason})`);
+  for (const u of o.use) lines.push(`USE: ${u.agent} ${u.model} with ${u.use} (${u.reason})${u.coverageNote ? ` ${u.coverageNote}` : ''}`);
   for (const l of o.lower) lines.push(`LOWER: ${l.agent} ${l.model} takes the job with lower requirements: ${l.shortfall} (${l.reason})`);
   if (o.lower.length > 0) lines.push('to LOWER, route again with lower --need or --demand; to take one route as it is, add its --use flag');
   return lines;
@@ -503,6 +544,9 @@ export const rejectedText = (r: Rejection, now: number): string => `refused by $
 function collectCandidates(agents: PlacedAgent[], env: Environment, config: Config, req: RoutingRequest, plan: EffortPlan, skipped: Skipped): { candidates: Candidate[]; fallback?: Candidate } {
   const models: PlacedModel[] = [];
   let fallback: Candidate | undefined;
+  const pin = config.pins[req.tier];
+  // The tier's explicit model preference, or the Orchestrator's --use, names this model.
+  const named = (model: PlacedModel) => [pin, req.use].some((choice) => choice?.agent === model.agent && choice.model !== undefined && launchIds(model).includes(choice.model));
   for (const d of agents) {
     for (const model of d.models) {
       if (model.noZdr && config.excludeNoZdr) continue;
@@ -518,18 +562,20 @@ function collectCandidates(agents: PlacedAgent[], env: Environment, config: Conf
         if ((config.cursorAuto || req.use) && !auto.effortShort) fallback = auto;
         continue;
       }
-      if (model.profile.class === null) {
-        const pin = config.pins[req.tier];
-        const named = (choice: { agent: AgentId; model?: string } | undefined) => choice?.agent === model.agent && choice.model !== undefined && launchIds(model).includes(choice.model);
-        if (!named(pin) && !named(req.use)) {
-          skipped.push({ agent: model.agent, model: model.modelId, reason: 'unranked: no evidence or estimate' });
-          continue;
-        }
+      if (model.profile.class === null && !named(model)) {
+        skipped.push({ agent: model.agent, model: model.modelId, reason: 'unranked: no evidence or estimate' });
+        continue;
       }
       models.push(model);
     }
   }
-  return { candidates: newestPerFamilyTier(models).map((model) => evaluate(model, env, config, req.needs, plan)), fallback };
+  // An older release the preference or --use names survives, but only for that explicit choice.
+  const newest = new Set(newestPerFamilyTier(models));
+  const candidates = models.filter((model) => newest.has(model) || named(model)).map((model) => {
+    const c = evaluate(model, env, config, req.needs, plan);
+    return newest.has(model) ? c : { ...c, explicitOnly: true as const };
+  });
+  return { candidates, fallback };
 }
 
 /**
