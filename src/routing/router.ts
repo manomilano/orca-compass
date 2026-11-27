@@ -66,6 +66,8 @@ interface Candidate {
   usageNote?: string;
   /** An older release kept only because a preference or --use names it: never routed automatically. */
   explicitOnly?: true;
+  /** The launch effort is the one encoded in the effort-variant id named by --use, not the planned one. */
+  effortFromUse?: true;
 }
 
 /** Informational reason for a manually preferred model whose benchmark data is missing on a needed axis (Fix #6). */
@@ -135,7 +137,9 @@ export function chooseEffort(model: LaunchModel, plan: EffortPlan): { effort: Ef
   }
   if (offered.length === 0) {
     const own = model.defaultEffort;
-    const satisfied = plan.source === 'tier-default' || plan.demand === DEMANDS[0] || (own !== undefined && rank(own) >= rank(target));
+    // A known default must reach the target (a default of none or minimal does not satisfy a low demand);
+    // an unreported default is trusted with the lowest demand only.
+    const satisfied = plan.source === 'tier-default' || (own === undefined ? plan.demand === DEMANDS[0] : rank(own) >= rank(target));
     return satisfied ? { effort: null } : { effort: null, short: `effort cannot be set (${model.agent} decides, default ${own ?? 'not reported'}); ${target} needed` };
   }
   const atLeast = offered.find((e) => rank(e) >= rank(target));
@@ -303,7 +307,10 @@ function routeOnce(req: RoutingRequest, env: Environment, config: Config, deferr
       if (b.prospectiveStatus === 'available' || b.prospectiveStatus === 'unknown') continue;
       warnings.push(`${displayPool(b.pool)} quota would be ${percentText(b.prospective!)} used with this worker (${statusText(b.prospectiveStatus)}); ${resetText(b, env.now)}`);
     }
-    if (state === 'unknown') warnings.push(`usage of ${cand.model.agent} is unknown: ${cand.usageNote ?? 'not reported'}; routed without a quota check`);
+    if (state === 'unknown') {
+      const partial = cand.quota?.buckets.some((b) => b.reported !== null) ?? false;
+      warnings.push(`usage of ${cand.model.agent} is unknown: ${cand.usageNote ?? 'not reported'}; routed without a ${partial ? 'complete ' : ''}quota check`);
+    }
     if (how === 'automatic') reasons.push(selectionText(cand, eligible, config));
     const next = others.find((c) => AUTOMATIC.includes(standing(c)));
     if (next) {
@@ -558,7 +565,7 @@ function collectCandidates(agents: PlacedAgent[], env: Environment, config: Conf
       }
       if (model.agent === 'cursor' && model.modelId === 'auto') {
         // Cursor picks the model, so it is never eligible on its own: it is offered as an option, or taken with --use.
-        const auto = evaluate(model, env, config, req.needs, plan, true);
+        const auto = evaluate(model, env, config, req.needs, plan, undefined, true);
         if ((config.cursorAuto || req.use) && !auto.effortShort) fallback = auto;
         continue;
       }
@@ -572,7 +579,7 @@ function collectCandidates(agents: PlacedAgent[], env: Environment, config: Conf
   // An older release the preference or --use names survives, but only for that explicit choice.
   const newest = new Set(newestPerFamilyTier(models));
   const candidates = models.filter((model) => newest.has(model) || named(model)).map((model) => {
-    const c = evaluate(model, env, config, req.needs, plan);
+    const c = evaluate(model, env, config, req.needs, plan, req.use?.agent === model.agent ? req.use.model : undefined);
     return newest.has(model) ? c : { ...c, explicitOnly: true as const };
   });
   return { candidates, fallback };
@@ -616,7 +623,25 @@ function compareRelease(a: LaunchModel, b: LaunchModel): number {
 }
 
 
-function evaluate(model: PlacedModel, env: Environment, config: Config, needs: Needs, plan: EffortPlan, auto = false): Candidate {
+/**
+ * The effort encoded in an effort-variant id named by --use, with why it does not satisfy the request.
+ * Undefined when the id is not one of the model's variant ids (or is its base id): the plan decides then.
+ */
+function useVariantEffort(model: LaunchModel, useId: string | undefined, plan: EffortPlan): { effort: Effort; short?: string } | undefined {
+  const { launch } = model;
+  if (useId === undefined || useId === model.modelId || launch.kind !== 'variant') return undefined;
+  const effort = (Object.keys(launch.ids) as Effort[]).find((e) => launch.ids[e] === useId);
+  if (effort === undefined) return undefined;
+  const rank = (e: Effort) => EFFORT_LADDER.indexOf(e);
+  const { target } = plan;
+  if (plan.source === 'explicit' && effort !== target) return { effort, short: `runs at effort ${effort} encoded in ${useId}, not the requested ${target}` };
+  if (plan.source === 'demand' && rank(effort) < rank(target)) {
+    return { effort, short: `runs at effort ${effort} encoded in ${useId}, below ${target} needed for the ${plan.demand} demand` };
+  }
+  return { effort };
+}
+
+function evaluate(model: PlacedModel, env: Environment, config: Config, needs: Needs, plan: EffortPlan, useId?: string, auto = false): Candidate {
   const top = env.topBands ?? DEFAULT_TOP_BANDS;
   const adequacy = coverage(model.profile, needs, env.bands, top);
   const quality: Quality = {
@@ -628,13 +653,15 @@ function evaluate(model: PlacedModel, env: Environment, config: Config, needs: N
     })) as Quality['axes'],
   };
   const tier = model.profile.cost?.tier ?? null;
-  const choice = chooseEffort(model, plan);
+  // --use naming an effort variant launches that variant: its effort replaces the planned one.
+  const named = useVariantEffort(model, useId, plan);
+  const choice = named ?? chooseEffort(model, plan);
   const launch = resolve(model, choice.effort);
   const bufferTier = bufferTierOf({ modelId: model.modelId, family: modelFamily(model.modelId, model.meta) }, tier, config.reservations);
   const bufferEffort = bufferEffortOf(launch.resolved, model.defaultEffort);
   const base: Candidate = {
     model, tier, quality: auto ? null : quality, below: adequacy.below, unknown: adequacy.unknown, weightedScore: needWeightedScore(model.profile, needs),
-    launch, ...(choice.short ? { effortShort: choice.short } : {}), bufferTier, bufferEffort,
+    launch, ...(choice.short ? { effortShort: choice.short } : {}), ...(named ? { effortFromUse: true as const } : {}), bufferTier, bufferEffort,
     quota: null, blocked: false, confidence: 'low',
   };
   if (model.poolNames.length === 0) return { ...base, usageNote: `no usage window: ${model.billing ?? 'limits not tracked'}` };
@@ -734,6 +761,7 @@ function effortText(e: EffortResolution, c: Candidate): string {
     const who = `${c.model.agent} uses its own default${own}`;
     return `effort: not set, ${who}; ${e.target} wanted from ${why}`;
   }
+  if (c.effortFromUse) return `effort: ${e.resolved}, encoded in the model id named by --use; ${e.target} wanted from ${why}`;
   const how = e.applied === 'flag' ? 'passed as --effort' : 'chosen through the model id';
   const snapped = e.adjusted ? ` (${e.target} not offered, ${EFFORT_LADDER.indexOf(e.resolved!) > EFFORT_LADDER.indexOf(e.target) ? 'next higher' : 'nearest'} supported)` : '';
   const assumed = e.supportSource === 'assumed' ? '; supported levels assumed, not reported by the provider' : '';
@@ -792,6 +820,15 @@ function selectionText(c: Candidate, eligible: Candidate[], config: Config): str
   const ranked = [...new Set(eligible.filter((x) => x.quota?.binding).map((x) => x.quota!.binding!))];
   const binding = c.quota.buckets.find((b) => b.id === c.quota!.binding)!;
   const position = ranked.indexOf(c.quota.binding) + 1;
-  const limit = state === 'available' ? `below the ${config.riskThresholds.cautionPercent}% caution threshold` : `in the caution range (no route is below ${config.riskThresholds.cautionPercent}%)`;
-  return `selection: quota bucket ${c.model.agent} ${displayPool(binding.pool)} has ${percentText(binding.remaining!)} effective capacity left (bucket ${position} of ${ranked.length} with an eligible route); most economical eligible route in it ${limit}`;
+  // The binding bucket is described by its own status; the route's may be worse when another window is unreadable.
+  const own = binding.prospectiveStatus;
+  const caution = config.riskThresholds.cautionPercent;
+  const limit = own === 'available' ? `below the ${caution}% caution threshold`
+    : own === 'caution' ? `in the caution range${state === 'caution' ? ` (no route is below ${caution}%)` : ''}`
+    : `at ${statusText(own)}`;
+  const unread = c.quota.status === 'unknown' ? c.quota.buckets.filter((b) => b.prospectiveStatus === 'unknown') : [];
+  const unreadText = unread.length > 0
+    ? `; ${unread.length} other window${unread.length === 1 ? '' : 's'} could not be read (${unread.map((b) => displayPool(b.pool)).join(', ')}), so the route counts as unknown`
+    : '';
+  return `selection: quota bucket ${c.model.agent} ${displayPool(binding.pool)} has ${percentText(binding.remaining!)} effective capacity left (bucket ${position} of ${ranked.length} with an eligible route); most economical eligible route in it ${limit}${unreadText}`;
 }

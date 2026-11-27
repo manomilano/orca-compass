@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG } from '../../src/config.js';
 import { parseSnapshot, type SnapshotModel } from '../../src/evidence/snapshot.js';
 import { fixture } from '../helpers/fakes.js';
-import { agentSkipReason, CHOSEN_UNVERIFIED, formatLaunch, route } from '../../src/routing/router.js';
+import { agentSkipReason, CHOSEN_UNVERIFIED, formatLaunch, planRoute, route } from '../../src/routing/router.js';
 import type { Config, Effort, Environment, LaunchModel, Reservation, RouteRequest } from '../../src/types.js';
 import {
   CURSOR_AUTO, cursorVariant, machineEnv, onlyModels, placed, withCursorModels, withPool, withUsageStatus, withUsageUpdatedAt,
@@ -535,7 +535,8 @@ describe('route with synthetic usage', () => {
     expect(d).toMatchObject({ status: 'ok', confidence: 'low', route: { model: 'claude-fable-5-1' }, quota: { status: 'unknown' } });
     expect(bucketOf(d, 'fableWeekly')).toMatchObject({ reported: null, prospective: null, prospectiveStatus: 'unknown' });
     expect(d.reasons[0]).toContain('fableWeekly usage unknown: the window reset after the last snapshot');
-    expect(d.warnings).toContain('usage of claude is unknown: fableWeekly: usage unknown: the window reset after the last snapshot; routed without a quota check');
+    // Session and weekly are still known, so the check was incomplete rather than missing.
+    expect(d.warnings).toContain('usage of claude is unknown: fableWeekly: usage unknown: the window reset after the last snapshot; routed without a complete quota check');
     // Usage Orca did not report is unknown as well; with a route of known usage around, that one is taken.
     const missing = withPool(env, 'claude', 'weekly', { usedPercent: null });
     const known = route({ tier: 'daily', agents: ['claude', 'codex'] }, withPool(missing, 'codex', 'weekly', { usedPercent: 88 }), DEFAULT_CONFIG);
@@ -645,6 +646,47 @@ describe('route with synthetic usage', () => {
     expect(route({ tier: 'daily', agents: claude, demand: 'low' }, unknown, DEFAULT_CONFIG).status).toBe('ok');
     expect(route({ tier: 'daily', agents: claude, demand: 'moderate' }, unknown, DEFAULT_CONFIG).options!.lower[0].shortfall)
       .toBe('effort cannot be set (claude decides, default not reported); medium needed');
+    // #10a A known default of none or minimal is below a low demand: only an unreported default is trusted with it.
+    for (const own of ['none', 'minimal'] as const) {
+      const d = route({ tier: 'daily', agents: claude, demand: 'low' }, withEfforts([], own), DEFAULT_CONFIG);
+      expect(d.status).toBe('decide');
+      expect(d.options!.lower[0].shortfall).toBe(`effort cannot be set (claude decides, default ${own}); low needed`);
+    }
+    expect(route({ tier: 'daily', agents: claude, demand: 'low' }, withEfforts([], 'low'), DEFAULT_CONFIG).status).toBe('ok');
+    // Without a demand the tier default is a preference only: a none default is still routed.
+    expect(route({ tier: 'daily', agents: claude }, withEfforts([], 'none'), DEFAULT_CONFIG).status).toBe('ok');
+  });
+
+  it('#10b --use with an effort-variant id launches that variant and reserves at its effort', () => {
+    const daily = { tier: 'daily' as const, agents: ['cursor'] };
+    const use = (model: string) => ({ agent: 'cursor', model });
+    const high = planRoute({ ...daily, use: use('claude-sonnet-5-5-high') }, env, DEFAULT_CONFIG);
+    expect(high.decision).toMatchObject({
+      status: 'ok', route: { agent: 'cursor', model: 'claude-sonnet-5-5-high', effort: null },
+      launchArgs: ['--agent', 'cursor', '--model', 'claude-sonnet-5-5-high'],
+      effort: { source: 'tier-default', target: 'medium', resolved: 'high', applied: 'model-id' },
+    });
+    expect(high.decision.reasons).toContain('effort: high, encoded in the model id named by --use; medium wanted from tier default');
+    expect(high.decision.warnings).toEqual([]);
+    // The reservation is in the high column of the Daily row (1.75 pp), not the tier default's medium (1.5 pp).
+    expect(high.reserve).toMatchObject({ model: 'claude-sonnet-5-5-high', tier: 'daily', effort: 'high' });
+    expect(bucketOf(high.decision, 'bucket:Other Models').buffer).toBe(DEFAULT_CONFIG.reservations.buffers.daily.high);
+    // The base id is unchanged: the tier default picks the variant.
+    const base = planRoute({ ...daily, use: use('claude-sonnet-5-5') }, env, DEFAULT_CONFIG);
+    expect(base.decision).toMatchObject({ route: { model: 'claude-sonnet-5-5-medium' }, effort: { resolved: 'medium', applied: 'model-id' } });
+    expect(base.decision.reasons).toContain('effort: medium from tier default, chosen through the model id');
+    expect(base.reserve).toMatchObject({ model: 'claude-sonnet-5-5-medium', effort: 'medium' });
+    // An explicit --effort the named variant disagrees with: the variant still runs, with a warning.
+    const low = route({ ...daily, effort: 'low', use: use('claude-sonnet-5-5-high') }, env, DEFAULT_CONFIG);
+    expect(low).toMatchObject({ status: 'ok', route: { model: 'claude-sonnet-5-5-high' }, effort: { source: 'explicit', target: 'low', resolved: 'high' } });
+    expect(low.reasons).toContain('effort: high, encoded in the model id named by --use; low wanted from request');
+    expect(low.warnings).toContain('claude-sonnet-5-5 runs at effort high encoded in claude-sonnet-5-5-high, not the requested low');
+    // A variant below the demand: the same.
+    const demanded = route({ ...daily, demand: 'exceptional', use: use('claude-sonnet-5-5-low') }, env, DEFAULT_CONFIG);
+    expect(demanded).toMatchObject({ status: 'ok', route: { model: 'claude-sonnet-5-5-low' }, effort: { target: 'xhigh', resolved: 'low' } });
+    expect(demanded.warnings).toContain('claude-sonnet-5-5 runs at effort low encoded in claude-sonnet-5-5-low, below xhigh needed for the exceptional demand');
+    // A variant at or above the demand satisfies it without a warning.
+    expect(route({ ...daily, demand: 'high', use: use('claude-sonnet-5-5-xhigh') }, env, DEFAULT_CONFIG)).toMatchObject({ route: { model: 'claude-sonnet-5-5-xhigh' }, warnings: [] });
   });
 
   it('returns none when no agent is usable', () => {
@@ -727,6 +769,26 @@ describe('ranking by remaining capacity', () => {
     expect(caution).toMatchObject({ status: 'ok', route: { agent: 'claude', model: 'claude-opus-5-5' }, quota: { status: 'caution' } });
     expect(caution.warnings).toEqual(['weekly quota would be 85.2% used with this worker (caution); resets in 14h']);
     expect(caution.reasons.find((line) => line.startsWith('selection:'))).toContain('in the caution range (no route is below 85%)');
+  });
+
+  it('#10c describes a known caution bucket by its own status and names the windows that could not be read', () => {
+    // Other Models is known (84% + 1.5 pp = 85.5%, caution); monthly is not reported, so the route counts as unknown.
+    const one = onlyModels(env, 'cursor', ['claude-sonnet-5-5']);
+    const e = withPool(withPool(one, 'cursor', 'bucket:Other Models', { usedPercent: 84 }), 'cursor', 'monthly', { usedPercent: null });
+    const d = route({ tier: 'daily', agents: ['cursor'] }, e, DEFAULT_CONFIG);
+    expect(d).toMatchObject({ status: 'ok', route: { model: 'claude-sonnet-5-5-medium' }, quota: { status: 'unknown', binding: 'cursor:default:bucket:other models' } });
+    expect(bucketOf(d, 'bucket:Other Models')).toMatchObject({ prospective: 85.5, prospectiveStatus: 'caution' });
+    const selection = d.reasons.find((line) => line.startsWith('selection:'))!;
+    expect(selection).toBe('selection: quota bucket cursor Other Models has 16% effective capacity left (bucket 1 of 1 with an eligible route); '
+      + 'most economical eligible route in it in the caution range; 1 other window could not be read (monthly), so the route counts as unknown');
+    expect(selection).not.toContain('no route is below');
+    expect(d.warnings).toContainEqual(expect.stringMatching(/^usage of cursor is unknown: .*; routed without a complete quota check$/));
+    // A known available bucket next to an unreadable one is described as available.
+    const available = route({ tier: 'daily', agents: ['cursor'] }, withPool(one, 'cursor', 'monthly', { usedPercent: null }), DEFAULT_CONFIG);
+    expect(available.reasons.find((line) => line.startsWith('selection:'))).toContain('in it below the 85% caution threshold; 1 other window could not be read (monthly), so the route counts as unknown');
+    // With no window known at all the warning keeps saying there was no quota check.
+    const none = route({ tier: 'daily', agents: ['cursor'] }, withPool(e, 'cursor', 'bucket:Other Models', { usedPercent: null }), DEFAULT_CONFIG);
+    expect(none.warnings).toContainEqual(expect.stringMatching(/^usage of cursor is unknown: .*; routed without a quota check$/));
   });
 
   it('#26 prefers another bucket once this worker would take a bucket into the caution range', () => {
