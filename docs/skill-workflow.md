@@ -214,13 +214,14 @@ closed when Orca reports it finished.
 | Field | Action |
 | --- | --- |
 | `downgraded: true` | Only for a route chosen explicitly (a preferred model, or `--use`). Mention the downgrade and reason in the worker's task spec. Effort is not raised to make up for a weaker model; narrow the task or add checks |
+| `coverageNote` | The preferred or `--use` model has no benchmark data on an axis the job needs, so task coverage could not be verified. Not a downgrade. Mention it in the worker's task spec and add checks |
 | `upgraded: true` | Surface the warning. No route at or below the requested tier is eligible, so a pricier cost tier was used. See [Outcomes](tiers-and-routing.md#outcomes-ok-decide-none) |
 | warning `<window> quota would be N% used with this worker (caution); …` | The pick is in the caution range because no route was available below it (`riskThresholds`). Relay it and keep the job small |
 | warning `usage of <agent> is unknown: …` | The route was taken without a quota check. Say so |
 | `effort.applied` | `flag`, `model-id`, or `provider-default` (the agent decides). Never claim an effort was set when it is `provider-default` |
 | `effort.adjusted: true` | The route cannot apply the exact target. It applies the next higher effort it offers (a lower one only when neither `--demand` nor `--effort` was given). Report the target and the resolved effort when relevant. Do not reroute only for this |
 | warning `… is a last-resort agent …` | The route costs money per token or runs on this machine; tell the user before launching several workers on it |
-| `status: "decide"` | Nothing was picked and there are no `launchArgs`. Read `options` and choose, asking the user when the choice is theirs: **WAIT** (`options.wait`; `until` in epoch ms only when a reset time is reported, never invent one), **USE** a route at high usage by adding its `use` flag to the same call, or **LOWER** the requirements: route again with a lower `--need` or `--demand`, or take a listed route as it is with its `use` flag |
+| `status: "decide"` | Nothing was picked and there are no `launchArgs`. Read `options` and choose, asking the user when the choice is theirs: **WAIT** (`options.wait`; `until` in epoch ms only when a reset time is reported, never invent one), **USE** a route at high usage by adding its `use` flag to the same call (an entry with `preferred: true` is the user's preference for the tier, held back by `preferRiskLimit`), or **LOWER** the requirements: route again with a lower `--need` or `--demand`, or take a listed route as it is with its `use` flag |
 | `status: "none"` | Say no recommendation was available. Use Orca's defaults only where they respect the user's explicit constraints, and keep any explicit agent or model choice. If no route can apply an explicit effort, report the available levels and ask before launching with another effort or none |
 | command missing | Say OrcaCompass was absent. Use the same default fallback only if it respects the user's explicit constraints; otherwise ask first |
 | exit 1 | Usage or runtime error: fix the command or report it |

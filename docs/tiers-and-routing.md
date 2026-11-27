@@ -138,8 +138,11 @@ may have a cheaper or a pricier cost tier.
 A model **covers** the job when its band on every axis reaches the need (for
 `top`, a Frontier band with a score at or above the `top` cut). Otherwise it
 falls short; its **shortfall** is the number of band steps missing, summed over
-the axes (an axis without a score counts as one step below Light), and each
-short axis is listed under `skipped` as `below need on <axis> (<score> < <cut>)`.
+the axes, and each short axis is listed under `skipped` as
+`below need on <axis> (<score> < <cut>)`. An axis without a score is not a
+shortfall: its coverage is **unknown**, and the model is listed as
+`unranked: no evidence or estimate (<axes>)`. Unknown coverage never makes a
+route eligible.
 
 Within one agent, only the newest release of a family competes per cost tier.
 Sonnet 4.6 (Advanced cost) can remain beside Sonnet 5.5 (Daily cost). If both
@@ -166,9 +169,11 @@ appears.
    and unranked models unless the requested tier's preference or `--use` names
    that exact model. Cursor `auto` is set aside as an
    [option](#cursor-auto-fallback). Per agent, family and cost tier only the
-   newest release stays. Banned, refused and unranked models are listed under
-   `skipped`; NO ZDR models and superseded releases are dropped without an
-   entry. A model without capability scores is never given any.
+   newest release competes; an older release that the preference or `--use`
+   names exactly is kept for that choice only, never for automatic routing.
+   Banned, refused and unranked models are listed under `skipped`; NO ZDR
+   models and superseded releases are dropped without an entry. A model
+   without capability scores is never given any.
 3. **Eligibility.** A route is eligible only when its model covers the job on
    all three axes and can apply an effort that satisfies the request (see
    [Effort](effort.md#explicit-effort-is-a-constraint)). A route that fails
@@ -332,9 +337,22 @@ A preference names your favorite route for one tier: an agent, optionally a
 model. It applies when the route's **requested tier** is that tier.
 
 1. A preferred **model** is used even when it falls short of the job or is
-   unranked: the route is then marked `downgraded` and the reasons say
-   `preferred route does not cover the job`. A preferred **agent** without a
-   model takes that agent's most economical eligible route.
+   unranked. A measured shortfall marks the route `downgraded`, the reasons
+   say `preferred route does not cover the job` and a warning gives the
+   shortfall. A preferred **agent** without a model takes that agent's most
+   economical eligible route.
+   - An **unranked** preferred model, or one with no score on an axis the job
+     needs, is not downgraded: missing benchmark data is unknown coverage,
+     not a shortfall. It gets no artificial score, band or shortfall, is not
+     listed under `skipped`, and the route carries the informational reason
+     `Manually preferred model; benchmark data unavailable. Task coverage could
+     not be verified.` (also as `coverageNote`, and as the tier's `note` in
+     `status` and `setup`). An axis that does have a score is still checked,
+     and a measured shortfall on it is reported as above.
+   - Once benchmark data for the model arrives, it is evaluated like any
+     other model: the note goes away and any actual shortfall is reported.
+   - Unranked models stay out of automatic routing; only the preference (or
+     `--use`) routes one.
 2. The preference must be able to apply the effort: `--effort` exactly, a
    `--demand` at or above its target.
 3. It is used while its prospective usage stays below `preferRiskLimit` (90 by
@@ -345,6 +363,14 @@ model. It applies when the route's **requested tier** is that tier.
 ```text
 preferred codex gpt-6.1-terra skipped: weekly would be 90.5% used with this worker (limit 90%); resets in 2d
 ```
+
+When the skipped preference is a model that automatic routing never offers
+(unranked, or an older release kept only for the preference) and no route can
+be taken automatically, the decision comes back as `decide`: the preference
+is the first `options.use` entry (`preferred: true`, with `coverageNote`
+when its coverage is unknown), and `options.wait` names the reset of the
+buckets at or above the limit. It is never offered under `options.lower`. An
+exhausted preference, or one that cannot apply the effort, is not offered.
 
 `preferRiskLimit` is set with `orcacompass prefer --risk-limit <percent>`.
 Raising it above `riskThresholds.highPercent` keeps a favorite in use at high

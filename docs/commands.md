@@ -179,7 +179,7 @@ First-time setup of agents, favorites and bans. See
 | `config` | Current `allowAgents`, `denyAgents`, `pins`, `preferRiskLimit`, `banModels` |
 | `defaultPreferRiskLimit` | 90 |
 | `agents` | `agent`, `installed`, `enabledInOrca`, `orcaUsage`, `models` (count), `chosen`, `preselected` (in the default answer to question 1), `verdict` |
-| `tiers` | Per tier: `pick`, `preferred`, `options` (agent, `model` to prefer, `blocked`, `usagePercent`: the route's highest prospective usage, or `null` when unknown, `reason`), `warnings` |
+| `tiers` | Per tier: `pick`, `preferred`, `options` (agent, `model` to prefer, `blocked`, `usagePercent`: the route's highest prospective usage, or `null` when unknown, `reason`, and on the pick `note` when its task coverage could not be verified), `warnings` |
 | `families` | Each discovered family with its models and whether it is banned |
 
 `setup --complete` creates an empty config when absent and preserves an
@@ -261,6 +261,7 @@ fields (`evidenceSource`, `catalogSource`, `scoreSource`) and `placementsBuiltAt
 | `source` | Where the pick's cost tier came from: `override`, `lineup`, `family` or `evidence`; `auto` for Cursor `auto` |
 | `tierReason` | The coordinator's explanation of the requested tier, when supplied. Also included in `reasons`, even when there is no route |
 | `downgraded`, `upgraded` | A downgrade falls short of the requested needs; it only happens for a route chosen explicitly (`--use`, or a preferred model). An upgrade is an eligible pick from a pricier cost tier than the requested tier, when no route at or below the requested tier is eligible |
+| `coverageNote` | Informational, not a downgrade: the explicitly chosen model has no benchmark data on an axis the job needs, so task coverage could not be verified. `Manually preferred model; benchmark data unavailable. Task coverage could not be verified.` for the tier's preferred model (also with `--use`), `Explicitly chosen model (--use); benchmark data unavailable. Task coverage could not be verified.` for another `--use` model. Absent when coverage was checked |
 | `route` | `{ agent, model, effort }`; `effort` is `null` when it is in the model id or not set |
 | `effort` | How the effort was chosen and applied; see [Effort](effort.md#the-effort-object-in-route-json) |
 | `launchArgs` | Array to append to `orca orchestration worker-start --spec "<task>"`, one argument per element |
@@ -269,7 +270,7 @@ fields (`evidenceSource`, `catalogSource`, `scoreSource`) and `placementsBuiltAt
 | `quota` | The route's quota: `status` (the most restrictive prospective status), `binding` (the bucket with the least capacity left), `remaining`, `prospective`, and `buckets`: for every bucket the route draws on `id`, `pool`, `reported`, `reserved`, `workers`, `effective`, `remaining`, `buffer`, `prospective`, `prospectiveStatus`, `resetsAt` (or `null`), `snapshotAt`, `stale`. `null` for a route without a usage window |
 | `reservation` | With `ok`: `{ id, state: "pending", buckets: [{ bucket, percentPoints }], expiresAt }`. Absent with `--dry-run` and for a route without a usage window |
 | `buckets` | Every quota bucket of the agents considered, most capacity left first, with the same reported, reserved and effective fields |
-| `options` | With `decide`: `wait` (`{ until?, reason }` or `null`; `until` only when a reset time is reported), `use` and `lower` (routes with `agent`, `model`, `effort`, `tier`, `quota`, `reason`, the `use` flag that takes them, and for `lower` the `shortfall`) |
+| `options` | With `decide`: `wait` (`{ until?, reason }` or `null`; `until` only when a reset time is reported), `use` and `lower` (routes with `agent`, `model`, `effort`, `tier`, `quota`, `reason`, the `use` flag that takes them, and for `lower` the `shortfall`). A preference held back only by `preferRiskLimit` that automatic routing never offers comes first under `use` with `preferred: true`, plus `coverageNote` when its coverage is unknown |
 | `reasons` | One line per fact behind the choice; the first names the route and, for each bucket it draws on, reported usage, what is reserved, this worker's buffer and the prospective result; the needs line includes `eligible routes: 3 across all cost tiers`, a route adds `cost: daily ($4.00/M blended, maker price)`, and an automatic pick adds a `selection:` line with its bucket's rank and the threshold it passed; a `decide` adds `WAIT:`, `USE:` and `LOWER:` lines |
 | `warnings` | Downgrade, upgrade, skipped preference, last-resort use, and on the picked route: a bucket in the caution range or above (`weekly quota would be 87.5% used with this worker (caution); resets in 14h`) or unknown usage (`usage of codex is unknown: …; routed without a quota check`) |
 | `alternatives` | Up to five other eligible routes in rank order, from all cost tiers: `agent`, `model`, `effort`, `tier`, `quota`, `confidence`, `blocked` (a quota is exhausted), `reason` |
@@ -391,9 +392,13 @@ Text output contains:
 - The reservations that count against quota: id, route, state and the points
   held on each bucket.
 - The pick and up to three alternatives per requested tier, from any cost
-  tier that is eligible, or the decision that would come back.
+  tier that is eligible, or the decision that would come back. A pick with no
+  benchmark data on a needed axis gets a `note:` line with the informational
+  reason.
 - Banned and refused models.
-- Unclassified models (the first 15 per agent; the JSON has all of them).
+- Unclassified models, under `unclassified (not routed automatically)`: the
+  first 15 per agent (the JSON has all of them), preferred ones first and
+  marked `(preferred for <tier>)`, since a preference routes one for its tier.
 
 `--json` fields:
 
@@ -410,8 +415,8 @@ Text output contains:
 | `agents` | One row per agent: `agent`, `installed`, `enabledInOrca`, `models` (count), `usage` (`null` or `status`, `updatedAt`, `plan`, `error`, `retained` when the last valid snapshot stands in for an unreadable Orca, and `pools`: per quota bucket `name`, `reported` (also as `usedPercent`), `reserved`, `workers`, `effective`, `remaining`, `status`, `resetsAt`, `snapshotAt`, `stale`), plus `note` and `skipped` when they apply |
 | `banned` | `{ agent, model }` pairs |
 | `rejected` | Active refusals |
-| `tiers` | Per tier: `status`, `pick`, `alternatives`, `warnings`, and `options` when the status is `decide` |
-| `unclassified` | `{ agent, model }` pairs that are never routed |
+| `tiers` | Per tier: `status`, `pick` (with `note` when the pick's task coverage could not be verified, see `coverageNote` under `route`), `alternatives`, `warnings`, and `options` when the status is `decide` |
+| `unclassified` | `{ agent, model }` pairs that are never routed automatically; `preferredFor` lists the tiers whose model preference names one, which routes it for that tier |
 
 ## `tiers`
 

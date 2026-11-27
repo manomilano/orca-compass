@@ -58,6 +58,22 @@
   `usageRiskLimit`, `handoutMinutes`, `handoutPercent`.
 - When Orca cannot be read, the last valid usage snapshot stands in at medium
   confidence instead of all usage becoming unknown.
+- **A preferred unranked model is not downgraded.** Missing benchmark data is
+  unknown coverage, not a shortfall: the route is not marked `downgraded`, the
+  model is not listed under `skipped`, and the reasons say `Manually preferred
+  model; benchmark data unavailable. Task coverage could not be verified.`
+  The same reason is in the new `coverageNote` field, under the tier in
+  `status` and `setup`, and on a `--use` of that model (a `--use` of another
+  unranked model gets a matching `Explicitly chosen model (--use)` reason).
+  Unranked models stay out of automatic routing. `status` lists them as
+  `unclassified (not routed automatically)` and marks a preferred one.
+- A preference held back only by `preferRiskLimit` that automatic routing
+  never offers (an unranked model, or an older release) comes back as
+  `decide`, with WAIT and the preference as the first USE option
+  (`preferred: true`), instead of `none`.
+- A preference or `--use` naming an older release in the same family and cost
+  tier as a newer one routes it, instead of reporting it as not available.
+  Automatic routing still sees only the newest release.
 
 ## 0.2.5
 

@@ -305,6 +305,9 @@ Ask the user before relaxing or removing their explicit effort requirement.
   of the needs (`--use`, or a preferred model). Mention it and the reason in the
   worker task spec. Effort is not raised to make up for the weaker model;
   narrow the task or add checks, as the warning says.
+- `coverageNote`: the preferred or `--use` model has no benchmark data on an
+  axis the job needs, so whether it covers the job is unknown. It is not a
+  downgrade; mention it in the worker task spec and add checks.
 - `effort`: `applied` says how effort reaches the worker (`flag`, `model-id`,
   or `provider-default` when the agent decides). Never claim an effort was set
   when `applied` is `provider-default`.
@@ -329,6 +332,8 @@ Ask the user before relaxing or removing their explicit effort requirement.
   - **USE** (`options.use`): a suitable route at high usage. Take it with its
     `use` flag on the same route call, for example
     `--use claude/claude-opus-5-5`. It is refused when the quota is exhausted.
+    An entry with `preferred: true` is the user's preference for the tier,
+    held back by their own `preferRiskLimit`.
   - **LOWER** (`options.lower`): routes that take the job with lower
     requirements; `shortfall` says what each lacks. Route again with a lower
     `--need` or `--demand`, or take one as it is with its `use` flag.
