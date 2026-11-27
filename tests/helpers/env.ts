@@ -51,7 +51,8 @@ export function placed(env: RawEnv, opts: PlaceOpts = {}): Environment {
 }
 
 export function machineEnv(opts: PlaceOpts = {}): Environment {
-  const claudePools = ['session', 'weekly'];
+  // As the Claude adapter declares them: `monthly` exists only on a monthly-only account.
+  const claudePools = ['session', 'weekly', 'monthly'];
   const cursorPools = ['monthly', 'bucket:Other Models'];
   const discoveries: AgentDiscovery[] = [
     {

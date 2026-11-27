@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG } from '../../src/config.js';
 import {
-  applyWorkerStates, bucketQuota, bufferEffortOf, bufferFor, bufferTierOf, buildQuotaView, candidateQuota, classify, DEFAULT_BUFFERS, isLive, reconcile,
-  reservationsOn, type Reservation,
+  applyWorkerStates, bucketQuota, bufferEffortOf, bufferFor, bufferTierOf, buildQuotaView, candidateQuota, CARRIED_SETTLE_MS, classify, DEFAULT_BUFFERS,
+  drawsOn, isLive, poolKey, reconcile, reservationsOn, scopeOf, type Reservation,
 } from '../../src/routing/quota.js';
 import type { AgentUsage, Config, UsagePool } from '../../src/types.js';
 
@@ -336,5 +336,166 @@ describe('the lifecycle of a reservation', () => {
     // A worker Orca no longer lists is closed only when the list is complete.
     expect(applyWorkerStates(live, [], NOW, false)[0].state).toBe('running');
     expect(applyWorkerStates(live, [], NOW, true)[0]).toMatchObject({ state: 'completed', note: 'closed: Orca no longer reports this worker' });
+  });
+});
+
+describe('window keys and quota groups', () => {
+  it('#7 folds the space after bucket: and every other spacing or case difference into one key', () => {
+    expect(poolKey('bucket:  Other  Models')).toBe(poolKey('bucket:other models'));
+    expect(poolKey('bucket: Other Models')).toBe('bucket:other models');
+    expect(poolKey(' Session ')).toBe('session');
+  });
+
+  it('#7 draws a declared group name on every window of the group, and nothing else', () => {
+    const p = (name: string, group?: string): UsagePool => pool(name, 10, group ? { group } : {});
+    expect(drawsOn('bucket:Gemini Models', p('bucket:Gemini Models 5h', 'Gemini Models'))).toBe(true);
+    expect(drawsOn('bucket:gemini  models', p('bucket:Gemini Models 1d', 'Gemini Models'))).toBe(true);
+    expect(drawsOn('bucket:Gemini Models 5h', p('bucket:Gemini Models', 'Gemini Models'))).toBe(false);
+    expect(drawsOn('bucket:Gemini Models', p('bucket:Gemini Models 5h'))).toBe(false);
+    expect(drawsOn('bucket:Claude and GPT models', p('bucket:Gemini Models 5h', 'Gemini Models'))).toBe(false);
+  });
+
+  it('#7 gives a model declaring a group every window of it, and a 24-hour window at 100% blocks it', () => {
+    const g = { group: 'Gemini Models' };
+    const u = usageOf('antigravity', [
+      pool('bucket:Gemini Models 5h', 40, { ...g, kind: 'session', windowMinutes: 300 }),
+      pool('bucket:Gemini Models 1d', 100, { ...g, windowMinutes: 1440 }),
+      pool('bucket:Gemini Models', 10, g),
+      pool('bucket:Claude and GPT models', 5, { group: 'Claude and GPT models' }),
+    ]);
+    const q = candidateQuota(u, ['bucket:Gemini Models 5h', 'bucket:Gemini Models', 'session', 'weekly'], { tier: 'frontier', effort: 'medium' }, [], config, NOW);
+    expect(q.buckets.map((b) => b.pool)).toEqual(['bucket:Gemini Models 5h', 'bucket:Gemini Models 1d', 'bucket:Gemini Models']);
+    expect(q.status).toBe('exhausted');
+    // A worker reserved on the group counts on each of its windows.
+    const w = worker({ agent: 'antigravity', pools: ['bucket:gemini models'] });
+    expect(Object.values(u.pools).map((p) => bucketQuota(u, p, [w], config, NOW).reserved)).toEqual([2.5, 2.5, 2.5, 0]);
+  });
+});
+
+describe('the scope of usage', () => {
+  it('#6 is known only for a readable snapshot', () => {
+    expect(scopeOf(usageOf('claude', []))).toBe('acct-a');
+    expect(scopeOf({ agent: 'claude', status: 'unknown', pools: {}, scope: 'acct-a' })).toBe('default');
+    expect(scopeOf({ agent: 'claude', status: 'unavailable', pools: {}, scope: 'acct-a' })).toBe('default');
+    expect(scopeOf(undefined)).toBe('default');
+  });
+});
+
+describe('snapshot time', () => {
+  it('#9 keeps the number of a snapshot without a time, stale, and reconciles nothing on it', () => {
+    const u = usageOf('claude', [pool('weekly', 40)], { updatedAt: undefined });
+    expect(bucketQuota(u, u.pools.weekly, [], config, NOW)).toMatchObject({ reported: 40, stale: true, snapshotAt: null, note: 'snapshot time not reported' });
+    // A reported 100% still blocks.
+    const full = usageOf('claude', [pool('weekly', 100)], { updatedAt: undefined });
+    expect(bucketQuota(full, full.pools.weekly, [], config, NOW).status).toBe('exhausted');
+    const done = worker({ state: 'completed', endedAt: NOW - 10 * MIN });
+    expect(reconcile([done], { claude: u }, NOW + 60 * MIN, cfg)).toEqual([done]);
+  });
+
+  it('ages a window kept from an earlier reading from the last snapshot that reported it', () => {
+    const u = usageOf('claude', [pool('weekly', 40), pool('fableWeekly', 75, { seenAt: NOW - 40 * MIN, observedAt: NOW - 40 * MIN })]);
+    expect(bucketQuota(u, u.pools.weekly, [], config, NOW)).toMatchObject({ stale: false, snapshotAt: NOW });
+    expect(bucketQuota(u, u.pools.fableWeekly, [], config, NOW)).toMatchObject({ reported: 75, stale: true, snapshotAt: NOW - 40 * MIN });
+  });
+});
+
+describe('the buffer guard', () => {
+  it('#10e keeps a buffer finite and within 0..100 whatever the overrides', () => {
+    const w = { agent: 'claude', pool: 'weekly', tier: 'daily' as const, effort: 'medium' as const };
+    for (const overrides of [[{ scale: 1e308 }, { scale: 1e308 }, { scale: 0 }], [{ scale: 1e308 }, { scale: 1e308 }], [{ scale: -5 }], [{ scale: 1e308 }, { scale: 0 }]]) {
+      const value = bufferFor({ ...cfg, overrides }, w);
+      expect(Number.isFinite(value), JSON.stringify(overrides)).toBe(true);
+      expect(value).toBeGreaterThanOrEqual(0);
+      expect(value).toBeLessThanOrEqual(100);
+    }
+    expect(bufferFor({ ...cfg, overrides: [{ scale: 1e308 }, { scale: 1e308 }, { scale: 0 }] }, w)).toBe(100);
+  });
+});
+
+describe('per-window reconciliation', () => {
+  const at = (observedAt: number) => ({ observedAt, seenAt: observedAt });
+
+  it('#4 settles each window on its own and releases the record once every window is covered', () => {
+    const done = worker({ state: 'completed', endedAt: NOW, snapshotAt: NOW - 10 * MIN, pools: ['session', 'weekly', 'fableweekly'] });
+    const first = usageOf('claude', [pool('session', 10, at(NOW + 5 * MIN)), pool('weekly', 40, at(NOW + 5 * MIN)), pool('fableWeekly', 75, at(NOW - 10 * MIN))], { updatedAt: NOW + 5 * MIN });
+    const held = reconcile([done], { claude: first }, NOW + 5 * MIN, cfg);
+    expect(held[0]).toMatchObject({ state: 'completed', settled: ['session', 'weekly'] });
+    expect(bucketQuota(first, first.pools.weekly, held, config, NOW + 5 * MIN).reserved).toBe(0);
+    expect(bucketQuota(first, first.pools.fableWeekly, held, config, NOW + 5 * MIN).reserved).toBe(2.5);
+    // Running it again changes nothing.
+    expect(reconcile(held, { claude: first }, NOW + 5 * MIN, cfg)).toEqual(held);
+    const later = usageOf('claude', [pool('session', 10, at(NOW + 20 * MIN)), pool('weekly', 40, at(NOW + 20 * MIN)), pool('fableWeekly', 76, at(NOW + 20 * MIN))], { updatedAt: NOW + 20 * MIN });
+    expect(reconcile(held, { claude: later }, NOW + 20 * MIN, cfg)[0]).toMatchObject({ state: 'released' });
+  });
+
+  it('#4 never settles on the snapshot the worker was allocated on, even with settleSeconds 0', () => {
+    const instant = { ...cfg, settleSeconds: 0 };
+    const done = worker({ state: 'completed', endedAt: NOW, snapshotAt: NOW });
+    expect(reconcile([done], { claude: usageOf('claude', [pool('weekly', 40)], { updatedAt: NOW }) }, NOW, instant)).toEqual([done]);
+    expect(reconcile([done], { claude: usageOf('claude', [pool('weekly', 40)], { updatedAt: NOW + 1 }) }, NOW + 1, instant)[0].state).toBe('released');
+  });
+
+  it('#5 settles a declared window Orca does not report on a snapshot taken after the end, not before', () => {
+    const done = worker({ state: 'completed', endedAt: NOW, pools: ['session', 'weekly', 'monthly'] });
+    const before = usageOf('claude', [pool('session', 10), pool('weekly', 40)], { updatedAt: NOW - MIN });
+    expect(reconcile([done], { claude: before }, NOW + 5 * MIN, cfg)).toEqual([done]);
+    const fresh = usageOf('claude', [pool('session', 10), pool('weekly', 40)], { updatedAt: NOW + 2 * MIN });
+    expect(reconcile([done], { claude: fresh }, NOW + 5 * MIN, cfg)[0].state).toBe('released');
+  });
+
+  it('#5 counts a declared window that appears after the allocation', () => {
+    const running = worker({ pools: ['session', 'weekly', 'monthly'] });
+    const u = usageOf('claude', [pool('session', 88, { kind: 'session', windowMinutes: 300 }), pool('weekly', 40)]);
+    expect(bucketQuota(u, u.pools.session, [running], config, NOW)).toMatchObject({ reserved: 2.5, workers: 1 });
+  });
+
+  it('#4 settles a carried window whose value did not move once a healthy snapshot is 20 minutes past the end', () => {
+    const done = worker({ state: 'completed', endedAt: NOW, snapshotAt: NOW - 10 * MIN, pools: ['weekly', 'fableweekly'] });
+    // A live-session tick: weekly re-read, fableWeekly carried forward unchanged since before the worker ended.
+    const tick = (t: number, patch: Partial<AgentUsage> = {}) => usageOf('claude', [
+      pool('weekly', 40, at(t)), pool('fableWeekly', 75, { observedAt: NOW - 30 * MIN, seenAt: t }),
+    ], { updatedAt: t, source: 'live-session', ...patch });
+    const early = tick(NOW + CARRIED_SETTLE_MS - MIN);
+    expect(reconcile([done], { claude: early }, early.updatedAt!, cfg)[0]).toMatchObject({ state: 'completed', settled: ['weekly'] });
+    const late = tick(NOW + CARRIED_SETTLE_MS);
+    expect(reconcile([done], { claude: late }, late.updatedAt!, cfg)[0].state).toBe('released');
+    // Not while Orca keeps old windows after a failed refresh, and not for a window Orca does not carry.
+    expect(reconcile([done], { claude: tick(NOW + CARRIED_SETTLE_MS, { retained: true }) }, NOW + CARRIED_SETTLE_MS, cfg)[0].state).toBe('completed');
+    expect(reconcile([done], { claude: tick(NOW + CARRIED_SETTLE_MS, { source: 'oauth' }) }, NOW + CARRIED_SETTLE_MS, cfg)[0]).toMatchObject({ state: 'completed', settled: ['weekly'] });
+    // A worker allocated on a later snapshot than the tick is not settled by it.
+    const recent = { ...done, snapshotAt: NOW + CARRIED_SETTLE_MS };
+    expect(reconcile([recent], { claude: late }, late.updatedAt!, cfg)[0].state).toBe('completed');
+  });
+});
+
+describe('running workers and retention', () => {
+  it('#8 keeps a running record Orca confirms live past maxRunningHours, and closes it otherwise', () => {
+    const running = worker({ createdAt: NOW, startedAt: NOW, dispatchId: 'ctx_1' });
+    const usage = { claude: usageOf('claude', [pool('weekly', 40)]) };
+    expect(reconcile([running], usage, NOW + 24 * 3_600_000, cfg, new Set(['ctx_1']))[0].state).toBe('running');
+    expect(reconcile([running], usage, NOW + 24 * 3_600_000, cfg, new Set(['ctx_2']))[0].state).toBe('completed');
+    expect(reconcile([running], usage, NOW + 24 * 3_600_000, cfg)[0].state).toBe('completed');
+  });
+
+  it('#8 measures the seven-day retention from the end, not the creation', () => {
+    const usage = { claude: usageOf('claude', [pool('weekly', 40)], { updatedAt: NOW - 9 * 86_400_000 }) };
+    const longRun = worker({ state: 'completed', createdAt: NOW - 8 * 86_400_000, endedAt: NOW - MIN });
+    expect(reconcile([longRun], usage, NOW, cfg)).toEqual([longRun]);
+    const old = worker({ state: 'completed', createdAt: NOW - 9 * 86_400_000, endedAt: NOW - 8 * 86_400_000 });
+    expect(reconcile([old], usage, NOW, cfg)).toEqual([]);
+  });
+
+  it('#8 counts two live records of one Dispatch once', () => {
+    const a = worker({ dispatchId: 'ctx_1' });
+    const b = worker({ dispatchId: 'ctx_1' });
+    expect(reservationsOn([a, b], 'claude', 'acct-a', 'weekly')).toEqual([a]);
+    expect(weeklyOf(40, [a, b])).toMatchObject({ reserved: 2.5, workers: 1 });
+    expect(weeklyOf(40, [a, worker({ dispatchId: 'ctx_2' })])).toMatchObject({ reserved: 5, workers: 2 });
+  });
+
+  it('#4 does not count a record on a window it settled', () => {
+    const w = worker({ state: 'completed', endedAt: NOW, pools: ['session', 'weekly'], settled: ['weekly'] });
+    expect(reservationsOn([w], 'claude', 'acct-a', 'weekly')).toEqual([]);
+    expect(reservationsOn([w], 'claude', 'acct-a', 'session')).toEqual([w]);
   });
 });

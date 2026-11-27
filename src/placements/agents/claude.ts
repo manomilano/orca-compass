@@ -10,7 +10,9 @@ const DEFAULT_EFFORTS: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 const isClaude = (id: string): boolean => id.startsWith('claude-');
 
-const poolNames = (id: string): string[] => (id.startsWith('claude-fable') ? ['session', 'weekly', 'fableWeekly'] : ['session', 'weekly']);
+/** Every Claude window a model draws on; `monthly` exists only on a monthly-only account, Fable also has its own weekly. */
+const poolNames = (id: string): string[] =>
+  (id.startsWith('claude-fable') ? ['session', 'weekly', 'monthly', 'fableWeekly'] : ['session', 'weekly', 'monthly']);
 
 /** Claude Code's cached account catalog, <account>-<hash>-cc.json; several files can exist after an account change. */
 function fromClaudeCache(deps: AgentDeps, dir: string): { path: string; models: RawModel[] } | undefined {

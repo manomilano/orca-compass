@@ -60,7 +60,7 @@ it('discovers a new local Fable after five hours while reusing 24-hour metadata 
   expect(requests).toBe(2);
   const added = updated.env.discoveries.find((a) => a.agent === 'claude')!.models.find((m) => m.modelId === 'claude-fable-5-5')!;
   expect(added.meta).toBeUndefined();
-  expect(added.poolNames).toEqual(['session', 'weekly', 'fableWeekly']);
+  expect(added.poolNames).toEqual(['session', 'weekly', 'monthly', 'fableWeekly']);
   expect(added.profile.hint).toEqual({ tier: 'frontier', source: 'family' });
   const decision = route(forClaude(), updated.env, DEFAULT_CONFIG);
   expect(decision.route?.model).toBe('claude-fable-5-5');
