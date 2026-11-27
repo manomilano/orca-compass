@@ -977,12 +977,12 @@ describe('quota reservations', () => {
     expect(ledger().reservations).toMatchObject([{ id: d.reservation.id, state: 'pending' }]);
     const { status, pool } = await weekly();
     expect(pool).toMatchObject({ reported: 50, usedPercent: 50, reserved: 1.5, workers: 1, effective: 51.5, status: 'available' });
-    expect(status.reservations).toMatchObject([{ id: d.reservation.id, state: 'pending', live: true, agent: 'claude', model: 'claude-sonnet-5-5', tier: 'daily', effort: 'medium', buckets: [{ pool: 'session', percentPoints: 1.5 }, { pool: 'weekly', percentPoints: 1.5 }] }]);
+    expect(status.reservations).toMatchObject([{ id: d.reservation.id, state: 'pending', live: true, agent: 'claude', model: 'claude-sonnet-5-5', tier: 'daily', effort: 'medium', buckets: [{ pool: 'session', percentPoints: 1.5 }, { pool: 'weekly', percentPoints: 1.5 }, { pool: 'monthly', percentPoints: 1.5 }] }]);
     stdout = [];
     await main(['status'], io, deps);
     expect(out()).toContain('    weekly 50% reported + 1.5 pp reserved (1 worker) = 51.5% effective, available; resets in 14h');
     expect(out()).toContain('    fableWeekly 75% reported, available; resets in 14h');
-    expect(out()).toMatch(/^reservations \(1 counting against quota\):\n {2}rsv_[0-9a-f]{12} {2}claude claude-sonnet-5-5 {2}pending for 0m {2}\(session \+1\.5 pp, weekly \+1\.5 pp\)$/m);
+    expect(out()).toMatch(/^reservations \(1 counting against quota\):\n {2}rsv_[0-9a-f]{12} {2}claude claude-sonnet-5-5 {2}pending for 0m {2}\(session \+1\.5 pp, weekly \+1\.5 pp, monthly \+1\.5 pp\)$/m);
     // A second route sees the first one's reservation; a dry run reserves nothing.
     const second = await routed();
     expect(second.quota.buckets.find((b: { pool: string }) => b.pool === 'weekly')).toMatchObject({ reported: 50, reserved: 1.5, effective: 51.5, prospective: 53 });
@@ -1068,7 +1068,7 @@ describe('quota reservations', () => {
     expect(err()).toContain('--use takes <agent>/<model> (got "claude")');
   });
 
-  it('keeps the last valid usage when Orca cannot be read, and still routes when the ledger cannot be written (#23)', async () => {
+  it('keeps the last valid usage when Orca cannot be read (#23)', async () => {
     await routed([...claudeRoute, '--dry-run']);
     stdout = [];
     expect(await main(claudeRoute, io, { ...deps, run: orcaDownRunner, now: NOW + 5 * 60_000 })).toBe(0);
@@ -1078,6 +1078,116 @@ describe('quota reservations', () => {
     expect(down.quota.buckets.find((b: { pool: string }) => b.pool === 'weekly')).toMatchObject({ reported: 50, snapshotAt: NOW });
     stdout = [];
     await main(['status', '--json'], io, { ...deps, run: orcaDownRunner, now: NOW + 5 * 60_000 });
-    expect(JSON.parse(out()).agents.find((a: { agent: string }) => a.agent === 'claude').usage).toMatchObject({ status: 'ok', retained: true, error: expect.stringMatching(/^Orca not reachable/) });
+    const usage = JSON.parse(out()).agents.find((a: { agent: string }) => a.agent === 'claude').usage;
+    expect(usage).toMatchObject({ status: 'ok', retained: true, error: expect.stringMatching(/^Orca not reachable/) });
+    // The ledger's stand-in is internal: never in the output.
+    expect(usage).not.toHaveProperty('standIn');
+    stdout = [];
+    await main(['status'], io, { ...deps, run: orcaDownRunner, now: NOW + 5 * 60_000 });
+    expect(out()).toMatch(/^ {2}claude +\d+ models, usage retained \(Orca not reachable[^\n]*\), updated 5m ago/m);
+  });
+
+  const ledgerDir = () => join(process.env.ORCACOMPASS_HOME!, 'cache', 'reservations.json');
+
+  it('fails closed when quota cannot be reserved: nothing on stdout, exit 1 (#1)', async () => {
+    mkdirSync(ledgerDir(), { recursive: true });
+    stdout = [];
+    stderr = [];
+    expect(await main(claudeRoute, io, deps)).toBe(1);
+    expect(out()).toBe('');
+    expect(err()).toMatch(/^error: quota could not be reserved \(.+\): nothing was routed\. Fix .+, or route with --dry-run for an unreserved decision$/);
+  });
+
+  it('decides without reserving on --dry-run when the ledger cannot be written, and says so (#1)', async () => {
+    mkdirSync(ledgerDir(), { recursive: true });
+    const d = await routed([...claudeRoute, '--dry-run']);
+    expect(d).toMatchObject({ status: 'ok', route: { agent: 'claude' } });
+    expect(d).not.toHaveProperty('reservation');
+    expect(d.warnings).toContainEqual(expect.stringMatching(/^the reservation ledger could not be written: /));
+  });
+
+  it('says when a corrupt ledger was quarantined and rebuilt, in route and status', async () => {
+    mkdirSync(join(process.env.ORCACOMPASS_HOME!, 'cache'), { recursive: true });
+    writeFileSync(ledgerDir(), '{not json');
+    const d = await routed();
+    expect(d.status).toBe('ok');
+    expect(d.warnings).toContainEqual(expect.stringMatching(/^the reservation ledger was unreadable \(not valid JSON\) and was reset; the old file is kept as reservations\.json\.corrupt/));
+    expect(readFileSync(join(process.env.ORCACOMPASS_HOME!, 'cache', 'reservations.json.corrupt'), 'utf8')).toBe('{not json');
+    writeFileSync(ledgerDir(), '{not json');
+    stdout = [];
+    await main(['status', '--json'], io, deps);
+    expect(JSON.parse(out()).ledgerRecovered).toMatch(/^the reservation ledger was unreadable/);
+    writeFileSync(ledgerDir(), '{not json');
+    stdout = [];
+    await main(['status'], io, deps);
+    expect(out()).toMatch(/^ {2}warning: the reservation ledger was unreadable \(not valid JSON\) and was reset/m);
+  });
+
+  it('verify --wait 0 binds the Dispatch but leaves the reservation pending, and never rebinds it (#8)', async () => {
+    const d = await routed();
+    stdout = [];
+    expect(await main(['verify', '--dispatch', 'ctx_7', '--reservation', d.reservation.id, '--wait', '0', '--json'], io, worker({}))).toBe(0);
+    expect(JSON.parse(out())).toMatchObject({ status: 'unknown', reservation: { id: d.reservation.id, state: 'pending' } });
+    expect(ledger().reservations).toMatchObject([{ id: d.reservation.id, state: 'pending', dispatchId: 'ctx_7' }]);
+    // Another Dispatch on the same reservation is a conflict: reported, nothing changes.
+    stdout = [];
+    expect(await main(['verify', '--dispatch', 'ctx_9', '--reservation', d.reservation.id, '--wait', '0', '--json'], io, worker({}))).toBe(0);
+    const second = JSON.parse(out());
+    expect(second).toMatchObject({ status: 'unknown', reservation: null });
+    expect(second.reservationError).toBe(`reservation ${d.reservation.id} is bound to dispatch ctx_7, not ctx_9; nothing changed`);
+    expect(ledger().reservations).toMatchObject([{ id: d.reservation.id, state: 'pending', dispatchId: 'ctx_7' }]);
+    // release refuses the same way.
+    stdout = [];
+    stderr = [];
+    expect(await main(['release', '--reservation', d.reservation.id, '--dispatch', 'ctx_9'], io, deps)).toBe(1);
+    expect(out()).toBe('');
+    expect(err()).toBe(`error: reservation ${d.reservation.id} is bound to dispatch ctx_7, not ctx_9; nothing changed`);
+    expect(ledger().reservations).toMatchObject([{ id: d.reservation.id, state: 'pending', dispatchId: 'ctx_7' }]);
+  });
+
+  it('status shows usage Orca kept after a failed refresh as retained, with its error (#9)', async () => {
+    const data = JSON.parse(orcaFixture);
+    Object.assign(data.result.rateLimits.claude, { status: 'error', error: 'Claude usage is unavailable.', updatedAt: NOW - 12 * 60_000 });
+    const keptDeps: MainDeps = { ...deps, run: fakeRunner(() => ({ code: 0, stdout: JSON.stringify(data), stderr: '' })) };
+    stdout = [];
+    await main(['status'], io, keptDeps);
+    expect(out()).toMatch(/^ {2}claude +\d+ models, usage retained \(Claude usage is unavailable\.\), updated 12m ago$/m);
+    expect(out()).not.toMatch(/^ {2}claude +\d+ models, usage ok/m);
+    stdout = [];
+    await main(['status', '--json'], io, keptDeps);
+    const usage = JSON.parse(out()).agents.find((a: { agent: string }) => a.agent === 'claude').usage;
+    expect(usage).toMatchObject({ status: 'ok', retained: true, error: 'Claude usage is unavailable.', updatedAt: NOW - 12 * 60_000 });
+    expect(usage).not.toHaveProperty('standIn');
+  });
+
+  it('status holds no points for a record that is no longer live (#10d)', async () => {
+    const d = await routed();
+    stdout = [];
+    expect(await main(['release', '--reservation', d.reservation.id, '--outcome', 'failed-before-launch'], io, deps)).toBe(0);
+    stdout = [];
+    await main(['status', '--json'], io, deps);
+    const r = JSON.parse(out()).reservations.find((x: { id: string }) => x.id === d.reservation.id);
+    expect(r).toMatchObject({ state: 'failed_before_launch', live: false });
+    expect(r.buckets.map((b: { percentPoints: number }) => b.percentPoints)).toEqual([0, 0, 0]);
+  });
+
+  it('status computes a record\'s points with the plan it was reserved on (#10d)', async () => {
+    writeFileSync(configPath(), JSON.stringify({ reservations: { overrides: [{ agent: 'claude', plan: 'max_5x', scale: 2 }] } }));
+    const onPlan = (plan: string, updatedAt: number): MainDeps => {
+      const data = JSON.parse(orcaFixture);
+      Object.assign(data.result.rateLimits.claude, { planType: plan, updatedAt });
+      return { ...deps, run: fakeRunner(() => ({ code: 0, stdout: JSON.stringify(data), stderr: '' })) };
+    };
+    stdout = [];
+    expect(await main(claudeRoute, io, onPlan('max_5x', NOW))).toBe(0);
+    const d = JSON.parse(out());
+    expect(d.reservation.buckets.map((b: { percentPoints: number }) => b.percentPoints)).toEqual([3, 3]);
+    expect(ledger().reservations).toMatchObject([{ id: d.reservation.id, plan: 'max_5x' }]);
+    // The account moves to another plan: the record keeps the points it was reserved with.
+    stdout = [];
+    await main(['status', '--json'], io, { ...onPlan('pro', NOW + 60_000), now: NOW + 60_000 });
+    const r = JSON.parse(out()).reservations.find((x: { id: string }) => x.id === d.reservation.id);
+    expect(r).toMatchObject({ live: true, plan: 'max_5x' });
+    expect(r.buckets.map((b: { percentPoints: number }) => b.percentPoints)).toEqual([3, 3, 3]);
   });
 });

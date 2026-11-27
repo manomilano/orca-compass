@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { clearReservations, endWorker, markRunning, routeAndReserve, type LifecycleChange } from './routing/allocate.js';
-import { bucketId, bucketText, buildQuotaView, bufferFor, displayPool, isLive, pointsText, type Reservation } from './routing/quota.js';
-import type { ReleaseOutcome } from './routing/reservations.js';
+import { bindDispatch, clearReservations, endWorker, markRunning, routeAndReserve, type LifecycleChange } from './routing/allocate.js';
+import { bucketId, bucketText, buildQuotaView, bufferFor, displayPool, isLive, pointsText, poolKey, type Reservation } from './routing/quota.js';
+import { LedgerError, type ReleaseOutcome } from './routing/reservations.js';
 import { cacheDir } from './paths.js';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
@@ -210,19 +210,25 @@ async function routeCommand(args: string[], io: IO, deps: MainDeps): Promise<num
   };
 
   const config = readConfig(io);
-  const env = await gatherEnvironment(config, deps);
-  // Deciding and reserving are one atomic step: the route is revalidated on the ledger under its lock.
+  const dir = deps.cacheDir ?? cacheDir();
+  const gathered = await gather(config, deps);
+  const { env } = gathered;
+  const dryRun = v['dry-run'] === true;
+  // Deciding and reserving are one atomic step: the route is revalidated on the ledger under its lock. A route
+  // whose quota cannot be reserved is not printed at all (fail closed); --dry-run is the explicit unreserved path.
   let d: Decision;
-  let unreserved: string | undefined;
   try {
-    d = routeAndReserve(req, env, config, deps.cacheDir ?? cacheDir(), { dryRun: v['dry-run'] });
+    d = routeAndReserve(req, env, config, dir, { dryRun, ...(gathered.workers ? { workers: gathered.workers } : {}) });
   } catch (e) {
-    d = route(req, env, config);
-    unreserved = (e as Error).message;
+    if (e instanceof LedgerError) {
+      throw new Error(`quota could not be reserved (${e.message}): nothing was routed. Fix ${dir}, or route with --dry-run for an unreserved decision`);
+    }
+    throw e;
   }
   d.warnings.push(...unknownAgents);
   if (v['no-downgrade']) d.warnings.push('--no-downgrade is no longer needed: requirements are never lowered automatically');
-  if (unreserved !== undefined && d.status === 'ok') d.warnings.push(`quota could not be reserved for this route: ${unreserved}`);
+  if (dryRun && gathered.ledgerError) d.warnings.push(`the reservation ledger could not be written: ${gathered.ledgerError}`);
+  if (gathered.ledgerRecovered && !d.warnings.includes(gathered.ledgerRecovered)) d.warnings.push(gathered.ledgerRecovered);
   const behind = evidenceBehindWarning(env.evidenceGeneratedAt, deps);
   if (behind) d.warnings.push(behind);
   if (v.json) {
@@ -347,13 +353,20 @@ function settleReservation(d: Verdict, reservationId: string | undefined, now: n
     if (d.status === 'rejected') change = endWorker(q, 'failed-before-launch', now, dir, 'the agent refused the model at launch');
     else if (d.status === 'reported') change = endWorker(q, 'completed', now, dir);
     else if (d.status === 'failed') change = endWorker(q, 'cancelled', now, dir, 'the worker ended without worker_done');
-    else if (d.agent || reservationId) change = markRunning(q, now, dir);
-    else return {};
+    else if (!d.agent && !reservationId) return {};
+    else if (d.status === 'started' || d.status === 'stalled') change = markRunning(q, now, dir);
+    // `unknown`: the launch is not confirmed. Bind the Dispatch and leave the reservation pending, so Orca's
+    // worker list moves it on at the next sync, or `pendingMinutes` abandons it.
+    else change = bindDispatch(q, dir);
+    if (change.conflict) return { error: conflictText(change.conflict, d.dispatchId) };
     return { record: change.reservation, from: change.from };
   } catch (e) {
     return { error: (e as Error).message };
   }
 }
+
+const conflictText = (c: NonNullable<LifecycleChange['conflict']>, given: string): string =>
+  `reservation ${c.reservationId} is bound to dispatch ${c.boundTo}, not ${given}; nothing changed`;
 
 function reservationLines(s: Settled): string[] {
   if (s.error) return [`reservation: could not be updated: ${s.error}`];
@@ -379,6 +392,8 @@ async function releaseCommand(args: string[], io: IO, deps: MainDeps): Promise<n
   if (!OUTCOMES.includes(outcome)) throw new UsageError(`unknown outcome "${v.outcome}" (expected ${OUTCOMES.join(', ')})`);
   const now = (deps.clock ?? Date.now)();
   const change = endWorker({ reservationId: v.reservation, dispatchId: v.dispatch }, outcome, now, dir);
+  // A reservation belongs to one worker: never end it for another Dispatch.
+  if (change.conflict) throw new Error(conflictText(change.conflict, v.dispatch!));
   const settled: Settled = { record: change.reservation, from: change.from };
   if (v.json) io.out(JSON.stringify({ reservation: change.reservation ?? null }, null, 2));
   else io.out(reservationLines(settled).join('\n'));
@@ -534,17 +549,25 @@ function buildStatus(gathered: Gathered, config: Config) {
   return {
     now: env.now,
     riskThresholds: config.riskThresholds,
-    // Every reservation record, with the percentage points it holds on each bucket right now.
-    reservations: gathered.reservations.map((r) => ({
-      ...r,
-      live: isLive(r),
-      buckets: r.pools.map((pool) => ({
-        // The window's name as Orca reports it, when the bucket is in the current snapshot.
-        pool: quota.buckets.find((b) => b.id === bucketId(r.agent, r.scope, pool))?.pool ?? pool,
-        percentPoints: bufferFor(config.reservations, { agent: r.agent, plan: env.usage[r.agent]?.plan, pool, tier: r.tier, effort: r.effort }),
-      })),
-    })),
+    // Every reservation record, with the percentage points it holds on each bucket right now: none once it is
+    // no longer live or the window is settled, else its buffer row for the plan it was reserved on.
+    reservations: gathered.reservations.map((r) => {
+      const live = isLive(r);
+      const settled = new Set((r.settled ?? []).map(poolKey));
+      return {
+        ...r,
+        live,
+        buckets: r.pools.map((pool) => ({
+          // The window's name as Orca reports it, when the bucket is in the current snapshot.
+          pool: quota.buckets.find((b) => b.id === bucketId(r.agent, r.scope, pool))?.pool ?? pool,
+          percentPoints: !live || settled.has(poolKey(pool)) ? 0
+            : bufferFor(config.reservations, { agent: r.agent, plan: r.plan, pool, tier: r.tier, effort: r.effort }),
+          ...(settled.has(poolKey(pool)) ? { settled: true } : {}),
+        })),
+      };
+    }),
     ...(gathered.ledgerError ? { ledgerError: gathered.ledgerError } : {}),
+    ...(gathered.ledgerRecovered ? { ledgerRecovered: gathered.ledgerRecovered } : {}),
     evidence: table.sources.evidence,
     placements: placementsView(gathered, env.now),
     orcaAgents: env.orcaAgents ?? null,
@@ -576,7 +599,12 @@ function statusText(s: Status, sources: SnapshotSource[]): string[] {
       continue;
     }
     const u = a.usage;
-    const usage = !u ? 'no usage data' : u.status === 'ok' ? `usage ok${u.updatedAt !== undefined ? `, updated ${duration(now - u.updatedAt)} ago` : ''}` : `usage ${u.status}${u.error ? `: ${u.error}` : ''}`;
+    const updated = u?.updatedAt !== undefined ? `, updated ${duration(now - u.updatedAt)} ago` : '';
+    // Windows kept from an earlier reading (Orca's refresh failed, or Orca could not be read) are not `ok`.
+    const usage = !u ? 'no usage data'
+      : u.status === 'ok' && u.retained ? `usage retained${u.error ? ` (${u.error})` : ''}${updated}`
+      : u.status === 'ok' ? `usage ok${updated}`
+      : `usage ${u.status}${u.error ? `: ${u.error}` : ''}`;
     lines.push(`  ${name}  ${a.models} models, ${usage}${a.skipped ? ` — skipped: ${a.skipped}` : ''}`);
     if (a.note) lines.push(`  ${' '.repeat(width)}  ${a.note}`);
     for (const p of u?.pools ?? []) {
@@ -588,11 +616,13 @@ function statusText(s: Status, sources: SnapshotSource[]): string[] {
   if (live.length) {
     lines.push(`reservations (${live.length} counting against quota):`);
     for (const r of live) {
-      const held = r.buckets.map((b) => `${displayPool(b.pool)} +${pointsText(b.percentPoints)}`).join(', ');
+      // A window a fresh reading already covers no longer counts: it is left out.
+      const held = r.buckets.filter((b) => !b.settled).map((b) => `${displayPool(b.pool)} +${pointsText(b.percentPoints)}`).join(', ');
       lines.push(`  ${r.id}  ${r.agent} ${r.model}  ${r.state.replace(/_/g, ' ')} for ${duration(now - (r.endedAt ?? r.startedAt ?? r.createdAt))}  (${held})`);
     }
   }
   if (s.ledgerError) lines.push(`  warning: the reservation ledger could not be written: ${s.ledgerError}`);
+  if (s.ledgerRecovered) lines.push(`  warning: ${s.ledgerRecovered}`);
   lines.push('tiers:');
   for (const tier of TIERS) {
     const t = s.tiers[tier];
