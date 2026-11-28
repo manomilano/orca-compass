@@ -18,8 +18,12 @@ export const LEDGER_FILE = 'reservations.json';
 /** Where an unreadable ledger file is kept before a fresh one replaces it. */
 export const CORRUPT_LEDGER_FILE = `${LEDGER_FILE}.corrupt`;
 export const LOCK_FILE = 'reservations.lock';
+/** Held for the instant an abandoned lock is taken over, so that one process at a time removes one. */
+export const TAKEOVER_FILE = `${LOCK_FILE}.takeover`;
 /** A lock of another host, or one that names no owner, is taken over once it is this old. */
 export const STALE_LOCK_MS = 20_000;
+/** A takeover file is held for an instant: one this old was left by a process that crashed or froze. */
+export const TAKEOVER_STALE_MS = 5_000;
 /** A lock of a live process on this host is respected this long: longer, the pid was reused or the process froze. */
 export const LIVE_OWNER_MAX_MS = 30_000;
 const LOCK_TIMEOUT_MS = 20_000;
@@ -208,14 +212,22 @@ function processAlive(pid: number): boolean {
 }
 
 /**
- * Whether a lock found in place may be taken over: its owner on this host is dead (at once), a live owner on
- * this host has held it past `liveOwnerMaxMs`, or a lock of another host or without an owner is past `staleMs`.
+ * Whether a lock found in place may be taken over: its owner on this host is dead or is this very process (at
+ * once), a live owner on this host has held it past `liveOwnerMaxMs`, or a lock of another host or without an
+ * owner is past `staleMs`.
+ *
+ * A lock of this process is always an orphan: `withLedger` is synchronous and never nested, so a process that
+ * is acquiring holds no lock. It is left behind when an attempt concluded its lock was lost while the file was
+ * only out of place for a moment (see `retire`); waiting on it would be waiting on ourselves.
  */
 function abandoned(content: string, ageMs: number, staleMs: number, liveOwnerMaxMs: number): boolean {
   const owner = lockOwner(content);
-  if (owner !== undefined && owner.host === hostname()) return !processAlive(owner.pid) || ageMs > liveOwnerMaxMs;
+  if (owner !== undefined && owner.host === hostname()) return owner.pid === process.pid || !processAlive(owner.pid) || ageMs > liveOwnerMaxMs;
   return ageMs > staleMs;
 }
+
+/** What Windows reports for a moment while another process creates, renames or deletes the file. */
+const transient = (e: unknown): boolean => ['EPERM', 'EACCES', 'EBUSY'].includes((e as NodeJS.ErrnoException).code ?? '');
 
 /** The lock's content and age; undefined when it vanished or could not be read (try again). */
 function inspectLock(lock: string): { content: string; ageMs: number } | undefined {
@@ -232,6 +244,10 @@ function inspectLock(lock: string): { content: string; ageMs: number } | undefin
  * The only way a lock file is removed, for a takeover and for a release. The lock is renamed away, then its
  * content is checked: when it is not the lock that was judged (another process replaced it meanwhile) it is
  * put back with a hard link, which fails harmlessly when a new lock already exists.
+ *
+ * Putting it back is a safety net, not a guarantee: while the file is away its owner may conclude it lost the
+ * lock, and another process may create one. So a takeover only gets here through `takeOver`, which makes sure
+ * the lock removed is the one that was judged.
  */
 function retire(lock: string, expected: string): 'retired' | 'mismatch' | 'missing' | 'busy' {
   const dead = `${lock}.${randomBytes(6).toString('hex')}.dead`;
@@ -251,51 +267,93 @@ function retire(lock: string, expected: string): 'retired' | 'mismatch' | 'missi
   return matched ? 'retired' : 'mismatch';
 }
 
+/** A lock file this process created: the lock itself, or the takeover file. */
 interface Held {
   lock: string;
   content: string;
 }
 
+/** A record no other lock file carries: this process, and a token of its own. */
+const ownRecord = (): string => JSON.stringify({ pid: process.pid, host: hostname(), token: randomBytes(8).toString('hex'), at: Date.now() });
+
+/** Creates the lock file; false when one is in place already (or, on Windows, is being removed right now). */
+function create(held: Held): boolean {
+  let fd: number;
+  try {
+    // 'wx' creates the file only when it does not exist: one process wins.
+    fd = openSync(held.lock, 'wx');
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'EEXIST' || transient(e)) return false;
+    throw e;
+  }
+  try {
+    writeFileSync(fd, held.content);
+  } catch (e) {
+    closeSync(fd);
+    try { unlinkSync(held.lock); } catch { /* best effort */ }
+    throw e;
+  }
+  closeSync(fd);
+  return true;
+}
+
+/**
+ * Removes the lock when it is abandoned: true when it was, and the lock is free to compete for. Exported for
+ * the tests.
+ *
+ * Many processes can judge the same dead lock at the same moment. Were each to remove "the lock" on that
+ * judgment, a slower one would move away the fresh lock of the process that won. So removing is exclusive: it
+ * is done holding the takeover file, and on a judgment made again under it. A lock a winner created meanwhile
+ * is live and is never touched.
+ *
+ * The takeover file can never block a takeover for long: found in place, it is removed when its owner on this
+ * host is dead or is this process, or once it is `TAKEOVER_STALE_MS` old.
+ */
+export function takeOver(lock: string, staleMs: number = STALE_LOCK_MS, liveOwnerMaxMs: number = LIVE_OWNER_MAX_MS): boolean {
+  const claim: Held = { lock: `${lock}.takeover`, content: ownRecord() };
+  if (!create(claim)) {
+    const left = inspectLock(claim.lock);
+    if (left !== undefined && abandoned(left.content, left.ageMs, TAKEOVER_STALE_MS, TAKEOVER_STALE_MS)) retire(claim.lock, left.content);
+    // Another process is taking over, or just did: wait and look again.
+    return false;
+  }
+  try {
+    const found = inspectLock(lock);
+    return found !== undefined && abandoned(found.content, found.ageMs, staleMs, liveOwnerMaxMs) && retire(lock, found.content) === 'retired';
+  } finally {
+    release(claim);
+  }
+}
+
 function acquire(dir: string, timing: LockTiming): Held {
-  const lock = join(dir, LOCK_FILE);
+  const held: Held = { lock: join(dir, LOCK_FILE), content: ownRecord() };
   mkdirSync(dir, { recursive: true });
   const timeoutMs = timing.timeoutMs ?? LOCK_TIMEOUT_MS;
   const staleMs = timing.staleMs ?? STALE_LOCK_MS;
   const liveOwnerMaxMs = timing.liveOwnerMaxMs ?? LIVE_OWNER_MAX_MS;
-  const content = JSON.stringify({ pid: process.pid, host: hostname(), token: randomBytes(8).toString('hex'), at: Date.now() });
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    try {
-      // 'wx' creates the file only when it does not exist: one process wins.
-      const fd = openSync(lock, 'wx');
-      try {
-        writeFileSync(fd, content);
-      } catch (e) {
-        closeSync(fd);
-        try { unlinkSync(lock); } catch { /* best effort */ }
-        throw e;
-      }
-      closeSync(fd);
-      return { lock, content };
-    } catch (e) {
-      const code = (e as NodeJS.ErrnoException).code;
-      // Windows reports a lock file being deleted by its owner as EPERM or EACCES for a moment.
-      if (code !== 'EEXIST' && code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY') throw e;
-      const found = inspectLock(lock);
-      // Taken over: compete for the lock again like anyone else.
-      if (found !== undefined && abandoned(found.content, found.ageMs, staleMs, liveOwnerMaxMs) && retire(lock, found.content) === 'retired') continue;
-      if (Date.now() >= deadline) throw new LedgerLockError(`the reservation ledger stayed locked for ${timeoutMs / 1000}s (${lock})`);
-      sleepSync(8 + Math.floor(Math.random() * 25));
-    }
+    if (create(held)) return held;
+    const found = inspectLock(held.lock);
+    // Taken over: compete for the lock again like anyone else.
+    if (found !== undefined && abandoned(found.content, found.ageMs, staleMs, liveOwnerMaxMs) && takeOver(held.lock, staleMs, liveOwnerMaxMs)) continue;
+    if (Date.now() >= deadline) throw new LedgerLockError(`the reservation ledger stayed locked for ${timeoutMs / 1000}s (${held.lock})`);
+    sleepSync(8 + Math.floor(Math.random() * 25));
   }
 }
 
-/** Whether the lock is still the one this process created. */
+/**
+ * Whether the lock is still the one this process created. A lock that is missing or unreadable is read again
+ * twice before it counts as lost: it may only be out of place for a moment (see `retire`).
+ */
 function holds(held: Held): boolean {
-  try {
-    return readFileSync(held.lock, 'utf8') === held.content;
-  } catch {
-    return false;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return readFileSync(held.lock, 'utf8') === held.content;
+    } catch (e) {
+      if (attempt >= 2 || ((e as NodeJS.ErrnoException).code !== 'ENOENT' && !transient(e))) return false;
+      sleepSync(3);
+    }
   }
 }
 

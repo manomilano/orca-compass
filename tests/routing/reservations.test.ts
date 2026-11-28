@@ -1,14 +1,15 @@
-import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG } from '../../src/config.js';
 import { bindDispatch, clearReservations, endWorker, markRunning, recoverReservations, routeAndReserve, syncReservations } from '../../src/routing/allocate.js';
 import { buildQuotaView, candidateQuota, isLive, type Reservation, type WorkerState } from '../../src/routing/quota.js';
 import {
-  CORRUPT_LEDGER_FILE, findReservation, LEDGER_FILE, LedgerError, LedgerLockError, LOCK_FILE, parseLedger, readLedger, syncLedger, withLedger,
+  CORRUPT_LEDGER_FILE, findReservation, LEDGER_FILE, LedgerError, LedgerLockError, LOCK_FILE, parseLedger, readLedger, syncLedger, TAKEOVER_FILE,
+  takeOver, withLedger,
 } from '../../src/routing/reservations.js';
 import type { AgentUsage, Config, Environment } from '../../src/types.js';
 import { machineEnv, NOW, withPool, withUsageUpdatedAt } from '../helpers/env.js';
@@ -107,26 +108,27 @@ describe('routing reserves capacity', () => {
 
 describe('concurrent processes', () => {
   const node = process.features as { typescript?: unknown };
+  const register = pathToFileURL(fileURLToPath(new URL('../helpers/ts-register.mjs', import.meta.url))).href;
+  /** Runs a script as an independent `node` process that can load the TypeScript sources; resolves to its output, parsed. */
+  const run = <T>(script: string, ...args: string[]) => new Promise<T>((resolve, reject) => {
+    const child = spawn(process.execPath, ['--no-warnings', '--import', register, script, ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    let err = '';
+    child.stdout.on('data', (d) => (out += d));
+    child.stderr.on('data', (d) => (err += d));
+    child.on('error', reject);
+    child.on('close', (code) => (code === 0 ? resolve(JSON.parse(out) as T) : reject(new Error(`worker exited with ${code}: ${err}`))));
+  });
 
   it.skipIf(!node.typescript)('#8 ten simultaneous routing requests neither lose nor duplicate a reservation', async () => {
     const env = claudeOnly(80);
     const input = join(dir, 'input.json');
     writeFileSync(input, JSON.stringify({ env, config, req: daily }));
-    const register = pathToFileURL(fileURLToPath(new URL('../helpers/ts-register.mjs', import.meta.url))).href;
     const worker = fileURLToPath(new URL('../helpers/reserve-worker.ts', import.meta.url));
     // A lock left behind by a process that died: the first contender takes it over at once.
     writeFileSync(join(dir, LOCK_FILE), '999999\n');
     const startAt = Date.now() + 1500;
-    const run = () => new Promise<{ status: string; reservation: string | null }>((resolve, reject) => {
-      const child = spawn(process.execPath, ['--no-warnings', '--import', register, worker, input, dir, String(startAt)], { stdio: ['ignore', 'pipe', 'pipe'] });
-      let out = '';
-      let err = '';
-      child.stdout.on('data', (d) => (out += d));
-      child.stderr.on('data', (d) => (err += d));
-      child.on('error', reject);
-      child.on('close', (code) => (code === 0 ? resolve(JSON.parse(out)) : reject(new Error(`worker exited with ${code}: ${err}`))));
-    });
-    const results = await Promise.all(Array.from({ length: 10 }, run));
+    const results = await Promise.all(Array.from({ length: 10 }, () => run<{ status: string; reservation: string | null }>(worker, input, dir, String(startAt))));
     // Exactly as many routes as fit below the threshold: six, as in the sequential case. Without an atomic
     // revalidation every process would have seen 80% and all ten would have been routed.
     expect(results.filter((r) => r.status === 'ok')).toHaveLength(6);
@@ -139,6 +141,50 @@ describe('concurrent processes', () => {
     expect(weekly(env, ledger.reservations)).toMatchObject({ reported: 80, reserved: 9, workers: 6, effective: 89 });
     expect(existsSync(join(dir, 'reservations.lock'))).toBe(false);
   }, 60_000);
+
+  // Ten processes that all find the same dead lock used to take it over one after another: a slower one
+  // moved the winner's fresh lock away, which lost a change or left the winner waiting 20 s on its own lock.
+  it.skipIf(!node.typescript)('#8 twenty bursts of ten processes on a dead process\'s lock lose no change and leave no lock stuck', async () => {
+    const PROCESSES = 10;
+    const ROUNDS = 20;
+    // One folder per burst, each with the lock of a process that died, in either form a lock has.
+    const dirs = Array.from({ length: ROUNDS }, (_, round) => {
+      const folder = join(dir, `burst-${String(round).padStart(2, '0')}`);
+      mkdirSync(folder);
+      writeFileSync(join(folder, LOCK_FILE), round % 2 === 0 ? '999999\n' : JSON.stringify({ pid: 999999, host: hostname(), token: 'feedfacefeedface', at: Date.now() }));
+      return folder;
+    });
+    const plan = join(dir, 'plan.json');
+    writeFileSync(plan, JSON.stringify({ dirs, startAt: Date.now() + 1500, gapMs: 300, record: record('rsv') }));
+    // One process: for every burst it reaches the lock at the shared instant and makes one change.
+    const worker = join(dir, 'lock-worker.mjs');
+    writeFileSync(worker, [
+      'import { readFileSync } from \'node:fs\';',
+      'const [moduleUrl, planFile, tag] = process.argv.slice(2);',
+      'const { withLedger } = await import(moduleUrl);',
+      'const { dirs, startAt, gapMs, record } = JSON.parse(readFileSync(planFile, \'utf8\'));',
+      'const took = dirs.map((folder, round) => {',
+      '  const at = startAt + round * gapMs;',
+      '  if (at - Date.now() > 40) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, at - Date.now() - 40);',
+      '  while (Date.now() < at) { /* spin so every process reaches the lock at the same moment */ }',
+      '  const began = Date.now();',
+      '  withLedger(folder, (ledger) => { ledger.reservations.push({ ...record, id: `rsv_${tag}_${round}` }); });',
+      '  return Date.now() - began;',
+      '});',
+      'process.stdout.write(JSON.stringify(took));',
+    ].join('\n'));
+    const moduleUrl = new URL('../../src/routing/reservations.ts', import.meta.url).href;
+    const took = await Promise.all(Array.from({ length: PROCESSES }, (_, tag) => run<number[]>(worker, moduleUrl, plan, String(tag))));
+    dirs.forEach((folder, round) => {
+      // No lost update: every process's change is in the ledger, once.
+      const written = parseLedger(readFileSync(join(folder, LEDGER_FILE), 'utf8')).reservations.map((r) => r.id).sort();
+      expect(written, `burst ${round}`).toEqual(Array.from({ length: PROCESSES }, (_, tag) => `rsv_${tag}_${round}`).sort());
+      // No lock, takeover file or renamed lock left behind.
+      expect(readdirSync(folder), `burst ${round}`).toEqual([LEDGER_FILE]);
+    });
+    // Nobody waited on a lock that no process held (the lock timeout is 20 s).
+    expect(Math.max(...took.flat())).toBeLessThan(5_000);
+  }, 120_000);
 
   it('serializes changes made in one process and breaks a lock left by a dead one', () => {
     const add = (id: string) => withLedger(dir, (ledger) => { ledger.reservations.push({ id, state: 'pending', agent: 'claude', model: 'm', tier: 'daily', effort: 'low', scope: 'default', pools: ['weekly'], createdAt: NOW, snapshotAt: null }); });
@@ -319,10 +365,15 @@ const unreachable = (agents: string[] = ['claude']): Record<string, AgentUsage> 
 describe('the lock', () => {
   const lock = () => join(dir, LOCK_FILE);
   const owner = (pid: number, host = hostname()) => JSON.stringify({ pid, host, token: 'feedfacefeedface', at: Date.now() });
-  const age = (ms: number) => { const t = new Date(Date.now() - ms); utimesSync(lock(), t, t); };
+  const takeover = () => join(dir, TAKEOVER_FILE);
+  const age = (ms: number, file = lock()) => { const t = new Date(Date.now() - ms); utimesSync(file, t, t); };
   /** The pid of a process that has exited. */
   const deadPid = () => spawnSync(process.execPath, ['-e', '']).pid!;
-  const add = (id: string, timing?: Parameters<typeof withLedger>[2]) => withLedger(dir, (ledger) => { ledger.reservations.push(record(id)); }, timing);
+  /** The pid of a process that is alive and is not this one: a lock of this very process is an orphan. */
+  let bystander: ChildProcess | undefined;
+  const livePid = () => (bystander ??= spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' })).pid!;
+  afterAll(() => { bystander?.kill(); });
+  const add =(id: string, timing?: Parameters<typeof withLedger>[2]) => withLedger(dir, (ledger) => { ledger.reservations.push(record(id)); }, timing);
 
   it('#2 takes over the lock of a dead process on this host at once, however fresh', () => {
     writeFileSync(lock(), owner(deadPid()));
@@ -334,15 +385,77 @@ describe('the lock', () => {
   });
 
   it('#2 respects a live owner on this host until it has held the lock for 30 seconds', () => {
-    const content = owner(process.pid);
+    const content = owner(livePid());
     writeFileSync(lock(), content);
     age(20_000);
     expect(() => add('rsv_a', { timeoutMs: 300 })).toThrow(LedgerLockError);
     expect(readFileSync(lock(), 'utf8')).toBe(content);
+    // Nothing was taken over, so no takeover file was ever created.
+    expect(readdirSync(dir)).toEqual([LOCK_FILE]);
     age(31_000);
     add('rsv_a', { timeoutMs: 300 });
     expect(ids()).toEqual(['rsv_a']);
     expect(existsSync(lock())).toBe(false);
+  });
+
+  it('takes over a lock of this very process at once, however fresh: nobody waits on their own orphan', () => {
+    [owner(process.pid), `${process.pid}\n`].forEach((content, i) => {
+      writeFileSync(lock(), content);
+      const started = Date.now();
+      add(`rsv_${i}`, { timeoutMs: 5000 });
+      expect(Date.now() - started).toBeLessThan(2500);
+      expect(readdirSync(dir)).toEqual([LEDGER_FILE]);
+    });
+    expect(ids()).toEqual(['rsv_0', 'rsv_1']);
+  });
+
+  it('leaves the lock a winner put in place of the dead one alone, and removes only a lock that is still abandoned', () => {
+    // What a slower contender finds when its turn to take over comes: the dead lock it judged is gone and
+    // the winner's fresh lock is in its place.
+    const fresh = owner(livePid());
+    writeFileSync(lock(), fresh);
+    expect(takeOver(lock())).toBe(false);
+    expect(readFileSync(lock(), 'utf8')).toBe(fresh);
+    expect(readdirSync(dir)).toEqual([LOCK_FILE]);
+    writeFileSync(lock(), owner(deadPid()));
+    expect(takeOver(lock())).toBe(true);
+    expect(readdirSync(dir)).toEqual([]);
+    // Released meanwhile: nothing to take over.
+    expect(takeOver(lock())).toBe(false);
+    expect(readdirSync(dir)).toEqual([]);
+  });
+
+  it('waits for a takeover in progress instead of joining it, until its takeover file is 5 seconds old', () => {
+    const busy = owner(livePid());
+    const dead = owner(deadPid());
+    writeFileSync(lock(), dead);
+    writeFileSync(takeover(), busy);
+    expect(takeOver(lock())).toBe(false);
+    expect(() => add('rsv_a', { timeoutMs: 300 })).toThrow(LedgerLockError);
+    expect(readFileSync(lock(), 'utf8')).toBe(dead);
+    expect(readFileSync(takeover(), 'utf8')).toBe(busy);
+    // Held that long, the process taking over froze: its takeover file no longer counts.
+    age(6_000, takeover());
+    add('rsv_a', { timeoutMs: 5000 });
+    expect(ids()).toEqual(['rsv_a']);
+    expect(readdirSync(dir)).toEqual([LEDGER_FILE]);
+  });
+
+  it('is never blocked by a takeover file left behind by a process that died, by this one, or by nobody', () => {
+    ['dead', 'own', 'empty'].forEach((kind, i) => {
+      writeFileSync(lock(), owner(deadPid()));
+      writeFileSync(takeover(), kind === 'dead' ? owner(deadPid()) : kind === 'own' ? owner(process.pid) : '');
+      if (kind === 'empty') {
+        // Its owner died before writing its name, or is about to write it: only its age tells.
+        expect(() => add(`rsv_${i}`, { timeoutMs: 300 }), kind).toThrow(LedgerLockError);
+        age(6_000, takeover());
+      }
+      const started = Date.now();
+      add(`rsv_${i}`, { timeoutMs: 5000 });
+      expect(Date.now() - started, kind).toBeLessThan(2500);
+      expect(readdirSync(dir), kind).toEqual([LEDGER_FILE]);
+    });
+    expect(ids()).toEqual(['rsv_0', 'rsv_1', 'rsv_2']);
   });
 
   it('#2 judges a lock of another host, or one naming no owner, by its age only', () => {
@@ -359,7 +472,7 @@ describe('the lock', () => {
   it('#2 writes nothing when its lock was taken over during the change, and leaves the new owner\'s lock in place', () => {
     add('rsv_a');
     const before = readFileSync(join(dir, LEDGER_FILE), 'utf8');
-    const foreign = owner(process.pid);
+    const foreign = owner(livePid());
     let runs = 0;
     expect(() => withLedger(dir, (ledger) => {
       runs++;
