@@ -22,7 +22,7 @@ settings allow it. The options therefore differ per user.
 | Codex | `codex` | `codex` | Orca's model catalog, then `$CODEX_HOME/models_cache.json` (default `~/.codex`), then the evidence snapshot (Codex ladder families only) | per model, from those files | session, weekly | Supported |
 | Cursor | `cursor` | `cursor-agent` (also `%LOCALAPPDATA%\cursor-agent`) | `cursor-agent models` | encoded in the model ID (`…-high`) | monthly, plus the `Cursor Models` and `Other Models` buckets | Supported |
 | Grok Build (xAI) | `grok` | `grok` (also `$GROK_HOME/bin`, `~/.grok/bin`) | `$GROK_HOME/models_cache.json` (default `~/.grok`), then `grok models` | per model from that cache; else `low` to `xhigh` (Grok 4.5 up to `high`) | weekly credits or monthly budget | Supported |
-| Antigravity (Google) | `antigravity` | `agy` (also `%LOCALAPPDATA%\agy\bin`, `~/.local/bin`) | `agy models` | `low` to `xhigh` per model (Gemini effort ids; Orca's catalog for the rest) | 5-hour, weekly, and any other reported window length per quota group | Supported |
+| Antigravity (Google) | `antigravity` | `agy` (also `%LOCALAPPDATA%\agy\bin`, `~/.local/bin`) | `agy models` | `low` to `xhigh` per model (Gemini effort ids; Orca's catalog for the rest) | None on Orca 1.4.280+ (standalone meter retired); older Orca: 5-hour and weekly per quota group | Basic support (quota unavailable on Orca 1.4.280+ pending Orca/Antigravity update) |
 | OpenCode | `opencode` | `opencode` (also `~/.opencode/bin`) | `opencode models` | none (Orca passes no effort to OpenCode) | none: pay per use or local | Supported; last resort by default |
 | Muse (Meta) | `muse` | `muse` | built-in list: `muse-wonder-1.0`, `muse-spark-1.1`, `muse-ember-1.0`, `muse-spark-1.3` (neither Muse nor Orca lists Muse models) | `minimal` to `max`, default `high` (Orca's Muse menu) | session and weekly when Orca reports `muse` usage (otherwise unknown) | Supported; model ids not yet checked against a Muse account |
 
@@ -122,7 +122,11 @@ inferred because Orca does not report it directly.
 
 Antigravity keeps provider launch IDs while normalizing them for classification:
 for example, `claude-opus-4-6-thinking` is classified as `claude-opus-4-6`.
-Its Gemini and Claude/GPT quota groups are evaluated separately.
+When Orca reports Antigravity quota groups, Gemini and Claude/GPT pools are evaluated separately.
+
+::: warning Antigravity quota visibility on Orca 1.4.280+
+Starting with Orca **v1.4.280** (including v1.4.281), Orca retired its standalone Antigravity usage meter to align with Google's supported integration guidance (`stablyai/orca#50137`). As a result, Antigravity quota usage is not available through `orca account list --json`, and OrcaCompass cannot run quota-based routing or reservation calculations on Antigravity pools until supported quota reporting returns. Antigravity models remain discovered, classified, and selectable via manual preferences (`prefer`), `--agent antigravity`, or automatic low-confidence fallback.
+:::
 
 ## Your preferences and bans
 
