@@ -18,13 +18,13 @@ settings allow it. The options therefore differ per user.
 
 | Agent | Orca agent ID | Executable | Model list comes from | Effort levels | Usage data from Orca | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| Claude Code | `claude` | `claude` | Orca's model catalog, then its cached account catalog, then Anthropic families in the evidence snapshot | from the same source, else `low` to `max` | session, weekly, Fable weekly | Supported |
+| Claude Code | `claude` | `claude` | Orca's model catalog, then its cached account catalog, then Anthropic families in the evidence snapshot | from the same source, else `low` to `max` | session, weekly, monthly (on monthly-only accounts), Fable weekly | Supported |
 | Codex | `codex` | `codex` | Orca's model catalog, then `$CODEX_HOME/models_cache.json` (default `~/.codex`), then the evidence snapshot (Codex ladder families only) | per model, from those files | session, weekly | Supported |
 | Cursor | `cursor` | `cursor-agent` (also `%LOCALAPPDATA%\cursor-agent`) | `cursor-agent models` | encoded in the model ID (`…-high`) | monthly, plus the `Cursor Models` and `Other Models` buckets | Supported |
 | Grok Build (xAI) | `grok` | `grok` (also `$GROK_HOME/bin`, `~/.grok/bin`) | `$GROK_HOME/models_cache.json` (default `~/.grok`), then `grok models` | per model from that cache; else `low` to `xhigh` (Grok 4.5 up to `high`) | weekly credits or monthly budget | Supported |
-| Antigravity (Google) | `antigravity` | `agy` (also `%LOCALAPPDATA%\agy\bin`, `~/.local/bin`) | `agy models` | `low` to `xhigh` per model (Gemini effort ids; Orca's catalog for the rest) | weekly, and 5-hour when reported, per quota group | Supported |
+| Antigravity (Google) | `antigravity` | `agy` (also `%LOCALAPPDATA%\agy\bin`, `~/.local/bin`) | `agy models` | `low` to `xhigh` per model (Gemini effort ids; Orca's catalog for the rest) | 5-hour, weekly, and any other reported window length per quota group | Supported |
 | OpenCode | `opencode` | `opencode` (also `~/.opencode/bin`) | `opencode models` | none (Orca passes no effort to OpenCode) | none: pay per use or local | Supported; last resort by default |
-| Muse (Meta) | `muse` | `muse` | built-in list: `muse-wonder-1.0`, `muse-spark-1.1`, `muse-ember-1.0`, `muse-spark-1.3` (neither Muse nor Orca lists Muse models) | `minimal` to `max`, default `high` (Orca's Muse menu) | none (Orca reports no Muse usage) | Supported; model ids not yet checked against a Muse account |
+| Muse (Meta) | `muse` | `muse` | built-in list: `muse-wonder-1.0`, `muse-spark-1.1`, `muse-ember-1.0`, `muse-spark-1.3` (neither Muse nor Orca lists Muse models) | `minimal` to `max`, default `high` (Orca's Muse menu) | session and weekly when Orca reports `muse` usage (otherwise unknown) | Supported; model ids not yet checked against a Muse account |
 
 **OpenCode** lists every model it can reach: providers with an API key
 (OpenRouter and others, pay per token), OpenCode's own models, and local
@@ -32,9 +32,11 @@ servers such as Ollama (this machine's resources). It has no usage window, so
 its routes are low confidence and say how they are paid for (`runs on this
 machine (ollama)`, `free model through openrouter`, `pay per use through
 openrouter`). Because it costs money or local resources, it is in
-`lastResortAgents` by default: routing first tries every other agent,
-including a lower tier, and uses OpenCode only when nothing else can take the
-job (or instead of waiting), with a warning. `--agent
+`lastResortAgents` by default: routing first tries every other agent and uses
+OpenCode only when no other agent can take the job (offering it as a `use`
+option when another agent can still run at elevated risk, or handing back a
+`decide` when only OpenCode is left and cannot run automatically), with a
+warning. `--agent
 opencode`, a preference for the tier (`orcacompass prefer daily opencode
 [model]`) or `"lastResortAgents": []` makes it an ordinary agent; without usage
 data it still ranks after agents that have it. OpenRouter's `~vendor/x-latest`
@@ -154,6 +156,7 @@ refusal (seen November 2026, with an unknown or unavailable model):
 | Cursor | `cursor-agent` exits 1; Orca fails the start after its 60 s readiness wait | `Cannot use this model: claude-opus-9-9. Available models: …` |
 | Grok Build | exits 1 | `Couldn't set model 'grok-9-fake': Invalid params: "unknown model id".` |
 | Antigravity | exits 1 | `invalid model selection (--model "gemini-9-fake" …): model gemini-9-fake is not recognized as a known model …` |
+| OpenCode | prints error | `Error: Model unavailable: openrouter/fake/nonexistent-9` |
 
 See [Verify and rejections](verify-and-rejections.md#refusal-phrases-recognized)
 for matching rules and soft warnings that do not count as refusals. See

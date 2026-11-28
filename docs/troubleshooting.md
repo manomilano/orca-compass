@@ -125,17 +125,22 @@ its usage reader (all supported agents except OpenCode) when
 `orca account list --json` fails or reaches its 20-second command timeout. Start Orca,
 make sure `orca` is on your PATH (on macOS and Linux, `/usr/local/bin`
 and `~/.local/bin` are also tried), and run `orca account list --json` yourself
-to see the error. While Orca cannot be read, the last valid snapshot stands in
-(medium confidence, `retained` in `status --json`); usage is never replaced
-by 0%. Without any snapshot, routing still works, but every route has low
-confidence, carries a warning and cannot be ranked by quota.
+to see the error. While Orca cannot be read, or when Orca reports a failed refresh for a single
+provider (even with no windows left) for the same account, the last valid
+snapshot stands in (medium confidence, `retained` in `status --json`; a known
+100% still blocks and nothing settles), whereas `unavailable` (signed out) or
+a newer reading for another account clears it. Usage is never replaced by 0%.
+Without any snapshot, routing still works, but every route has low confidence,
+carries a warning and cannot be ranked by quota.
 
 Other causes of low confidence: Orca reports no usage for that agent, the
 snapshot is older than four times `usageStaleMinutes` (2 hours by default), or
-a window's reset time passed since the snapshot was taken. Orca refreshes
-usage only while its window is in use, and `orca account list` never triggers
-a refresh, so a snapshot can be old after Orca has sat in the background: bring
-Orca to the front, or open its usage view, to refresh it. See
+a window's reset time passed since the snapshot was taken. `orca account list --json`
+asks Orca to refresh cached usage when stale (`refreshStaleUsage: true`) and
+returns cached readings while still fresh; OrcaCompass itself never polls
+providers directly. If a snapshot stays old (for example after a failed
+refresh or while Orca was idle), check the error in `orcacompass status` and
+bring Orca to the front or open its usage view to refresh it. See
 [Confidence and stale usage](tiers-and-routing.md#confidence-and-stale-usage).
 
 ## A route says `decide` or `none` {#a-route-says-decide-or-none}

@@ -45,8 +45,8 @@ tokens decides the tier:
 | Frontier | 12 or above |
 
 The blended price is `(3 × inputPerM + outputPerM) / 4`, rounded to two
-decimals. It sets the cost tier and the
-[price adjustment](#ranking-covering-routes) in ranking; it is not a
+decimals. It sets the cost tier and breaks economy ties inside a quota bucket
+(see [Ranking eligible routes](#ranking-covering-routes)); it is not a
 subscription bill.
 
 The cost tier comes from the first source that has one; `cost.source` in the
@@ -233,11 +233,13 @@ Orca reports now and on what is reserved now.
 
 A **quota bucket** is one limit that is enforced on its own: a provider, the
 account it runs on (with its runtime and plan), and a usage window. Claude's
-session, weekly and Fable weekly windows are three buckets; Cursor's monthly
-total and each named bucket are separate; each Antigravity quota group has its
-own 5-hour and weekly bucket. Models that share a window share its bucket;
-names that differ only in case or spacing are one bucket. A change of account,
-runtime or plan is a different set of buckets.
+session, weekly, monthly (on monthly-only accounts) and Fable weekly windows
+are separate buckets; Cursor's monthly total and each named bucket are
+separate; each Antigravity quota group has its own 5-hour, weekly, and any
+other reported window length (once Antigravity reports quota groups, obsolete
+ungrouped `session` and `weekly` snapshots are dropped). Models that share a
+window share its bucket; names that differ only in case or spacing are one
+bucket. A change of account, runtime or plan is a different set of buckets.
 
 Three numbers are kept apart for every bucket:
 
@@ -311,18 +313,22 @@ as soon as it is reported again. A declared window the account never has
 counts for nothing.
 
 A finished worker's reservation is released **window by window**. A window
-is settled once a reading of it was taken at least `settleSeconds` after the
-worker ended, and after the snapshot the worker was allocated on, for the same
-provider and account; the record's `settled` lists the windows done, which no
-longer count. A declared window the provider does not report settles with
-any snapshot taken that long after the end. Once every window is settled the
-record is `released`. The reading's own timestamp decides: reading the same
-cached snapshot again releases nothing, however much time passed, and a fresh
-reading releases even when it reports the same percentage. A window missing
-from one refresh keeps its last reading (aging to stale, then unknown) instead
-of disappearing. A provider whose refresh failed, or whose windows Orca only
-kept from an earlier reading, keeps its reservations while the others are
-reconciled.
+is settled once a reading of it with a valid percentage was taken at least
+`settleSeconds` after the worker ended, and after the snapshot the worker was
+allocated on, for the same provider and account; a window listed without a
+valid percentage settles nothing, whatever its timestamp says. The record's
+`settled` lists the windows done, which no longer count; for Antigravity, once
+a concrete window (such as a group's 5-hour window) is settled under its own
+name, it is no longer charged through its group key while other windows in
+that group wait to settle. A declared window the provider does not report
+settles with any snapshot taken that long after the end. Once every window is
+settled the record is `released`. The reading's own timestamp decides: reading
+the same cached snapshot again releases nothing, however much time passed, and
+a fresh reading releases even when it reports the same percentage. A window
+missing from one refresh keeps its last reading (aging to stale, then unknown)
+instead of disappearing. A provider whose refresh failed (with retained
+windows or with no windows left), or whose windows Orca only kept from an
+earlier reading, keeps its reservations while the others are reconciled.
 
 Some windows are carried forward rather than re-read: while a Claude Code
 session is open, Orca's status-line updates (`source: live-session`) refresh
@@ -333,11 +339,19 @@ least 20 minutes past the worker's end.
 
 A running worker is closed after `reservations.maxRunningHours` only when
 Orca does not confirm it is still live; a worker Orca lists as live keeps its
-reservation however long it runs. A finished record that is still held is
-dropped seven days after the worker ended (`endedAt`), not after it was
-created, so a long worker is never dropped the moment it finishes; a held
-record nobody reconciled within seven days of its end stops counting. A record
-that no longer counts is kept for an hour, for `status`.
+reservation however long it runs. When a reservation is abandoned after
+`pendingMinutes` or closed after `maxRunningHours`, its record carries
+`inferred: true` because nobody reported it finished: later positive proof
+overrides that inferred end cleanly—Orca's live worker list or a late `verify`
+revives the record back to `running` (counting on every window again), and an
+explicit `release` (including `--outcome failed-before-launch`) replaces the
+inferred end. A live record reserved on a known account before Orca reported
+its plan follows that account to the plan it discloses later, while a record
+on a known account never adopts another account's scope. A finished record
+that is still held is dropped seven days after the worker ended (`endedAt`),
+not after it was created, so a long worker is never dropped the moment it
+finishes; a held record nobody reconciled within seven days of its end stops
+counting. A record that no longer counts is kept for an hour, for `status`.
 
 The records live in `reservations.json` in the cache folder. Every change is
 made under a lock file and written through a temporary file, so OrcaCompass
@@ -388,9 +402,21 @@ model. It applies when the route's **requested tier** is that tier.
    - Unranked models stay out of automatic routing; only the preference (or
      `--use`) routes one.
 2. The preference must be able to apply the effort: `--effort` exactly, a
-   `--demand` at or above its target.
-3. It is used while its prospective usage stays below `preferRiskLimit` (90 by
-   default) on every bucket it draws on, and never when a quota is exhausted.
+   `--demand` at or above its target. When a preference names an
+   effort-variant model id (such as `prefer daily cursor claude-sonnet-5-5-high`),
+   it launches and reserves that exact variant and its encoded effort (reason
+   `effort: high, encoded in the model id named by your preference; …`), just
+   like `--use <agent>/<variant-id>`. If that variant's encoded effort
+   conflicts with `--effort` or falls below `--demand`, the preference is
+   skipped with a warning and the model can still route automatically at the
+   planned effort.
+3. It is used while its prospective usage stays below `min(preferRiskLimit, 100)`
+   (90 by default) on every bucket it draws on, and never when a quota is
+   `exhausted` or fully `reserved`. `config.json` still accepts
+   `preferRiskLimit` values above 100 for compatibility, but automatic
+   allocation never crosses 100% onto a fully reserved quota—instead it skips
+   with `(limit 100%: preferRiskLimit <N>% never takes a fully reserved quota)`
+   and hands back `WAIT`/`USE` if nothing else can take the job automatically.
    Unknown usage does not count as over the limit.
 4. Otherwise it is skipped with a warning and routing goes on without it:
 
@@ -398,28 +424,37 @@ model. It applies when the route's **requested tier** is that tier.
 preferred codex gpt-6.1-terra skipped: weekly would be 90.5% used with this worker (limit 90%); resets in 2d
 ```
 
-When the skipped preference is a model that automatic routing never offers
-(unranked, or an older release kept only for the preference) and no route can
-be taken automatically, the decision comes back as `decide`: the preference
-is the first `options.use` entry (`preferred: true`, with `coverageNote`
-when its coverage is unknown), and `options.wait` names the reset of the
-buckets at or above the limit. It is never offered under `options.lower`. An
-exhausted preference, or one that cannot apply the effort, is not offered.
+When the skipped preference is a route that automatic routing never offers
+(an unranked model, an older release kept only for the preference, or a
+preferred effort variant) and no route can be taken automatically, the
+decision comes back as `decide`: the preference is the first `options.use`
+entry (`preferred: true`, with `coverageNote` when its coverage is unknown),
+and `options.wait` names the reset of the buckets at or above the limit. It is
+never offered under `options.lower`. An exhausted preference, or one that
+cannot apply the effort, is not offered.
 
 `preferRiskLimit` is set with `orcacompass prefer --risk-limit <percent>`.
-Raising it above `riskThresholds.highPercent` keeps a favorite in use at high
-risk; the route then carries the warning for that bucket.
+Raising it above `riskThresholds.highPercent` warns when the config loads and
+keeps a favorite in use in the high-risk range (below 100%); the route then
+carries the warning for that bucket.
 
 ## Last-resort agents {#last-resort-agents}
 
 Agents in `lastResortAgents` (OpenCode by default: API keys cost per token,
 local models take this machine) are left out of the first pass. They take the
 job, with a warning that says how it is paid for, only when no other agent can:
-nothing else is eligible, or every eligible route is exhausted. When another
-route could still be used at elevated risk, the decision goes back to the
-Orchestrator with the last-resort route listed as one more `use` option.
-`--agent`, `--use` or a preference for the requested tier makes such an agent
-an ordinary one for that route.
+nothing else is eligible, or every eligible route is exhausted. When no other
+agent can take the job and the last-resort agent cannot take it automatically
+either (for example, it is at high risk or only lower-requirement routes
+exist), `route` returns `status: "decide"` (instead of `none`) with
+`lastResort: true` on the last-resort options under `options.use` /
+`options.lower` and warning
+`<agent> is a last-resort agent (lastResortAgents), offered as nothing else can take the job`.
+When another route could still be used at elevated risk, the decision goes
+back to the Orchestrator with a safe last-resort route appended to
+`options.use` (`lastResort: true`) and listed as a `USE:` line in text
+`reasons`. `--agent`, `--use` or a preference for the requested tier makes
+such an agent an ordinary one for that route.
 
 ## Cursor auto {#cursor-auto-fallback}
 
@@ -437,14 +472,22 @@ the model's profile.
 | Confidence | Meaning |
 | --- | --- |
 | `high` | Usage is known and fresh |
-| `medium` | The snapshot is older than `usageStaleMinutes` (30 by default), or it is the last valid one OrcaCompass kept because Orca could not be read, or the route is Cursor `auto` |
+| `medium` | The snapshot is older than `usageStaleMinutes` (30 by default), or it is retained from an earlier reading (Orca's refresh failed—with or without windows left—or Orca could not be read and the last valid snapshot for the same account stands in), or the route is Cursor `auto` |
 | `low` | Usage is unknown: Orca gave none, the snapshot is more than four times `usageStaleMinutes` old, a window reset since it was taken, or the route has no usage window |
 
-Orca refreshes usage on its own schedule, and only while its window is in
-use: `orca account list` returns the snapshot Orca holds and never triggers a
-refresh. A stale snapshot is still used (usage inside a window only grows), and
-reservations stay in place until a fresh one arrives. When Orca cannot be read
-at all, the last valid snapshot stands in; usage is never replaced by 0%.
+`orca account list --json` returns the snapshot Orca holds and asks Orca to
+refresh cached usage when it is stale (`refreshStaleUsage: true`); fresh
+readings are returned as-is, so calling again does not force a new poll, and
+OrcaCompass itself never polls providers directly. Orca also refreshes on its
+own schedule (every few minutes while its window is in use, far less often in
+the background). A stale snapshot is still used (usage inside a window only
+grows), and reservations stay in place until a fresh one arrives. When Orca
+cannot be read, or when a single provider's refresh fails with no windows left
+for the same account, the last valid snapshot stands in as `retained` (medium
+confidence; a known 100% still blocks and nothing settles); `unavailable`
+(signed out) or a newer reading for another account clears it, while an older
+in-flight reading of a previous account never overwrites a newer snapshot.
+Usage is never replaced by 0%.
 
 ## Outcomes: ok, decide, none {#outcomes-ok-decide-none}
 
@@ -474,8 +517,11 @@ A cheaper route that covers the needs is not a downgrade, and a pricier route
 picked because its bucket has more room is not an upgrade.
 
 `orcacompass status` routes each tier without reserving anything. It shows a
-pick only when a route can be taken automatically; the example routes in
-`setup` mark `(upgraded to X)` and `(downgraded to X)`.
+pick only when a route can be taken automatically, and leaves automatic
+structural upgrades (`upgraded: true`) to their own tier; a tier's explicitly
+preferred route stays visible in both `status` and `setup` even when it is an
+upgrade. The example routes in `setup` mark `(upgraded to X)` and
+`(downgraded to X)`.
 
 `route` exits 0 for `ok`, `decide` and `none`; read `status`. It exits 1,
 with nothing on stdout, when an `ok` route's quota cannot be reserved

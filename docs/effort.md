@@ -128,7 +128,7 @@ out below the target is left out, with the reason under `skipped`.
 | `--demand` → `medium` | `low`, `high` | `high`, `adjusted: true`, "(medium not offered, next higher supported)" |
 | `--demand` → `xhigh` | `low`, `medium`, `high` | Not eligible: `highest effort high is below xhigh (low/medium/high)` |
 | `--demand` → `xhigh` | `high`, `max` | `max`, adjusted |
-| `--demand`, effort not settable | default `high` reported | Eligible up to a `high` target, `applied: provider-default` |
+| `--demand`, effort not settable | default `high` reported | Eligible up to a `high` target, `applied: provider-default` (a reported default of `none` or `minimal` does not satisfy a higher demand) |
 | `--demand`, effort not settable | no default reported | Eligible for the `low` demand only |
 | tier default → `medium` | `low` | `low`, adjusted, "(medium not offered, nearest supported)" |
 
@@ -182,6 +182,19 @@ set in that case.
 When the supported levels are `assumed`, the effort reason ends with
 `supported levels assumed, not reported by the provider`.
 
+### Effort-variant IDs in `prefer` and `--use`
+
+For agents that encode effort in the model ID (Cursor and Antigravity Gemini),
+naming a specific effort variant in a tier preference
+(`orcacompass prefer daily cursor claude-sonnet-5-5-high`) or in
+`--use <agent>/<variant-id>` launches and reserves that variant's encoded
+effort instead of the planned one. The effort reason reads, for example,
+`effort: high, encoded in the model id named by your preference; medium wanted
+from moderate effort demand (balanced policy)` (or `named by --use`). If a
+preferred variant's encoded effort conflicts with an explicit `--effort` or
+falls below a `--demand`, the preference is skipped with a warning and the
+model can still route automatically at the planned effort.
+
 ### Per-agent details
 
 - **Claude Code**: efforts from Orca's catalog, then its cached account
@@ -217,10 +230,10 @@ When the supported levels are `assumed`, the effort reason ends with
 ```json
 "effort": {
   "source": "demand",
-  "demand": "high",
+  "demand": "moderate",
   "policy": "balanced",
-  "target": "high",
-  "resolved": "medium",
+  "target": "medium",
+  "resolved": "high",
   "applied": "flag",
   "adjusted": true,
   "supportSource": "provider",

@@ -32,12 +32,15 @@ setting:
    setting is `no` also needs enabling in Orca's settings.
 2. **Favorites:** for each tier show `pick`, `preferred`, and `options`
    (agent, model, `usagePercent`, `blocked`). Apply the option's `model` with
-   `orcacompass prefer <tier> <agent> <model>`, clear with
+   `orcacompass prefer <tier> <agent> <model>` (naming an effort-variant id
+   honors that variant's encoded effort), clear with
    `orcacompass prefer clear <tier>`, and change the limit with
    `orcacompass prefer --risk-limit <percent>`. A favorite is used while its
    prospective usage stays below `config.preferRiskLimit` (default
-   `defaultPreferRiskLimit`, 90%) on every quota it draws on; at or above it,
-   routing goes on without the favorite, with a warning.
+   `defaultPreferRiskLimit`, 90%; capped at 100%, so a favorite is never
+   routed automatically onto a fully reserved or exhausted quota) on every
+   quota it draws on; at or above it, routing goes on without the favorite,
+   with a warning.
 3. **Bans:** show `families` and `config.banModels`. Apply model or family
    bans with `orcacompass ban <entry>...` and remove them with
    `orcacompass unban <entry>...`. Use agent selection for whole agents.
@@ -202,11 +205,13 @@ do not extend a timed-out startup verification by repeating calls. Start a
 replacement only after cleanup succeeds. Never stop a worker that `verify`
 reported as `started`. Details: [Verify and rejections](verify-and-rejections.md).
 
-`verify` also settles the reservation: `started` marks it running,
-`rejected` releases it at once, `failed` keeps it until Orca's usage covers
-it. When the worker reports `worker_done` or is stopped, end the reservation
-with `orcacompass release --dispatch <dispatchId>` (add `--outcome cancelled`
-for a worker stopped after it had worked). A worker that is never released is
+`verify` also settles the reservation: `started` and `stalled` mark it running
+(and a late `verify` revives a timeout-inferred end), `unknown` binds the
+Dispatch while leaving it `pending`, `rejected` releases it at once, `failed`
+keeps it until Orca's usage covers it. When the worker reports `worker_done`
+or is stopped, end the reservation with
+`orcacompass release --dispatch <dispatchId>` (add `--outcome cancelled` for
+a worker stopped after it had worked). A worker that is never released is
 closed when Orca reports it finished.
 
 ### 5. Handle the result
@@ -221,7 +226,7 @@ closed when Orca reports it finished.
 | `effort.applied` | `flag`, `model-id`, or `provider-default` (the agent decides). Never claim an effort was set when it is `provider-default` |
 | `effort.adjusted: true` | The route cannot apply the exact target. It applies the next higher effort it offers (a lower one only when neither `--demand` nor `--effort` was given). Report the target and the resolved effort when relevant. Do not reroute only for this |
 | warning `… is a last-resort agent …` | The route costs money per token or runs on this machine; tell the user before launching several workers on it |
-| `status: "decide"` | Nothing was picked and there are no `launchArgs`. Read `options` and choose, asking the user when the choice is theirs: **WAIT** (`options.wait`; `until` in epoch ms only when a reset time is reported, never invent one), **USE** a route at high usage by adding its `use` flag to the same call (an entry with `preferred: true` is the user's preference for the tier, held back by `preferRiskLimit`), or **LOWER** the requirements: route again with a lower `--need` or `--demand`, or take a listed route as it is with its `use` flag |
+| `status: "decide"` | Nothing was picked and there are no `launchArgs`. Read `options` and choose, asking the user when the choice is theirs: **WAIT** (`options.wait`; `until` in epoch ms only when a reset time is reported, never invent one), **USE** a route at high usage by adding its `use` flag to the same call (an entry with `preferred: true` is the user's preference for the tier, held back by `preferRiskLimit`; `lastResort: true` marks a last-resort agent offered when nothing else can take the job or alongside elevated-risk options), or **LOWER** the requirements: route again with a lower `--need` or `--demand`, or take a listed route as it is with its `use` flag |
 | `status: "none"` | Say no recommendation was available. Use Orca's defaults only where they respect the user's explicit constraints, and keep any explicit agent or model choice. If no route can apply an explicit effort, report the available levels and ask before launching with another effort or none |
 | command missing | Say OrcaCompass was absent. Use the same default fallback only if it respects the user's explicit constraints; otherwise ask first |
 | exit 1 | Usage or runtime error: fix the command or report it |

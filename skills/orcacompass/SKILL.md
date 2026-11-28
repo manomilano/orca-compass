@@ -34,9 +34,11 @@ terminal; it asks the same questions.
    ask whether to set a favorite. `usagePercent` is the route's usage with the
    workers already reserved and one more. A favorite is used while that stays
    below `config.preferRiskLimit` percent (default `defaultPreferRiskLimit`,
-   90) on every quota it draws on, and never when a quota is exhausted;
+   90; capped at 100%, so a favorite is never routed automatically onto a
+   fully reserved or exhausted quota) on every quota it draws on;
    otherwise routing goes on without it and the route output says why. Apply with
-   `orcacompass prefer <tier> <agent> <model>` (the option's `model`),
+   `orcacompass prefer <tier> <agent> <model>` (the option's `model`; naming
+   an effort-variant id honors that variant's encoded effort),
    `orcacompass prefer clear <tier>`, and, if the user wants another limit,
    `orcacompass prefer --risk-limit <percent>`.
 4. **Bans (optional).** Show `families` (name and a few of their models) and
@@ -68,7 +70,9 @@ Use the commands above to write the config; never edit the file yourself.
   `--exclude-agent` on that route call instead of changing the config.
 - When the user names a go-to model or agent for a kind of work ("use Codex
   for everyday jobs"), map the work to a tier and run
-  `orcacompass prefer <tier> <agent> [model]`; `orcacompass prefer` lists the
+  `orcacompass prefer <tier> <agent> [model]` (naming an effort-variant id
+  such as `claude-sonnet-5-5-high` launches and reserves that variant's
+  encoded effort); `orcacompass prefer` lists the
   preferences and `orcacompass prefer clear <tier>` removes one.
 - When the user says never to use a model or model family, run
   `orcacompass ban <model-or-family>...` (`orcacompass unban` lifts it). For a
@@ -329,7 +333,8 @@ Ask the user before relaxing or removing their explicit effort requirement.
   `--demand` nor `--effort` was given). Report the target and resolved effort
   when relevant. Do not reroute because of it.
 - A warning `… is a last-resort agent (lastResortAgents) …`: the route costs
-  money per token or runs on this machine; tell the user before launching
+  money per token or runs on this machine (including when offered on `decide`
+  because nothing else can take the job); tell the user before launching
   several workers on it.
 - `upgraded: true`: surface the warning. The covering pick's cost tier is
   higher than the requested tier because no cheaper route covers the job.
@@ -342,14 +347,17 @@ Ask the user before relaxing or removing their explicit effort requirement.
   - **WAIT** (`options.wait`): for the quota to reset or for a fresh usage
     snapshot to free reserved capacity. `until` (epoch milliseconds) is there
     only when Orca reports a reset time; never invent a waiting time.
-  - **USE** (`options.use`): a suitable route at high usage. Take it with its
+  - **USE** (`options.use`): a suitable route at high usage (or a last-resort
+    agent with `lastResort: true`). Take it with its
     `use` flag on the same route call, for example
     `--use claude/claude-opus-5-5`. It is refused when the quota is exhausted.
     An entry with `preferred: true` is the user's preference for the tier,
-    held back by their own `preferRiskLimit`.
+    held back by their own `preferRiskLimit` (capped at 100%).
   - **LOWER** (`options.lower`): routes that take the job with lower
-    requirements; `shortfall` says what each lacks. Route again with a lower
-    `--need` or `--demand`, or take one as it is with its `use` flag.
+    requirements (including last-resort routes marked `lastResort: true` when
+    nothing else can take the job); `shortfall` says what each lacks. Route
+    again with a lower `--need` or `--demand`, or take one as it is with its
+    `use` flag.
   Do not launch on `decide`: there are no `launchArgs`.
 - `status: "none"`: state that no recommendation was available. Use Orca's
   normal defaults only where they respect explicit user constraints; preserve

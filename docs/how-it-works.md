@@ -34,14 +34,15 @@ lists what every call reads and caches.
   next route in the same bucket, then for the next bucket. See
   [Ranking eligible routes](tiers-and-routing.md#ranking-covering-routes).
 - **Apply a configured favorite.** A favorite for the requested tier comes
-  first while its prospective usage stays below its own limit, even if it
-  falls short on capability. The decision reports when a preference or
-  shortfall applies.
+  first while its prospective usage stays below its own limit (capped at 100%:
+  never onto a fully reserved or exhausted quota), even if it falls short on
+  capability. The decision reports when a preference or shortfall applies.
 - **Hand back what cannot be decided.** When no eligible route is below the
   threshold, nothing is picked: the Orchestrator gets the decision, with what
   it can do: WAIT for a reset or a fresh snapshot, USE a route at elevated
   risk, or LOWER the requirements. Last-resort agents take the job only when
-  no other agent can.
+  no other agent can, or return a decision when they cannot take it
+  automatically either.
 - **Reserve, return and verify.** Under a lock, the route is decided again on
   the current reservations and its buffer is reserved on every bucket it
   draws on. The orchestrator launches the worker and verifies it, which
@@ -303,8 +304,10 @@ model for classification.
 3. **Read usage** with `orca account list --json` (20 s timeout). The usage reader covers all supported agents except OpenCode,
    which has no usage entry. Each covered agent gets a status (`ok`, `unavailable`, `unknown`), its usage pools, the time Orca took the snapshot and a
    quota identity (a hash of account, runtime and plan). A pool with a
-   missing number is kept as unknown, never read as 0%, and a reset time of `0` or `null` as no reset time. Orca returns the snapshot it holds:
-   the command never triggers a refresh. When a reservation is bound to a worker, `orca orchestration worker-list` is read as well.
+   missing number is kept as unknown, never read as 0%, and a reset time of `0` or `null` as no reset time.
+   `orca account list --json` asks Orca to refresh its cached snapshot when stale (`refreshStaleUsage: true`) and returns cached readings otherwise; OrcaCompass itself never polls providers directly.
+   When Orca cannot be read, or a single provider's refresh fails (even with no windows left), the stored snapshot for the same account stands in as `retained` (medium confidence; a known 100% still blocks and nothing settles), whereas `unavailable` (signed out) or a newer reading for another account clears it. Once Antigravity reports quota groups, obsolete ungrouped `session`/`weekly` snapshots are dropped.
+   When a reservation is bound to a worker (pending, running, or ended only by a timeout) or the ledger is unreadable, `orca orchestration worker-list` is read as well.
    These are the only child commands a route runs when the table is fresh; local files and executable locations
    are still checked.
 4. **Read Orca's agent switches**, read-only, from the active profile's

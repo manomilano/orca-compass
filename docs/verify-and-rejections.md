@@ -64,9 +64,9 @@ returns immediately when a verdict is available. `--wait` accepts 0–60 s;
 it and continue normal Orca supervision instead of repeating startup
 verification.
 
-`verify` reads worker state and writes only detected refusals to its local
-cache. It returns `cleanup` argument arrays for the orchestrator (the agent
-coordinating workers) to run:
+`verify` reads worker state and writes only detected refusals and reservation
+updates to its local cache. It returns `cleanup` argument arrays for the
+orchestrator (the agent coordinating workers) to run:
 
 | Verdict | `cleanup` |
 | --- | --- |
@@ -133,19 +133,23 @@ orcacompass rejected --clear   # forget everything (for example after upgrading 
 Every route reserves quota for its worker (see
 [Reservations](tiers-and-routing.md#reservations)). `verify` settles that
 reservation with what it saw. Pass the route's `reservation.id` as
-`--reservation`; without it, the worker is matched to the oldest pending
-reservation for the same agent and model.
+`--reservation`; without it, the worker is matched to the oldest unbound
+pending reservation for the same agent and model (or, if none is pending, the
+oldest unbound one abandoned after `pendingMinutes`).
 
 | Verdict | Reservation |
 | --- | --- |
-| `started`, `stalled`, `unknown` | Bound to the Dispatch and marked `running`. It is the same record: nothing is reserved twice |
+| `started`, `stalled` | Bound to the Dispatch and marked `running` (reviving a record whose end was only inferred from a timeout). It is the same record: nothing is reserved twice |
+| `unknown` | Bound to the Dispatch and left `pending`, so Orca's worker list moves it on at the next `route` or `status` (or `pendingMinutes` abandons it) |
 | `reported` | `completed`: held until Orca's next usage refresh covers it |
 | `rejected` | `failed_before_launch`: nothing ran, so the quota is free again at once, for the replacement route |
 | `failed` | `cancelled_after_consumption`: the worker may have used quota, so it is held until a fresh snapshot |
 
 The JSON carries the result as `reservation` (`{ id, state }`, or `null`
 when no reservation matched, for example for a worker launched without
-`orcacompass route`). When the worker later finishes, end its reservation with
+`orcacompass route`). A reservation already bound to another Dispatch is
+never moved: `reservationError` reports the mismatch and changes nothing.
+When the worker later finishes, end its reservation with
 `orcacompass release --dispatch <dispatchId>`.
 
 ## The replacement flow

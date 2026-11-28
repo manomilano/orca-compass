@@ -24,7 +24,7 @@ New here? Start with [Getting started](getting-started.md): install with
 | [Verify and rejections](verify-and-rejections.md) | Checking that a worker's agent accepted its model, and routing around refusals |
 | [Commands](commands.md) | Every CLI command, flag, exit code and JSON field |
 | [Configuration](configuration.md) | Config and cache paths, every key with its default, data sources, privacy |
-| [Troubleshooting](troubleshooting.md) | Install failures, agents not used, unknown usage, `wait`/`none`, refused models, stale metadata, config errors |
+| [Troubleshooting](troubleshooting.md) | Install failures, agents not used, unknown usage, `decide`/`none`, refused models, stale metadata, config errors |
 | [Tiers and routing](tiers-and-routing.md) | The four tiers, how a model gets its tier, the capability score, quota-first ranking, reservations, risk thresholds, preferences, bans |
 | [Effort](effort.md) | Effort demand, effort policies, snapping, how effort reaches each agent |
 | [Models and agents](models-and-agents.md) | The agents OrcaCompass routes to, their model sources, and how to inspect available models |

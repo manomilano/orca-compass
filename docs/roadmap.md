@@ -24,7 +24,7 @@ For current routing behavior and supported agents, see [How it works](how-it-wor
   checked on Windows; coverage across agents and macOS/Linux is incomplete.
   Orca may reject effort levels from a different model catalog.
 - **Reservation buffers are heuristics.** Each routed worker reserves a fixed number of percentage points per quota, by cost tier and effort. The defaults are starting values, not measured token costs, and need calibrating against real usage; `reservations` lets you change them per provider, plan and window.
-- **Usage is only as fresh as Orca's.** Orca refreshes usage while its window is in use and never on request, so a snapshot can be old. OrcaCompass says how old it is and holds reservations until a fresh one arrives; it cannot make Orca refresh.
+- **Usage is only as fresh as Orca's.** `orca account list --json` asks Orca to refresh stale cached snapshots (`refreshStaleUsage: true`) and returns cached readings while still fresh; OrcaCompass never polls providers directly or forces a refresh of fresh data, so a snapshot can lag behind recent usage or fail to refresh. OrcaCompass says how old it is and holds reservations until a fresh reading arrives.
 - **Usage mapping is inferred.** Cursor model buckets and Antigravity quota
   groups are matched by model or group name; changes can make usage unknown or
   assign a model to the wrong pool. Cursor Auto's underlying model is opaque.
