@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.6
 
 - **Routing is quota first, and no longer forecasts usage.** The headroom
   projection (pace, expected use at reset, the seven-day urgency discount) is
