@@ -15,28 +15,40 @@ export function cutFor(need: Need, bands: [number, number, number], top: number)
 
 /** Stored bands are authoritative, including explicit overrides; cuts explain any shortfall. */
 export function coverage(profile: Profile, needs: Needs, bands: EvidenceSnapshot['bands'] = DEFAULT_BANDS, top: TopBands = DEFAULT_TOP_BANDS): {
-  covers: boolean; shortfall: number; overshoot: number; below: { axis: Axis; score: number | null; cut: number }[];
+  covers: boolean | null;
+  shortfall: number;
+  overshoot: number;
+  below: { axis: Axis; score: number | null; cut: number }[];
+  unknown: Axis[];
 } {
   let shortfall = 0;
   let overshoot = 0;
   const below: { axis: Axis; score: number | null; cut: number }[] = [];
+  const unknown: Axis[] = [];
   for (const axis of AXES) {
     const { band, score } = profile.axes[axis];
-    // For a `top` need, a frontier band at or above the top cut counts one step higher.
-    const reachesTop = needs[axis] === 'top' && band === 'frontier' && score !== null && score >= top[axis];
-    const step = band === null ? -1 : TIERS.indexOf(band) + (reachesTop ? 1 : 0);
     const needed = NEED_STEP[needs[axis]];
     const cut = cutFor(needs[axis], bands[axis], top[axis]);
+    if (band === null) {
+      if (cut !== null) unknown.push(axis);
+      continue;
+    }
+    // For a `top` need, a frontier band at or above the top cut counts one step higher.
+    const reachesTop = needs[axis] === 'top' && band === 'frontier' && score !== null && score >= top[axis];
+    const step = TIERS.indexOf(band) + (reachesTop ? 1 : 0);
     if (cut !== null && step < needed) {
       shortfall += needed - step;
       below.push({ axis, score, cut });
     }
     overshoot += Math.max(0, step - needed);
   }
-  return { covers: below.length === 0, shortfall, overshoot, below };
+  if (unknown.length === 0 && AXES.every((axis) => profile.axes[axis].band === null)) unknown.push(...AXES);
+  const covers = below.length > 0 ? false : unknown.length > 0 ? null : true;
+  return { covers, shortfall, overshoot, below, unknown };
 }
 
 export function jobEvidence(profile: Profile, needs: Needs): EvidenceLabel {
+  if (AXES.every((axis) => profile.axes[axis].band === null)) return 'unranked';
   return EVIDENCE_ORDER[Math.max(0, ...AXES.filter((axis) => needs[axis] !== 'min').map((axis) => EVIDENCE_ORDER.indexOf(profile.axes[axis].label)))];
 }
 

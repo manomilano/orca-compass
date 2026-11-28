@@ -6,11 +6,12 @@ description: Diagnose installation, agent discovery, usage, routing, and configu
 
 Use this page to diagnose installation problems, missing agents, unknown usage and
 unexpected routes. Start with these commands; they can update local metadata
-and model-list caches, and `route` also records a recent hand-out:
+and model-list caches, and `route` also reserves quota for the worker it
+routes (add `--dry-run` to look without reserving):
 
 ```sh
 orcacompass agents          # which agents are used, and why not
-orcacompass status          # usage per agent, the pick per tier, metadata age
+orcacompass status          # usage and reservations per quota, the pick per tier, metadata age
 orcacompass route --tier daily
 ```
 
@@ -124,47 +125,79 @@ its usage reader (all supported agents except OpenCode) when
 `orca account list --json` fails or reaches its 20-second command timeout. Start Orca,
 make sure `orca` is on your PATH (on macOS and Linux, `/usr/local/bin`
 and `~/.local/bin` are also tried), and run `orca account list --json` yourself
-to see the error. Routing still works without usage, but every route has low
-confidence and the ranking cannot spread load by headroom.
+to see the error. While Orca cannot be read, or when Orca reports a failed refresh for a single
+provider (even with no windows left) for the same account, the last valid
+snapshot stands in (medium confidence, `retained` in `status --json`; a known
+100% still blocks and nothing settles), whereas `unavailable` (signed out) or
+a newer reading for another account clears it. Usage is never replaced by 0%.
+Without any snapshot, routing still works, but every route has low confidence,
+carries a warning and cannot be ranked by quota.
 
 Other causes of low confidence: Orca reports no usage for that agent, the
-usage is older than four times `usageStaleMinutes` (2 hours by default), or a
-pool's reset time has already passed. See
+snapshot is older than four times `usageStaleMinutes` (2 hours by default), or
+a window's reset time passed since the snapshot was taken. `orca account list --json`
+asks Orca to refresh cached usage when stale (`refreshStaleUsage: true`) and
+returns cached readings while still fresh; OrcaCompass itself never polls
+providers directly. If a snapshot stays old (for example after a failed
+refresh or while Orca was idle), check the error in `orcacompass status` and
+bring Orca to the front or open its usage view to refresh it. See
 [Confidence and stale usage](tiers-and-routing.md#confidence-and-stale-usage).
 
-## A route says `wait` or `none`
+## A route says `decide` or `none` {#a-route-says-decide-or-none}
 
-`route` exits 0 for `ok`, `wait` and `none`; check `status` in the output.
+`route` exits 0 for `ok`, `decide` and `none`; check `status` in the output.
+It exits 1 with nothing on stdout only when the route's quota could not be
+reserved; see [`route` exits 1](#route-exits-1-quota-could-not-be-reserved).
 
 - `none` with `no usable agent`: no agent passed the checks above. Run
   `orcacompass agents`.
-- `none` with `no model covers the job`: agents are usable, but no model meets
-  the needs and no downgrade or fallback route is allowed or available.
+- `decide`: nothing was picked, on purpose. No eligible route is below the
+  risk threshold, or only routes with lower requirements exist. `options` says
+  what can be done: `wait` (with `until` only when Orca reports a reset time),
+  `use` a route at high usage with its `--use` flag, or `lower` the needs or
+  the demand. The reasons list the same as `WAIT:`, `USE:` and `LOWER:`
+  lines.
+- `decide` with `no model covers the job`: agents are usable, but no model
+  meets the needs. `options.lower` lists the nearest ones with what each
+  lacks. They are not routed for you; route again with lower `--need`.
+- `decide` with `--effort` or `--demand`: no model that covers the job can
+  apply that effort; the reasons list what each one offers. Use a lower
+  demand, or another effort.
 - A pricier model than expected: compare the `selection` and `next best`
-  lines in `reasons`. Covering routes from all cost tiers compete; a cheaper
-  model loses when its usage is unknown, when it is blocked (Orca reports a
-  window as 100% used), or when another subscription has more headroom than
-  the price difference makes up for (at most five points). See
-  [Ranking covering routes](tiers-and-routing.md#ranking-covering-routes).
-- A warning `<window> quota is N% used` or `selected route is expected to end
-  above …`: the pick is close to its usage limit and nothing with more room
-  covered the job. The route is still valid; keep the job small. The warning
-  levels are `thresholds` and `usageRiskLimit` in the config.
-- `wait`: no allowed unblocked pick was found, but a candidate has a known
-  future unblock time. This can happen with or without `--no-downgrade`.
-  The reason reads `all <tier> candidates blocked` when covering routes exist,
-  or `no model covers the job` when only blocked downgrade routes remain.
-  `waitUntil` is the earliest candidate unblock time; a candidate with several
-  blocking pools must wait for its latest blocking reset.
-- `none` with `--effort`: no candidate can apply that exact effort; the
-  reasons list what each one offers. Use `--demand` instead to let OrcaCompass
-  pick a supported effort.
+  lines in `reasons`. Eligible routes from all cost tiers compete, and the
+  quota bucket with the most capacity left comes first; a cheaper model loses
+  when its bucket has less room, its usage is unknown, or its quota is at the
+  threshold. Inside one bucket the cheaper model always goes first. See
+  [Ranking eligible routes](tiers-and-routing.md#ranking-covering-routes).
+- A warning `<window> quota would be N% used with this worker (caution)`: the
+  pick is between `riskThresholds.cautionPercent` and `highPercent` and
+  nothing below that was eligible. The route is still valid; keep the job
+  small.
+- A quota looks fuller than Orca shows: the difference is `reserved` for
+  workers already routed. `orcacompass status` lists them. They are released
+  when Orca's usage refresh covers the finished workers; end one with
+  `orcacompass release`, or forget them all with `orcacompass release --all`.
 
 `skipped` lists operational exclusions and models that fall below the
 requested needs or have no usable evidence. JSON keeps the full list; text
 groups and limits the profile diagnostics. Superseded releases and no-ZDR exclusions are omitted. Preference
 exclusions appear in `warnings`.
-See [Fallbacks](tiers-and-routing.md#fallbacks-downgrade-upgrade-wait-none).
+See [Outcomes](tiers-and-routing.md#outcomes-ok-decide-none).
+
+## `route` exits 1: quota could not be reserved {#route-exits-1-quota-could-not-be-reserved}
+
+`error: quota could not be reserved (<cause>): nothing was routed` means the
+reservation ledger, `reservations.json` in the cache folder, could not be
+locked, read or written. Nothing was reserved, so no route is printed: do not
+launch a worker. Check that the cache folder exists and is writable, and that
+`reservations.json` is a file. `reservations.lock` is taken over by itself once
+its owner has exited. `route --dry-run` still decides, without reserving, and
+warns that the ledger could not be written.
+
+A `reservations.json` that is not a valid ledger is handled without an error:
+it is kept as `reservations.json.corrupt`, a fresh ledger is written, the
+workers Orca reports live are reconstructed in it, and `route` and `status`
+warn `the reservation ledger was unreadable (…) and was reset`.
 
 ## The worker refused its model
 
@@ -248,6 +281,6 @@ happens on the first call, during `orcacompass refresh`, and when the table
 becomes stale. A routing request with a fresh table only runs `orca account list`
 for live usage. `status` and `tiers` say when the table was built.
 
-Deleting the cache also forgets recent hand-outs and saved model refusals,
+Deleting the cache also forgets worker reservations and saved model refusals,
 as well as discovery and evidence data. See
 [Where things live](configuration.md#where-things-live).

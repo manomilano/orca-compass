@@ -360,10 +360,10 @@ describe('discoverClaude', () => {
     expect(cl.models.map((m) => m.modelId).sort()).toEqual(
       ['claude-fable-5', 'claude-fable-5-1', 'claude-fable-5-2', 'claude-haiku-5-5', 'claude-opus-4-6', 'claude-opus-5', 'claude-opus-5-5', 'claude-sonnet-4-6', 'claude-sonnet-5-5'],
     );
-    expect(cl.models.find((m) => m.modelId === 'claude-fable-5-1')!.poolNames).toEqual(['session', 'weekly', 'fableWeekly']);
+    expect(cl.models.find((m) => m.modelId === 'claude-fable-5-1')!.poolNames).toEqual(['session', 'weekly', 'monthly', 'fableWeekly']);
     expect(cl.models.find((m) => m.modelId === 'claude-opus-5-5')).toMatchObject({
       launch: { kind: 'flag', model: 'claude-opus-5-5' },
-      poolNames: ['session', 'weekly'],
+      poolNames: ['session', 'weekly', 'monthly'],
       efforts: ALL,
       effortSource: 'assumed',
     });
@@ -395,11 +395,11 @@ describe('discoverClaude', () => {
       }),
     }));
     expect(cl.models.map((m) => m.modelId)).toEqual(['claude-opus-5-5', 'claude-fable-5-1', 'claude-haiku-4-5-20251001']);
-    expect(cl.models[0]).toMatchObject({ efforts: ['low', 'xhigh'], effortSource: 'provider', launch: { kind: 'flag', model: 'claude-opus-5-5' }, poolNames: ['session', 'weekly'] });
+    expect(cl.models[0]).toMatchObject({ efforts: ['low', 'xhigh'], effortSource: 'provider', launch: { kind: 'flag', model: 'claude-opus-5-5' }, poolNames: ['session', 'weekly', 'monthly'] });
     expect(cl.models[0].lineup).toBe('For complex work and everyday tasks');
     expect(cl.models[1]).not.toHaveProperty('lineup');
     expect(cl.models[2]).not.toHaveProperty('lineup');
-    expect(cl.models[1].poolNames).toEqual(['session', 'weekly', 'fableWeekly']);
+    expect(cl.models[1].poolNames).toEqual(['session', 'weekly', 'monthly', 'fableWeekly']);
     expect(cl.models[2].efforts).toEqual([]);
     expect(cl.note).toBe(`models from ${join(catalogDir, 'new-cc.json')}`);
   });

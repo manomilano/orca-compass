@@ -36,10 +36,10 @@ The requested tier is the `--tier` value, or with `--need` the tier of the
 highest need level (`min` Light, `low` Daily, `mid` Advanced, `high` or `top`
 Frontier); see [the requested tier](tiers-and-routing.md#needs-and-ranking).
 
-The target is fixed before any fallback. A cheaper pick, a downgrade or an
-upgrade keeps it: effort follows the work, not the model. A weaker model doing
-the job is not given more effort to compensate; the downgrade warning asks you
-to split the job or add checks instead.
+The target is fixed before routing. A cheaper pick or an upgrade keeps it:
+effort follows the work, not the model. A weaker model taken explicitly
+(`--use`, or a preferred model) is not given more effort to compensate; the
+downgrade warning asks you to split the job or add checks instead.
 
 ## Effort demand
 
@@ -114,21 +114,33 @@ from (`supportSource`), most trusted first:
 
 `supportSource` is `unknown` when a model carries no source.
 
-### Snapping (automatic targets)
+### Effort is an eligibility test {#snapping-automatic-targets}
 
-A `demand` or `tier-default` target the model does not offer is **snapped**:
-the nearest **lower** supported effort, else the **lowest higher** one.
-Ranking counts each step snapped down against the route (2.5 points per step,
-see [ranking](tiers-and-routing.md#ranking-covering-routes)), so a route that
-can apply the target wins a near tie.
+A model takes a job only when it can apply an effort that satisfies the
+request. Each provider's own scale is used: the target when the model offers
+it, else the **next higher** level it offers. A lower level is never used to
+meet a demand, and no points are taken off a route for it: a model that tops
+out below the target is left out, with the reason under `skipped`.
 
-| Target | Model supports | Resolved | Reported |
-| --- | --- | --- | --- |
-| `high` | `low`, `medium` | `medium` | `adjusted: true`, "(high not offered, nearest supported)" |
-| `xhigh` | `low`, `medium`, `high` | `high` | adjusted |
-| `low` | `medium`, `high` | `medium` | adjusted (lowest higher) |
-| `medium` | `low`, `medium`, `high` | `medium` | not adjusted |
-| any | none settable | `null` | `applied: provider-default` |
+| Request | Model supports | Result |
+| --- | --- | --- |
+| `--demand` → `high` | `low`, `medium`, `high` | `high`, not adjusted |
+| `--demand` → `medium` | `low`, `high` | `high`, `adjusted: true`, "(medium not offered, next higher supported)" |
+| `--demand` → `xhigh` | `low`, `medium`, `high` | Not eligible: `highest effort high is below xhigh (low/medium/high)` |
+| `--demand` → `xhigh` | `high`, `max` | `max`, adjusted |
+| `--demand`, effort not settable | default `high` reported | Eligible up to a `high` target, `applied: provider-default` (a reported default of `none` or `minimal` does not satisfy a higher demand) |
+| `--demand`, effort not settable | no default reported | Eligible for the `low` demand only |
+| tier default → `medium` | `low` | `low`, adjusted, "(medium not offered, nearest supported)" |
+
+The last row is the one case where a lower effort is used: without `--demand`
+or `--effort` the tier default is a preference, not a requirement, so the
+nearest offered level stands. Effort demand is independent of the model's
+tier: a Light model at `high` is eligible when its capabilities meet the
+needs, and a Frontier model that cannot apply the effort is not.
+
+When models cover the job but none can apply the effort, the result is
+`decide`: `options.lower` lists each model with the efforts it offers, and
+the Orchestrator lowers the demand or takes one with `--use`.
 
 ### Explicit `--effort` is a constraint
 
@@ -139,9 +151,9 @@ it.
 
 A covering route from any cost tier that can apply the effort is used (see
 [Tiers and routing](tiers-and-routing.md#order-of-decisions)). When models
-cover the job but none of their routes can apply the effort, the route is
-`none` and the reasons list what each one offers. No downgrade is tried. The
-first reason names the requested tier:
+cover the job but none of their routes can apply the effort, the result is
+`decide`: the reasons and `options.lower` list what each one offers. Nothing
+is routed at another effort. The first reason names the requested tier:
 
 ```text
 no daily route supports effort xhigh: claude claude-sonnet-5-5 (low/medium/high/max), …
@@ -169,6 +181,19 @@ set in that case.
 
 When the supported levels are `assumed`, the effort reason ends with
 `supported levels assumed, not reported by the provider`.
+
+### Effort-variant IDs in `prefer` and `--use`
+
+For agents that encode effort in the model ID (Cursor and Antigravity Gemini),
+naming a specific effort variant in a tier preference
+(`orcacompass prefer daily cursor claude-sonnet-5-5-high`) or in
+`--use <agent>/<variant-id>` launches and reserves that variant's encoded
+effort instead of the planned one. The effort reason reads, for example,
+`effort: high, encoded in the model id named by your preference; medium wanted
+from moderate effort demand (balanced policy)` (or `named by --use`). If a
+preferred variant's encoded effort conflicts with an explicit `--effort` or
+falls below a `--demand`, the preference is skipped with a warning and the
+model can still route automatically at the planned effort.
 
 ### Per-agent details
 
@@ -205,10 +230,10 @@ When the supported levels are `assumed`, the effort reason ends with
 ```json
 "effort": {
   "source": "demand",
-  "demand": "high",
+  "demand": "moderate",
   "policy": "balanced",
-  "target": "high",
-  "resolved": "medium",
+  "target": "medium",
+  "resolved": "high",
   "applied": "flag",
   "adjusted": true,
   "supportSource": "provider",
@@ -223,7 +248,7 @@ When the supported levels are `assumed`, the effort reason ends with
 | `target` | The effort asked for |
 | `resolved` | The effort the launch asks the agent for; `null` when the agent decides |
 | `applied` | `flag`, `model-id`, or `provider-default` |
-| `adjusted` | `true` when `resolved` is set and differs from `target` (snapped) |
+| `adjusted` | `true` when `resolved` is set and differs from `target` (the next higher offered effort, or for a tier default the nearest one) |
 | `supportSource` | `provider`, `orca`, `assumed`, or `unknown` |
 | `providerDefault` | The agent's own default effort, when the provider reports one |
 

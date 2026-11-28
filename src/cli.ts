@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-import { recordHandout } from './routing/handouts.js';
+import { bindDispatch, clearReservations, endWorker, markRunning, routeAndReserve, type LifecycleChange } from './routing/allocate.js';
+import { bucketText, buildQuotaView, bufferFor, countsOn, displayPool, drawsOn, isLive, pointsText, poolKey, scopeOf, type Reservation } from './routing/quota.js';
+import { LedgerError, type ReleaseOutcome } from './routing/reservations.js';
 import { cacheDir } from './paths.js';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
@@ -16,11 +18,10 @@ import {
   applyAgentChoice, ConfigError, isChosen, loadConfig, parsePercent, setBans, setPin, setPreferRiskLimit, updateConfigFile, writeAgentChoice, type AgentAction,
 } from './config.js';
 import { parseEffort } from './routing/effort.js';
-import { poolState } from './routing/pace.js';
 import { activeRejections } from './routing/rejection.js';
-import { agentNotFamily, agentSkipReason, banMatches, enabledInOrca, formatLaunch, headroomText, launchIds, rejectedText, route } from './routing/router.js';
+import { agentNotFamily, agentSkipReason, banMatches, enabledInOrca, formatLaunch, isPreferredRoute, launchIds, rejectedText, route } from './routing/router.js';
 import {
-  AGENT_IDS, DEMANDS, TIERS, type AgentId, type Demand, type Alternative, type Config, type Decision, type Effort, type Environment, type OrcaAgents,
+  AGENT_IDS, DEMANDS, TIERS, type AgentId, type AgentUsage, type Demand, type Alternative, type Config, type Decision, type Effort, type Environment, type OrcaAgents,
   type PlacementTable, type Preference, type RouteRequest, type Tier,
 } from './types.js';
 import { gather, gatherEnvironment, loadPlacements, type Gathered, type GatherDeps } from './routing/environment.js';
@@ -55,11 +56,16 @@ commands:
                                        install or update the CLI, then its matching Skill
   update [same options as install]     get the latest release and matching Skill
   uninstall [same options as install]  remove the selected Skill; --global also removes the shared CLI
-  route --need coding=<l>,agentic=<l>,reasoning=<l> | --tier <light|daily|advanced|frontier> [--no-downgrade] [--agent <id>]...
+  route --need coding=<l>,agentic=<l>,reasoning=<l> | --tier <light|daily|advanced|frontier> [--agent <id>]...
         [--exclude-agent <id>]... [--demand <low|moderate|high|exceptional>]
-        [--effort <effort>] [--tier-reason <reason>] [--json]
-  verify --dispatch <id> [--wait <seconds>] [--json]
+        [--effort <effort>] [--use <agent>/<model>] [--dry-run] [--tier-reason <reason>] [--json]
+                                       pick a route and reserve its quota; --use takes one route as it is,
+                                       --dry-run reserves nothing
+  verify --dispatch <id> [--reservation <id>] [--wait <seconds>] [--json]
                                        did a new worker's agent accept its model
+  release --reservation <id> | --dispatch <id> | --all
+          [--outcome completed|cancelled|failed-before-launch] [--json]
+                                       a worker finished: end its quota reservation
   rejected [--clear] [--json]          models agents refused at launch (skipped)
   status [--json]
   ranking [--axis <coding|agentic|reasoning>] [--json]
@@ -101,6 +107,7 @@ export async function main(argv: string[], io: IO, deps: MainDeps = {}): Promise
     }
     if (command === 'route') return await routeCommand(rest, io, deps);
     if (command === 'verify') return await verifyCommand(rest, io, deps);
+    if (command === 'release') return await releaseCommand(rest, io, deps);
     if (command === 'rejected') return await rejectedCommand(rest, io, deps);
     if (command === 'status') return await statusCommand(rest, io, deps);
     if (command === 'ranking') return await rankingCommand(rest, io, deps);
@@ -147,6 +154,8 @@ async function routeCommand(args: string[], io: IO, deps: MainDeps): Promise<num
     'exclude-agent': { type: 'string', multiple: true },
     effort: { type: 'string' },
     demand: { type: 'string' },
+    use: { type: 'string' },
+    'dry-run': { type: 'boolean' },
     json: { type: 'boolean' },
   });
   if (v.tier === undefined && v.need === undefined) throw new UsageError('--need is required (or --tier as a shorthand)');
@@ -184,30 +193,44 @@ async function routeCommand(args: string[], io: IO, deps: MainDeps): Promise<num
   });
   const agents = agentIds(v.agent, '--agent', 'not routed');
   const excludeAgents = agentIds(v['exclude-agent'], '--exclude-agent', 'nothing excluded for it');
+  let use: RouteRequest['use'];
+  if (v.use !== undefined) {
+    const slash = v.use.indexOf('/');
+    if (slash <= 0 || slash === v.use.length - 1) throw new UsageError(`--use takes <agent>/<model> (got "${v.use}")`);
+    use = { agent: v.use.slice(0, slash).toLowerCase(), model: v.use.slice(slash + 1) };
+  }
   const req: RouteRequest = {
     ...request,
     ...(tierReason ? { tierReason } : {}),
-    ...(v['no-downgrade'] ? { noDowngrade: true } : {}),
     ...(agents ? { agents } : {}),
     ...(excludeAgents ? { excludeAgents } : {}),
     ...(effort ? { effort } : {}),
     ...(demand ? { demand } : {}),
+    ...(use ? { use } : {}),
   };
 
   const config = readConfig(io);
-  const env = await gatherEnvironment(config, deps);
-  const d = route(req, env, config);
+  const dir = deps.cacheDir ?? cacheDir();
+  const gathered = await gather(config, deps);
+  const { env } = gathered;
+  const dryRun = v['dry-run'] === true;
+  // Deciding and reserving are one atomic step: the route is revalidated on the ledger under its lock. A route
+  // whose quota cannot be reserved is not printed at all (fail closed); --dry-run is the explicit unreserved path.
+  let d: Decision;
+  try {
+    d = routeAndReserve(req, env, config, dir, { dryRun, ...(gathered.workers ? { workers: gathered.workers } : {}) });
+  } catch (e) {
+    if (e instanceof LedgerError) {
+      throw new Error(`quota could not be reserved (${e.message}): nothing was routed. Fix ${dir}, or route with --dry-run for an unreserved decision`);
+    }
+    throw e;
+  }
   d.warnings.push(...unknownAgents);
+  if (v['no-downgrade']) d.warnings.push('--no-downgrade is no longer needed: requirements are never lowered automatically');
+  if (dryRun && gathered.ledgerError) d.warnings.push(`the reservation ledger could not be written: ${gathered.ledgerError}`);
+  if (gathered.ledgerRecovered && !d.warnings.includes(gathered.ledgerRecovered)) d.warnings.push(gathered.ledgerRecovered);
   const behind = evidenceBehindWarning(env.evidenceGeneratedAt, deps);
   if (behind) d.warnings.push(behind);
-  if (d.status === 'ok' && d.route) {
-    const chosen = d.route;
-    const model = env.discoveries.find((a) => a.agent === chosen.agent)?.models.find((m) => launchIds(m).includes(chosen.model));
-    if (model) {
-      try { recordHandout({ at: env.now, agent: chosen.agent, model: chosen.model, pools: model.poolNames, needs: d.needs }, config.handoutMinutes, deps.cacheDir ?? cacheDir()); }
-      catch (e) { d.warnings.push(`hand-out could not be saved: ${(e as Error).message}`); }
-    }
-  }
   if (v.json) {
     const sources = {
       evidenceSource: env.evidenceSource, catalogSource: env.evidenceSource, scoreSource: env.evidenceSource,
@@ -247,13 +270,19 @@ function decisionText(d: Decision, now: number): string[] {
   if (d.status === 'ok' && d.route) {
     const { agent, model, effort } = d.route;
     head = `${d.tier ?? d.requestedTier} → ${agent} · ${model}${effort ? ` · ${effort}` : ''} (${d.confidence} confidence)`;
-  } else if (d.status === 'wait' && d.waitUntil !== undefined) {
-    head = `${d.requestedTier} → wait until ${new Date(d.waitUntil).toISOString()} (in ${duration(d.waitUntil - now)})`;
+  } else if (d.status === 'decide') {
+    const until = d.options?.wait?.until;
+    head = `${d.requestedTier} → your decision: WAIT${until !== undefined ? ` (${duration(until - now)})` : ''}, USE or LOWER`;
   } else {
     head = `${d.requestedTier} → no route`;
   }
   const launch = formatLaunch(d);
-  return [head, ...d.reasons.map((r) => `  ${r.startsWith('skipped:') ? skippedText(d.skipped) : r}`), ...d.warnings.map((w) => `  warning: ${w}`), ...(launch ? [launch] : [])];
+  // The window's name as Orca reports it, not the bucket's canonical key.
+  const poolOf = (bucket: string): string => d.quota?.buckets.find((b) => b.id === bucket)?.pool ?? bucket.split(':').slice(2).join(':');
+  const reserved = d.reservation
+    ? [`  reserved ${d.reservation.id}: ${d.reservation.buckets.map((b) => `${displayPool(poolOf(b.bucket))} +${pointsText(b.percentPoints)}`).join(', ') || 'no usage window'}; after worker-start run: orcacompass verify --dispatch <id> --reservation ${d.reservation.id}`]
+    : [];
+  return [head, ...d.reasons.map((r) => `  ${r.startsWith('skipped:') ? skippedText(d.skipped) : r}`), ...d.warnings.map((w) => `  warning: ${w}`), ...reserved, ...(launch ? [launch] : [])];
 }
 
 /** Keep operational skips visible while bounding profile diagnostics in text only. */
@@ -280,7 +309,7 @@ function skippedText(skipped: Decision['skipped']): string {
 // --- verify and rejected --------------------------------------------------------------------
 
 async function verifyCommand(args: string[], io: IO, deps: MainDeps): Promise<number> {
-  const v = parse(args, { dispatch: { type: 'string' }, wait: { type: 'string' }, json: { type: 'boolean' } });
+  const v = parse(args, { dispatch: { type: 'string' }, reservation: { type: 'string' }, wait: { type: 'string' }, json: { type: 'boolean' } });
   if (!v.dispatch) throw new UsageError('--dispatch <id> is required (the dispatchId worker-start printed)');
   const wait = v.wait === undefined ? 60 : Number(v.wait);
   if (!Number.isFinite(wait) || wait < 0 || wait > 60) throw new UsageError(`--wait must be between 0 and 60 seconds (got "${v.wait}")`);
@@ -296,9 +325,78 @@ async function verifyCommand(args: string[], io: IO, deps: MainDeps): Promise<nu
     recordRejection({ agent: verdict.agent, model: verdict.model, message: verdict.message, at: clock() }, config.rejectionTtlHours);
     skipHours = config.rejectionTtlHours;
   }
+  // The worker's reservation follows the verdict: confirmed running, ended, or released because nothing launched.
+  const reservation = settleReservation(verdict, v.reservation, clock(), deps.cacheDir ?? cacheDir());
   const next = verifyNext(verdict, skipHours);
-  if (v.json) io.out(JSON.stringify({ ...verdict, ...(skipHours !== undefined ? { skippedForHours: skipHours } : {}), next }, null, 2));
-  else io.out(verifyText(verdict, next).join('\n'));
+  if (v.json) {
+    io.out(JSON.stringify({
+      ...verdict, ...(skipHours !== undefined ? { skippedForHours: skipHours } : {}),
+      reservation: reservation.record ? { id: reservation.record.id, state: reservation.record.state } : null,
+      ...(reservation.error ? { reservationError: reservation.error } : {}),
+      next,
+    }, null, 2));
+  } else io.out([...verifyText(verdict, next), ...reservationLines(reservation)].join('\n'));
+  return 0;
+}
+
+interface Settled { record?: Reservation; from?: Reservation['state']; error?: string }
+
+/**
+ * Moves the worker's reservation on. A refused model consumed nothing, so its reservation is released at
+ * once. A worker that started is marked running under the same record. One that ended keeps its
+ * reservation until a fresh usage snapshot covers it.
+ */
+function settleReservation(d: Verdict, reservationId: string | undefined, now: number, dir: string): Settled {
+  const q = { reservationId, dispatchId: d.dispatchId, agent: d.agent, model: d.model };
+  try {
+    let change: LifecycleChange;
+    if (d.status === 'rejected') change = endWorker(q, 'failed-before-launch', now, dir, 'the agent refused the model at launch');
+    else if (d.status === 'reported') change = endWorker(q, 'completed', now, dir);
+    else if (d.status === 'failed') change = endWorker(q, 'cancelled', now, dir, 'the worker ended without worker_done');
+    else if (!d.agent && !reservationId) return {};
+    else if (d.status === 'started' || d.status === 'stalled') change = markRunning(q, now, dir);
+    // `unknown`: the launch is not confirmed. Bind the Dispatch and leave the reservation pending, so Orca's
+    // worker list moves it on at the next sync, or `pendingMinutes` abandons it.
+    else change = bindDispatch(q, dir);
+    if (change.conflict) return { error: conflictText(change.conflict, d.dispatchId) };
+    return { record: change.reservation, from: change.from };
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+}
+
+const conflictText = (c: NonNullable<LifecycleChange['conflict']>, given: string): string =>
+  `reservation ${c.reservationId} is bound to dispatch ${c.boundTo}, not ${given}; nothing changed`;
+
+function reservationLines(s: Settled): string[] {
+  if (s.error) return [`reservation: could not be updated: ${s.error}`];
+  if (!s.record) return ['reservation: none matched this worker (route with orcacompass to reserve quota)'];
+  const state = s.record.state.replace(/_/g, ' ');
+  const held = s.record.state === 'completed' || s.record.state === 'cancelled_after_consumption' ? ', held until a fresh usage snapshot covers it' : '';
+  return [`reservation ${s.record.id}: ${s.from && s.from !== s.record.state ? `${s.from.replace(/_/g, ' ')} → ` : ''}${state}${held}`];
+}
+
+const OUTCOMES: readonly ReleaseOutcome[] = ['completed', 'cancelled', 'failed-before-launch'];
+
+async function releaseCommand(args: string[], io: IO, deps: MainDeps): Promise<number> {
+  const v = parse(args, { reservation: { type: 'string' }, dispatch: { type: 'string' }, all: { type: 'boolean' }, outcome: { type: 'string' }, json: { type: 'boolean' } });
+  const dir = deps.cacheDir ?? cacheDir();
+  if (v.all) {
+    if (v.reservation || v.dispatch || v.outcome) throw new UsageError('use "release --all" on its own');
+    const cleared = clearReservations(dir);
+    io.out(v.json ? JSON.stringify({ cleared }, null, 2) : `forgot ${cleared} live reservation${cleared === 1 ? '' : 's'}`);
+    return 0;
+  }
+  if (!v.reservation && !v.dispatch) throw new UsageError('--reservation <id> or --dispatch <id> is required (or --all)');
+  const outcome = (v.outcome ?? 'completed') as ReleaseOutcome;
+  if (!OUTCOMES.includes(outcome)) throw new UsageError(`unknown outcome "${v.outcome}" (expected ${OUTCOMES.join(', ')})`);
+  const now = (deps.clock ?? Date.now)();
+  const change = endWorker({ reservationId: v.reservation, dispatchId: v.dispatch }, outcome, now, dir);
+  // A reservation belongs to one worker: never end it for another Dispatch.
+  if (change.conflict) throw new Error(conflictText(change.conflict, v.dispatch!));
+  const settled: Settled = { record: change.reservation, from: change.from };
+  if (v.json) io.out(JSON.stringify({ reservation: change.reservation ?? null }, null, 2));
+  else io.out(reservationLines(settled).join('\n'));
   return 0;
 }
 
@@ -377,10 +475,54 @@ async function rejectedCommand(args: string[], io: IO, deps: MainDeps): Promise<
 
 interface TierView {
   status: Decision['status'];
-  pick?: { agent: string; model: string; effort: Effort | null; confidence?: string; reason: string };
+  /** `note`: why task coverage of the pick could not be verified (benchmark data unavailable); absent when it was checked. */
+  pick?: { agent: string; model: string; effort: Effort | null; confidence?: string; reason: string; note?: string };
   alternatives: Alternative[];
   warnings: string[];
-  waitUntil?: number;
+  options?: Decision['options'];
+}
+
+/** One window a reservation record is shown on in `status`. */
+interface ReservationBucket {
+  /** The window's name as Orca reports it, or the declared key when Orca's windows are not known. */
+  pool: string;
+  /** The points the record holds on it right now: none once it is no longer live or the window is settled. */
+  percentPoints: number;
+  settled?: true;
+}
+
+/**
+ * The windows a reservation record holds capacity on. With a readable snapshot of the quota identity it was
+ * reserved on, these are the windows Orca actually reports that its declared ones draw on: every window of a
+ * declared Antigravity group (a 1-day one included), and none of the declared names Orca does not report
+ * (`session` and `weekly` beside quota groups, Claude's `monthly` on a plan without one). A window settled
+ * under its own name holds nothing. Without such a snapshot (usage unknown, another account or plan) only the
+ * declaration is known, so the declared windows are listed, with the buffer of the plan it was reserved on.
+ */
+function reservationBuckets(r: Reservation, usage: AgentUsage | undefined, config: Config): ReservationBucket[] {
+  const live = isLive(r);
+  if (usage !== undefined && usage.status === 'ok' && scopeOf(usage) === r.scope) {
+    const seen = new Set<string>();
+    const out: ReservationBucket[] = [];
+    for (const window of Object.values(usage.pools)) {
+      const key = poolKey(window.name);
+      if (seen.has(key) || !r.pools.some((p) => drawsOn(p, window))) continue;
+      seen.add(key);
+      const counts = countsOn(r, window);
+      out.push({
+        pool: window.name,
+        percentPoints: live && counts ? bufferFor(config.reservations, { agent: r.agent, plan: usage.plan, pool: window.name, tier: r.tier, effort: r.effort }) : 0,
+        ...(counts ? {} : { settled: true as const }),
+      });
+    }
+    return out;
+  }
+  const settled = new Set((r.settled ?? []).map(poolKey));
+  return r.pools.map((pool) => ({
+    pool,
+    percentPoints: !live || settled.has(poolKey(pool)) ? 0 : bufferFor(config.reservations, { agent: r.agent, plan: r.plan, pool, tier: r.tier, effort: r.effort }),
+    ...(settled.has(poolKey(pool)) ? { settled: true as const } : {}),
+  }));
 }
 
 function buildStatus(gathered: Gathered, config: Config) {
@@ -389,7 +531,7 @@ function buildStatus(gathered: Gathered, config: Config) {
   const banned = new Map<string, { agent: string; model: string }>();
   const tiers = {} as Record<Tier, TierView>;
   for (const tier of TIERS) {
-    const d = route({ tier, noDowngrade: true }, env, config);
+    const d = route({ tier }, env, config);
     for (const s of d.skipped) {
       if (s.model) {
         if (s.reason === 'banned by you') banned.set(`${s.agent} ${s.model}`, { agent: s.agent, model: s.model });
@@ -397,29 +539,34 @@ function buildStatus(gathered: Gathered, config: Config) {
         skipped.set(s.agent, s.reason);
       }
     }
-    // Cheaper covering picks belong here; structural upgrades still belong to another tier.
-    const own = !d.upgraded;
+    // Cheaper covering picks belong here; structural upgrades still belong to another tier, unless the tier's
+    // own preference names the route: that is the user's pick for this tier, whatever it costs.
+    const own = !d.upgraded || isPreferredRoute(d, config.pins[tier], env);
     const view: TierView = { status: own ? d.status : 'none', alternatives: own ? d.alternatives : [], warnings: own ? d.warnings : [] };
     if (own && d.route) {
       const prefix = `${d.route.agent} ${d.route.model}: `;
       const reason = d.reasons[0] ?? '';
       const costLabel = d.tier && d.tier !== tier ? ` (${d.tier} cost tier)` : '';
-      view.pick = { ...d.route, confidence: d.confidence, reason: (reason.startsWith(prefix) ? reason.slice(prefix.length) : reason) + costLabel };
+      view.pick = {
+        ...d.route, confidence: d.confidence, reason: (reason.startsWith(prefix) ? reason.slice(prefix.length) : reason) + costLabel,
+        ...(d.coverageNote ? { note: d.coverageNote } : {}),
+      };
     }
-    if (own && d.waitUntil !== undefined) view.waitUntil = d.waitUntil;
+    if (own && d.options) view.options = d.options;
     tiers[tier] = view;
   }
 
+  const quota = buildQuotaView(env.usage, env.reservations ?? [], config, env.now);
   const agents = env.discoveries.map((disc) => {
     const u = env.usage[disc.agent];
     const usage = u && {
       status: u.status,
       ...(u.updatedAt !== undefined ? { updatedAt: u.updatedAt } : {}),
       ...(u.error ? { error: u.error } : {}),
-      pools: Object.values(u.pools).map((p) => {
-        const s = poolState(p, env.now);
-        return { ...p, headroom: Math.round(s.headroom * 100) / 100, expired: s.expired, blocked: s.blocked };
-      }),
+      ...(u.plan ? { plan: u.plan } : {}),
+      ...(u.retained ? { retained: true } : {}),
+      // Reported usage, what is reserved on top of it, and the effective result, kept apart for every quota bucket.
+      pools: quota.buckets.filter((b) => b.agent === disc.agent).map((b) => ({ name: b.pool, usedPercent: b.reported, ...b })),
     };
     const reason = skipped.get(disc.agent);
     return {
@@ -433,18 +580,27 @@ function buildStatus(gathered: Gathered, config: Config) {
     };
   });
 
-  const unclassified: { agent: string; model: string }[] = [];
+  // Never routed automatically; an explicit preference still routes one for its tier (`preferredFor`).
+  const unclassified: { agent: string; model: string; preferredFor?: Tier[] }[] = [];
   for (const disc of env.discoveries) {
     for (const m of disc.models) {
-      if (m.profile.class === null) unclassified.push({ agent: disc.agent, model: m.modelId });
+      if (m.profile.class !== null) continue;
+      const preferredFor = TIERS.filter((t) => config.pins[t]?.agent === disc.agent && config.pins[t]?.model !== undefined && launchIds(m).includes(config.pins[t]!.model!));
+      unclassified.push({ agent: disc.agent, model: m.modelId, ...(preferredFor.length > 0 ? { preferredFor } : {}) });
     }
   }
 
   return {
     now: env.now,
-    handouts: gathered.handouts,
-    handoutMinutes: config.handoutMinutes,
-    handoutPercent: config.handoutPercent,
+    riskThresholds: config.riskThresholds,
+    // Every reservation record, with the percentage points it holds on each window right now (see `reservationBuckets`).
+    reservations: gathered.reservations.map((r) => ({
+      ...r,
+      live: isLive(r),
+      buckets: reservationBuckets(r, Object.hasOwn(env.usage, r.agent) ? env.usage[r.agent] : undefined, config),
+    })),
+    ...(gathered.ledgerError ? { ledgerError: gathered.ledgerError } : {}),
+    ...(gathered.ledgerRecovered ? { ledgerRecovered: gathered.ledgerRecovered } : {}),
     evidence: table.sources.evidence,
     placements: placementsView(gathered, env.now),
     orcaAgents: env.orcaAgents ?? null,
@@ -476,15 +632,30 @@ function statusText(s: Status, sources: SnapshotSource[]): string[] {
       continue;
     }
     const u = a.usage;
-    const usage = !u ? 'no usage data' : u.status === 'ok' ? `usage ok${u.updatedAt !== undefined ? `, updated ${duration(now - u.updatedAt)} ago` : ''}` : `usage ${u.status}${u.error ? `: ${u.error}` : ''}`;
+    const updated = u?.updatedAt !== undefined ? `, updated ${duration(now - u.updatedAt)} ago` : '';
+    // Windows kept from an earlier reading (Orca's refresh failed, or Orca could not be read) are not `ok`.
+    const usage = !u ? 'no usage data'
+      : u.status === 'ok' && u.retained ? `usage retained${u.error ? ` (${u.error})` : ''}${updated}`
+      : u.status === 'ok' ? `usage ok${updated}`
+      : `usage ${u.status}${u.error ? `: ${u.error}` : ''}`;
     lines.push(`  ${name}  ${a.models} models, ${usage}${a.skipped ? ` — skipped: ${a.skipped}` : ''}`);
     if (a.note) lines.push(`  ${' '.repeat(width)}  ${a.note}`);
     for (const p of u?.pools ?? []) {
-      const state = p.expired ? ' (expired)' : p.blocked ? ' (blocked)' : '';
-      lines.push(`    ${p.name.replace(/^bucket:/, '')}: ${percent(p.usedPercent)} used, resets in ${duration(p.resetsAt - now)}, headroom ${headroomText(p.headroom)}${state}`);
+      const reset = p.resetsAt === null ? 'no reset time reported' : `resets in ${duration(p.resetsAt - now)}`;
+      lines.push(`    ${bucketText(p)}; ${reset}`);
     }
   }
-  if (s.handouts.length) lines.push(`hand-outs (last ${s.handoutMinutes}m): ${s.handouts.map((h) => `${h.agent} ${h.model} ${duration(now - h.at)} ago (${h.pools.map((p) => `${p.replace(/^bucket:/, '')} +${s.handoutPercent}%`).join(', ')})`).join('; ')}`);
+  const live = s.reservations.filter((r) => r.live);
+  if (live.length) {
+    lines.push(`reservations (${live.length} counting against quota):`);
+    for (const r of live) {
+      // A window a fresh reading already covers no longer counts: it is left out.
+      const held = r.buckets.filter((b) => !b.settled).map((b) => `${displayPool(b.pool)} +${pointsText(b.percentPoints)}`).join(', ');
+      lines.push(`  ${r.id}  ${r.agent} ${r.model}  ${r.state.replace(/_/g, ' ')} for ${duration(now - (r.endedAt ?? r.startedAt ?? r.createdAt))}  (${held || 'none of its windows is reported now'})`);
+    }
+  }
+  if (s.ledgerError) lines.push(`  warning: the reservation ledger could not be written: ${s.ledgerError}`);
+  if (s.ledgerRecovered) lines.push(`  warning: ${s.ledgerRecovered}`);
   lines.push('tiers:');
   for (const tier of TIERS) {
     const t = s.tiers[tier];
@@ -492,22 +663,36 @@ function statusText(s: Status, sources: SnapshotSource[]): string[] {
     if (t.pick) {
       const { agent, model, effort, confidence, reason } = t.pick;
       lines.push(`  ${label}  ${agent} · ${model}${effort ? ` · ${effort}` : ''} (${confidence}) — ${reason}`);
-    } else if (t.status === 'wait' && t.waitUntil !== undefined) {
-      lines.push(`  ${label}  all blocked; wait ${duration(t.waitUntil - now)}`);
+      if (t.pick.note) lines.push(`  ${' '.repeat(8)}    note: ${t.pick.note}`);
+    } else if (t.status === 'decide' && t.options) {
+      const until = t.options.wait?.until;
+      const use = useText(t.options.use);
+      const parts = [
+        ...(t.options.wait ? [`wait${until !== undefined ? ` ${duration(until - now)}` : ''}`] : []),
+        ...(use ? [use] : []),
+        ...(t.options.lower.length ? [`lower the requirements (${t.options.lower.length} route${t.options.lower.length === 1 ? '' : 's'})`] : []),
+      ];
+      // A route held only by the preference limit, or a last resort, is not above the risk threshold.
+      const why = t.options.use.every(aboveRiskThreshold) ? 'nothing below the risk threshold' : 'nothing is routed automatically';
+      lines.push(`  ${label}  ${why}; your decision: ${parts.join(', ')}`);
     } else {
       lines.push(`  ${label}  no candidates`);
     }
     for (const w of t.warnings) lines.push(`  ${' '.repeat(8)}    warning: ${w}`);
     for (const alt of t.alternatives.slice(0, 3)) {
-      lines.push(`  ${' '.repeat(8)}    alt: ${alt.agent} · ${alt.model}${alt.effort ? ` · ${alt.effort}` : ''}${alt.blocked ? ' (blocked)' : ''} — ${alt.reason}`);
+      lines.push(`  ${' '.repeat(8)}    alt: ${alt.agent} · ${alt.model}${alt.effort ? ` · ${alt.effort}` : ''}${alt.blocked ? ' (exhausted)' : ''} — ${alt.reason}`);
     }
   }
   if (s.banned.length > 0) lines.push(`banned by you: ${s.banned.map((b) => `${b.agent} ${b.model}`).join(', ')}`);
   for (const r of s.rejected) lines.push(`skipped ${r.agent} ${r.model}, ${rejectedText(r, now)} (orcacompass rejected --clear forgets it)`);
   if (s.unclassified.length > 0) {
-    lines.push(`unclassified (never routed): ${s.unclassified.length}`);
+    lines.push(`unclassified (not routed automatically): ${s.unclassified.length}`);
     const byAgent = new Map<string, string[]>();
-    for (const u of s.unclassified) byAgent.set(u.agent, [...(byAgent.get(u.agent) ?? []), u.model]);
+    // Preferred ones first, so the 15 shown per agent always include them.
+    for (const u of [...s.unclassified].sort((a, b) => Number(!a.preferredFor) - Number(!b.preferredFor))) {
+      const label = u.preferredFor ? `${u.model} (preferred for ${u.preferredFor.join(', ')})` : u.model;
+      byAgent.set(u.agent, [...(byAgent.get(u.agent) ?? []), label]);
+    }
     // OpenCode can list hundreds of OpenRouter models; status --json has them all.
     for (const [agent, models] of byAgent) {
       const more = models.length > 15 ? `, … ${models.length - 15} more` : '';
@@ -515,6 +700,33 @@ function statusText(s: Status, sources: SnapshotSource[]): string[] {
     }
   }
   return lines;
+}
+
+type UseOption = NonNullable<Decision['options']>['use'][number];
+
+/** Whether a USE option is one because its quota is in the high-risk range or fully reserved. */
+const aboveRiskThreshold = (u: UseOption): boolean => u.quota?.status === 'high' || u.quota?.status === 'reserved';
+
+/**
+ * The USE part of a tier's decision line, saying why each route is the Orchestrator's call: above the risk
+ * threshold, the preferred route held only by `preferRiskLimit` (below that threshold), or a last-resort agent.
+ */
+function useText(use: UseOption[]): string | undefined {
+  if (use.length === 0) return undefined;
+  const routes = `${use.length} route${use.length === 1 ? '' : 's'}`;
+  const above = use.filter(aboveRiskThreshold).length;
+  if (above === use.length) return `use ${routes} above the risk threshold`;
+  const rest = use.filter((u) => !aboveRiskThreshold(u));
+  const preferred = rest.filter((u) => u.preferred).length;
+  const lastResort = rest.filter((u) => !u.preferred && u.lastResort).length;
+  const kinds: [count: number, what: string][] = [
+    [above, 'above the risk threshold'],
+    [preferred, 'held only by preferRiskLimit'],
+    [lastResort, 'last resort'],
+    [rest.length - preferred - lastResort, 'not routed automatically'],
+  ];
+  const named = kinds.filter(([count]) => count > 0).map(([count, what]) => (use.length === 1 ? what : `${count} ${what}`));
+  return `use ${routes} (${named.join(', ')})`;
 }
 
 async function statusCommand(args: string[], io: IO, deps: MainDeps): Promise<number> {
@@ -653,7 +865,7 @@ async function preferCommand(args: string[], io: IO, deps: MainDeps): Promise<nu
       io.out(JSON.stringify({ configPath: configPath(), preferRiskLimit: config.preferRiskLimit, pins: config.pins }, null, 2));
       return;
     }
-    const lines = [`preferred routes (above ${config.preferRiskLimit}% projected usage, switch only to a known within-limit alternative):`];
+    const lines = [`preferred routes (used while their usage, with reserved workers and one more, stays below ${config.preferRiskLimit}%):`];
     for (const tier of TIERS) lines.push(`  ${tier.padEnd(8)}  ${prefLabel(config.pins[tier])}`);
     io.out(lines.join('\n'));
   };
@@ -986,8 +1198,6 @@ Agents used now: ${used.join(', ') || 'none'} (${orca}).`);
 }
 
 // --- formatting -----------------------------------------------------------------------------
-
-const percent = (n: number): string => `${Number.isInteger(n) ? n : n.toFixed(1)}%`;
 
 function duration(ms: number): string {
   if (ms <= 0) return '0m';

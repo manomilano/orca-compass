@@ -22,7 +22,7 @@ placeholder properties or invalid tokens. An array shown as `[]` is empty.
 
 Only `status: "ok"` carries a route. Read `warnings`, `reasons`, `confidence`,
 `downgraded` and `upgraded` before using `launchArgs`; exit code 0 also covers
-`wait` and `none`. Keep the full task specification in the worker launch;
+`decide` and `none`. Keep the full task specification in the worker launch;
 `--tier-reason` is only a short classification explanation.
 
 ## 1. Route an everyday job
@@ -49,12 +49,16 @@ orcacompass route --tier daily --demand moderate --tier-reason "Familiar validat
   "route": { "agent": "claude", "model": "claude-haiku-5-5", "effort": "medium" },
   "launchArgs": ["--agent", "claude", "--model", "claude-haiku-5-5", "--effort", "medium"],
   "confidence": "high",
+  "reservation": { "id": "rsv_3f9a1c2b7d10", "state": "pending", "buckets": [{ "bucket": "claude:1f0c9a2b7d3e:weekly", "percentPoints": 1 }], "expiresAt": 1793232600000 },
   "warnings": []
 }
 ```
 
 `tier` is the pick's cost tier. It is `light` here because a Light-cost model
 covers the `low` needs; a cheaper covering tier is not a downgrade.
+`reservation` is the quota this route set aside for its worker: one
+percentage point of Claude's weekly window, counted by every later route until
+Orca's usage covers it.
 
 **Next:** append each `launchArgs` element as a separate, properly quoted
 argument to Orca's worker launch, with the actual task and placement. Then verify
@@ -147,33 +151,47 @@ not change the saved agent choices, and cannot enable an agent switched off in
 Orca. Both flags are repeatable; use agent ids such as `cursor`, not executable
 names such as `cursor-agent`. See [`route`](commands.md#route).
 
-## 4. Refuse a capability shortfall
+## 4. When the decision comes back {#_4-when-the-decision-comes-back}
 
 **Situation:** a difficult investigation needs `mid` coding and `high` agentic
-and reasoning capability. In this illustrative environment, its only covering
-Claude model has a blocked usage pool:
-
-```sh
-orcacompass route --need coding=mid,agentic=high,reasoning=high --demand high --agent claude --no-downgrade --json
-```
-
-**Illustrative response excerpt** (… other decision fields):
-
-```json
-{
-  "status": "wait",
-  "downgraded": false,
-  "upgraded": false,
-  "waitUntil": 1793282400000
-}
-```
-
-**Next:** do not launch a replacement model. `waitUntil` is epoch milliseconds;
-wait for reset. If the user's constraints permit a capability shortfall, the
-orchestrator can repeat the same request without `--no-downgrade`:
+and reasoning capability. In this illustrative environment, the only eligible
+Claude model has an exhausted usage window:
 
 ```sh
 orcacompass route --need coding=mid,agentic=high,reasoning=high --demand high --agent claude --json
+```
+
+**Illustrative response excerpt** (… other decision fields, and the `quota`
+of each option):
+
+```json
+{
+  "status": "decide",
+  "downgraded": false,
+  "upgraded": false,
+  "options": {
+    "wait": { "until": 1793282400000, "reason": "the earliest quota reset is in 14h" },
+    "use": [],
+    "lower": [
+      { "agent": "claude", "model": "claude-sonnet-5-5", "effort": "high", "tier": "daily", "shortfall": "below need on agentic (78.2 < 80)", "reason": "weekly 51.75% prospective, available", "use": "--use claude/claude-sonnet-5-5" }
+    ]
+  }
+}
+```
+
+**Next:** nothing was picked, and there are no launch arguments. The
+Orchestrator chooses, asking the user when the choice is theirs:
+
+- **WAIT** until the reset. `until` is epoch milliseconds, and present only
+  when Orca reports a reset time.
+- **USE** has no entry here: the eligible model's quota is exhausted, which
+  cannot be overridden. With the quota at 95% instead, the same model would be
+  listed under `use` and taken with its flag.
+- **LOWER:** Sonnet would take the job with a lower agentic need. Either route
+  again with `agentic=mid`, or take that route as it is:
+
+```sh
+orcacompass route --need coding=mid,agentic=high,reasoning=high --demand high --agent claude --use claude/claude-sonnet-5-5 --json
 ```
 
 **Illustrative response excerpt** (… other fields, including coverage details):
@@ -190,10 +208,10 @@ orcacompass route --need coding=mid,agentic=high,reasoning=high --demand high --
 
 **Next:** read the shortfall in `quality` and the warning, narrow the task or add
 checks, and mention the downgrade in the worker specification. Effort does not
-rise to compensate. A cheaper cost tier that *covers* all needs is not a
-downgrade; `--no-downgrade` allows that route. It prevents capability shortfalls
-and Cursor `auto` fallback, not every change of cost tier. See
-[fallbacks](tiers-and-routing.md#fallbacks-downgrade-upgrade-wait-none).
+rise to compensate. Requirements are never lowered on their own: a weaker model
+is used only after this explicit choice. A cheaper cost tier that *covers* all
+needs is not a downgrade and is routed normally. See
+[outcomes](tiers-and-routing.md#outcomes-ok-decide-none).
 
 ## 5. Save a favorite and a ban
 
@@ -213,14 +231,14 @@ entries in `reasons` and `skipped`):
 {
   "status": "ok",
   "route": { "agent": "codex", "model": "gpt-6.1-terra", "effort": "medium" },
-  "reasons": ["preferred route, on pace for 82%"],
+  "reasons": ["preferred route, available"],
   "skipped": [{ "agent": "claude", "model": "claude-haiku-5-5", "reason": "banned by you" }]
 }
 ```
 
 **Next:** launch and verify. The favorite is subject to availability and usage:
-when it exceeds `preferRiskLimit` (100% by default), a known within-limit
-alternative can replace it. Relay any `preferred … skipped` warning rather than
+once its usage, with reserved workers and one more, reaches `preferRiskLimit`
+(90% by default), routing goes on without it. Relay any `preferred … skipped` warning rather than
 silently ignoring the preference. A family ban applies across agents that offer
 matching models. See [`prefer`](commands.md#prefer) and
 [`ban` / `unban`](commands.md#ban-unban).
@@ -240,7 +258,8 @@ orcacompass route --need coding=mid,agentic=mid,reasoning=low --demand moderate 
 {
   "status": "ok",
   "route": { "agent": "claude", "model": "claude-sonnet-5-5", "effort": "medium" },
-  "launchArgs": ["--agent", "claude", "--model", "claude-sonnet-5-5", "--effort", "medium"]
+  "launchArgs": ["--agent", "claude", "--model", "claude-sonnet-5-5", "--effort", "medium"],
+  "reservation": { "id": "rsv_3f9a1c2b7d10", "state": "pending" }
 }
 ```
 
@@ -251,11 +270,15 @@ Here the placement is the current worktree:
 orca orchestration worker-start --spec "Add CSV export to the reports page; test escaping and empty results, and run the relevant tests." --worktree current --agent claude --model claude-sonnet-5-5 --effort medium --json
 ```
 
-Use the actual `dispatchId` from Orca's receipt. Suppose it is `ctx_export_1`:
+Use the actual `dispatchId` from Orca's receipt, and the `reservation.id` of
+the route. Suppose the dispatch is `ctx_export_1`:
 
 ```sh
-orcacompass verify --dispatch ctx_export_1 --json
+orcacompass verify --dispatch ctx_export_1 --reservation rsv_3f9a1c2b7d10 --json
 ```
+
+A refusal releases that reservation at once, since nothing ran; a worker that
+started keeps it under the same record.
 
 **Illustrative refusal response excerpt** (… `next`, which lists the recovery
 steps):
@@ -330,7 +353,9 @@ orcacompass verify --dispatch ctx_export_2 --json
 ```
 
 **Next:** tell the user which model was refused and what replaced it, then wait
-for `worker_done` through normal Orca supervision. `started` means startup was
+for `worker_done` through normal Orca supervision. When it arrives, run
+`orcacompass release --dispatch ctx_export_2`: the worker's quota stays
+reserved until Orca's next usage refresh covers what it consumed. `started` means startup was
 observed without a refusal; it does not verify the code. Review the result and
 checks required by the task. Never stop a worker reported as `started` just to
 retry a route. See [verify and rejections](verify-and-rejections.md).
@@ -371,16 +396,19 @@ constraints. Do not assume `none` satisfies a user's exact effort or model reque
 {
   "status": "ok",
   "confidence": "low",
-  "risk": null,
-  "reasons": ["claude claude-haiku-5-5: usage unknown (Orca not reachable)"]
+  "quota": { "status": "unknown", "binding": null, "remaining": null, "prospective": null, "buckets": [] },
+  "reasons": ["claude claude-haiku-5-5: usage unknown (Orca not reachable)"],
+  "warnings": ["usage of claude is unknown: usage unknown (Orca not reachable); routed without a quota check"]
 }
 ```
 
 **Next:** surface the unknown usage and inspect `status`. A route exists, but
-there is no basis for quoting usage percentages. Very stale usage can also lower
-confidence; read the reason rather than inferring headroom.
+it was taken without a quota check and there is no basis for quoting usage
+percentages. Unknown usage is never read as 0% or as exhausted. Very stale
+usage and a window that reset since the snapshot are unknown as well; read the
+reason.
 
-**Illustrative near-limit response excerpt** (… other fields):
+**Illustrative caution response excerpt** (… other fields):
 
 ```json
 {
@@ -388,23 +416,22 @@ confidence; read the reason rather than inferring headroom.
   "tier": "light",
   "downgraded": false,
   "upgraded": false,
-  "warnings": [
-    "weekly quota is 96% used; resets in 14h",
-    "selected route is expected to end above 90% of its usage window"
-  ]
+  "quota": { "status": "caution", "prospective": 87.5 },
+  "warnings": ["weekly quota would be 87.5% used with this worker (caution); resets in 14h"]
 }
 ```
 
-**Next:** relay the warnings and keep the job small: the pick is close to its
-usage limit, and no route with more room covered the job. A route is left out
-for usage only when Orca reports a window as 100% used. A pick from a pricier
-cost tier than expected needs no warning: it had more room, and `reasons`
-shows its `selection` score and the `next best` route. `upgraded` is `true`
-only when no route at or below the requested tier covers the job; its warning
-reads `no model in the <tier> cost tier covers the job; using <tier>`.
-For `wait`, follow
-[the reset example](#_4-refuse-a-capability-shortfall); there are no launch arguments
-to use. See [troubleshooting](troubleshooting.md#a-route-says-wait-or-none).
+**Next:** relay the warning and keep the job small: counting the workers
+already reserved and this one, the pick's quota is between 85% and 90%, and no
+eligible route was available below that. From 90% nothing is picked
+automatically and the result is `decide`; follow
+[the decision example](#_4-when-the-decision-comes-back), where there are no
+launch arguments to use. A pick from a pricier cost tier than expected needs no
+warning: its quota had more room, and `reasons` shows its `selection` line
+and the `next best` route. `upgraded` is `true` only when no route at or
+below the requested tier is eligible; its warning reads
+`no model in the <tier> cost tier covers the job; using <tier>`. See
+[troubleshooting](troubleshooting.md#a-route-says-decide-or-none).
 
 ## 8. Inspect the decision's inputs
 

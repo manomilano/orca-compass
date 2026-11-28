@@ -84,10 +84,10 @@ again starts from your current settings. Ctrl+C saves nothing.
    (`yes` or `unknown`) and are not switched off in your config. Your answer is written as `allowAgents` /
    `denyAgents`, through the same edits as `orcacompass agents`.
 2. **Favorites (optional).** For each tier the current pick and its
-   alternatives are shown with their on-pace percentage. Choose one as the
-   favorite, or 0 for none. An available, unblocked favorite is used. Above
-   the risk limit (default 100%), a known within-limit alternative replaces it.
-   If none exists, the favorite is retained with a warning. The
+   alternatives are shown with their usage, counting reserved workers and one
+   more. Choose one as the favorite, or 0 for none. A favorite is used while
+   that usage stays below the limit (default 90%) on every quota it draws on;
+   at or above it, routing goes on without the favorite, with a warning. The
    wizard asks for that limit when you set at least one favorite. Written as `pins` and `preferRiskLimit`.
 3. **Bans (optional).** The model families found (and their models) are listed;
    name families or model ids never to use. Written as `banModels`. An agent id that is not also a discovered model family
@@ -148,15 +148,17 @@ your environment):
 
 ```text
 light → claude · claude-haiku-5-5 · medium (high confidence)
-  claude claude-haiku-5-5: weekly 20% used, 56% of window elapsed (headroom 60%) → on pace for 36% before reset in 3d
+  claude claude-haiku-5-5: weekly 20% reported + 0.5 pp for this worker = 20.5% prospective (available), resets in 3d
   cost: light ($0.20/M blended, maker price)
   effort: medium from tier default, passed as --effort
+  reserved rsv_3f9a1c2b7d10: weekly +0.5 pp; after worker-start run: orcacompass verify --dispatch <id> --reservation rsv_3f9a1c2b7d10
 orca orchestration worker-start --spec "<task>" --agent claude --model claude-haiku-5-5 --effort medium
 ```
 
 The first word is the pick's cost tier. It is `light` here because a
-Light-cost model covers an everyday job and no other route had clearly more
-room; a cheaper covering tier is not a downgrade.
+Light-cost model covers an everyday job and its quota had the most room; a
+cheaper covering tier is not a downgrade. The `reserved` line is the quota
+this route set aside for its worker; `--dry-run` routes without reserving.
 
 If `status` says `evidence: snapshot`, run `orcacompass refresh`
 when online. If an agent you expect is `not used`, the verdict says why

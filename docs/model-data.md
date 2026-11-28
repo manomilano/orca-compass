@@ -25,7 +25,7 @@ so it takes all three capability scores from Kimi K2.5. Its price comes from
 Cursor. A future LLMBenchmark score for Composer takes priority on that axis. The snapshot
 omits missing or unusable dataset prices; schema 1 still accepts rows without pricing.
 
-The blended price feeds both the routing score and the cost tier, using a 3:1 input/output blend and configurable
+The blended price sets the cost tier (and breaks economy ties inside a quota bucket), using a 3:1 input/output blend and configurable
 `costBands` (default `[1, 5, 12]`). It never changes evidence scores, bands or
 need cuts. Models without a price fall back to family/lineup hints and then
 evidence class; user cost-tier overrides take precedence over price.

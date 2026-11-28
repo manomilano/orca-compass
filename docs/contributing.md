@@ -166,9 +166,11 @@ changing a Claude or GPT family.
 ## Routing and score changes
 
 Behavior changes must come with tests. Use deterministic synthetic inputs and
-fixed times to show the previous failure and the intended route or score.
-Cover affected boundaries: thresholds, stale/expired usage, ties, pins,
-downgrades/upgrades, Cursor Auto, effort snapping, or missing score anchors.
+fixed times to show the previous failure and the intended route.
+Cover affected boundaries: risk thresholds, stale or unknown usage, ties,
+pins, reservations and their lifecycle, upgrades, Cursor Auto, effort
+eligibility, or missing score anchors. Changes to the reservation ledger need
+a test with several processes (see `tests/routing/reservations.test.ts`).
 Keep routing tests independent of live accounts and network responses.
 
 When changing metadata parsing or snapshots, preserve source attribution and

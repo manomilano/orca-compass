@@ -26,7 +26,7 @@ export async function discoverMuse(deps: AgentDeps): Promise<AgentDiscovery> {
       effortSource: 'orca',
       defaultEffort: 'high',
       launch: { kind: 'flag', model: id },
-      // Orca reports no usage for Muse, so these pools stay unknown.
+      // The windows of Orca's `muse` usage entry; they stay unknown while Orca reports no usage for Muse.
       poolNames: ['session', 'weekly'],
     };
   });

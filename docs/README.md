@@ -24,8 +24,8 @@ New here? Start with [Getting started](getting-started.md): install with
 | [Verify and rejections](verify-and-rejections.md) | Checking that a worker's agent accepted its model, and routing around refusals |
 | [Commands](commands.md) | Every CLI command, flag, exit code and JSON field |
 | [Configuration](configuration.md) | Config and cache paths, every key with its default, data sources, privacy |
-| [Troubleshooting](troubleshooting.md) | Install failures, agents not used, unknown usage, `wait`/`none`, refused models, stale metadata, config errors |
-| [Tiers and routing](tiers-and-routing.md) | The four tiers, how a model gets its tier, the capability score, headroom ranking, preferences, bans, fallbacks |
+| [Troubleshooting](troubleshooting.md) | Install failures, agents not used, unknown usage, `decide`/`none`, refused models, stale metadata, config errors |
+| [Tiers and routing](tiers-and-routing.md) | The four tiers, how a model gets its tier, the capability score, quota-first ranking, reservations, risk thresholds, preferences, bans |
 | [Effort](effort.md) | Effort demand, effort policies, snapping, how effort reaches each agent |
 | [Models and agents](models-and-agents.md) | The agents OrcaCompass routes to, their model sources, and how to inspect available models |
 | [Orca agents](orca-agents.md) | Every agent id Orca can launch and what OrcaCompass does with each one |
@@ -49,9 +49,10 @@ To build, test or change OrcaCompass itself, see
 | **Effort** | The reasoning level passed to the agent: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | **Route** | One recommendation: agent, model, effort, plus `launchArgs` for `orca orchestration worker-start` |
 | **Usage pool** | A rate-limit window Orca reports for an agent: `session`, `weekly`, `monthly`, `fableWeekly`, or a named bucket |
-| **Headroom** | The share of a usage window expected to be left unused at reset; routes are scored by it, minus a small price adjustment |
-| **Risk** | Where a route's usage is heading: `used% / elapsed fraction` of the window, the pool projected to end most used |
-| **Preference (pin)** | Your favorite route for a tier; used when eligible, unblocked and under `preferRiskLimit` |
+| **Quota bucket** | One limit enforced on its own: a provider, an account and a usage window. Routes are ranked by the capacity their most restrictive bucket has left |
+| **Reservation** | The percentage points a routed worker holds on each bucket it draws on, until Orca's usage covers it. Rebuilt from the worker records on every refresh, never accumulated |
+| **Effective / prospective usage** | Reported usage plus reservations; plus this worker's own buffer. The risk thresholds apply to the prospective usage |
+| **Preference (pin)** | Your favorite route for a tier; used while its prospective usage stays below `preferRiskLimit` |
 | **Ban** | A model id or catalog family that is never routed |
 | **Rejection** | A model an agent refused at launch (found by `verify`); skipped for `rejectionTtlHours` |
 | **Last-resort agent** | An agent used only when nothing else can take the job (OpenCode by default) |

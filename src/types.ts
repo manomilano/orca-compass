@@ -9,6 +9,8 @@ import type { Need, Needs } from './routing/needs.js';
 export type { Need, Needs } from './routing/needs.js';
 
 import type { Rejection } from './routing/rejection.js';
+import type { BufferEffort, BufferOverride, BufferTier, CandidateQuota, QuotaView, Reservation } from './routing/quota.js';
+export type { BucketQuota, BufferEffort, BufferOverride, BufferTier, CandidateQuota, QuotaStatus, QuotaView, Reservation, ReservationState } from './routing/quota.js';
 
 export type Tier = 'light' | 'daily' | 'advanced' | 'frontier';
 export const TIERS: readonly Tier[] = ['light', 'daily', 'advanced', 'frontier'];
@@ -36,23 +38,54 @@ export type ModelIndex = Record<string, ModelMeta>;
 
 export type DataSource = 'network' | 'cache' | 'snapshot';
 
+/** One usage window as Orca reports it. Never adjusted: reservations are kept apart (see routing/quota.ts). */
 export interface UsagePool {
   name: string;
   kind: 'session' | 'long';
-  usedPercent: number;
-  /** Orca reading before temporary hand-outs adjusted usedPercent. */
-  reportedUsedPercent?: number;
-  handouts?: number;
-  windowMinutes: number;
-  resetsAt: number; // epoch ms
+  /** Reported usage, 0..100. Null when Orca gave no valid number: unknown, never read as 0. */
+  usedPercent: number | null;
+  /** Null when Orca gave no window length. */
+  windowMinutes: number | null;
+  /** Epoch ms of the next reset. Null when Orca reports none (`0` or `null`): the window has not started or its reset is unknown. */
+  resetsAt: number | null;
+  /** Antigravity quota group the window belongs to, e.g. "Gemini Models": a model declaring `bucket:<group>` draws on every window of it. */
+  group?: string;
+  /** Set only by the ledger merge: the reading was taken at or after this time (0: unknown). */
+  observedAt?: number;
+  /** Set only by the ledger merge: the last provider snapshot that reported this reading. */
+  seenAt?: number;
 }
 
 export interface AgentUsage {
   agent: AgentId;
   status: 'ok' | 'unavailable' | 'unknown';
   pools: Record<string, UsagePool>;
+  /** When Orca took this snapshot (its own `updatedAt`): the snapshot's identity, new on every real refresh. */
   updatedAt?: number;
   error?: string;
+  /**
+   * The quota identity these pools belong to: account, runtime and plan, hashed. A different scope is a
+   * different set of quota buckets, so reservations never move between accounts, runtimes or plans.
+   */
+  scope?: string;
+  /** Orca's `planType`, when it reports one. */
+  plan?: string;
+  /**
+   * The account the reading belongs to: agent, account id, runtime and WSL distro, hashed (no plan). A reading
+   * of another account invalidates the stored snapshot of the previous one.
+   */
+  account?: string;
+  /** Orca's `usageMetadata.source`, e.g. `oauth`, `cli` or `live-session`. */
+  source?: string;
+  /**
+   * Set when the windows are older than this read: Orca kept its last good windows after a failed refresh,
+   * or Orca could not be read and the ledger's last valid snapshot stands in for it.
+   */
+  retained?: true;
+  /** Internal: these pools come from the ledger, not from this read. Never stored. */
+  standIn?: true;
+  /** Set when Orca itself could not be read (not running, CLI error), as opposed to Orca reporting no usage. */
+  unreachable?: true;
 }
 
 export type Launch =
@@ -128,7 +161,7 @@ export type BuiltWith = Pick<Config, 'tierOverrides' | 'costBands'>;
 
 /** Every discovered model's profile, cached for `placementsTtlHours`. */
 export interface PlacementTable {
-  schemaVersion: 4;
+  schemaVersion: 5;
   version: string;
   builtAt: number;
   builtWith: BuiltWith;
@@ -153,6 +186,8 @@ export interface Environment {
   /** Every agent with its models already placed (the placement table's rows). */
   discoveries: PlacedAgent[];
   usage: Record<AgentId, AgentUsage>;
+  /** Live reservations of allocated workers, already reconciled against `usage`; the quota view is rebuilt from them. */
+  reservations?: Reservation[];
   /** Absent or unknown: every installed agent counts as enabled in Orca. */
   orcaAgents?: OrcaAgents;
   /** When the placement table the discoveries come from was built. */
@@ -172,13 +207,17 @@ export type RouteRequest = RouteOptions & ({ tier: Tier; needs?: never } | { nee
 interface RouteOptions {
   /** The coordinator's short explanation of the task classification. */
   tierReason?: string;
-  noDowngrade?: boolean;
   agents?: AgentId[];
   excludeAgents?: AgentId[];
   /** An explicit effort: only routes that can apply exactly this effort are used. */
   effort?: Effort;
   /** The job's effort demand; the effort follows it through `effortPolicy`. */
   demand?: Demand;
+  /**
+   * The Orchestrator's explicit choice of one route (USE after a `decide`): taken despite risk thresholds and
+   * capability or effort shortfalls, never when a quota it draws on is actually exhausted.
+   */
+  use?: { agent: AgentId; model: string };
 }
 
 /** How a route's effort was chosen and how the launch applies it. */
@@ -193,25 +232,12 @@ export interface EffortResolution {
   resolved: Effort | null;
   /** `flag` (--effort), `model-id` (an effort variant such as claude-fable-5-1-high), or `provider-default` (nothing passed). */
   applied: 'flag' | 'model-id' | 'provider-default';
-  /** The model does not offer the target, so the nearest supported effort is used. */
+  /** The model does not offer the target, so another supported effort is used: the next higher one; a lower one only for a tier default. */
   adjusted: boolean;
   /** Where the model's supported efforts come from. */
   supportSource: EffortSource | 'unknown';
   /** The effort the agent uses when none is passed, when the provider says so. */
   providerDefault?: Effort;
-}
-
-/**
- * Where a route's usage is heading: the pool projected to end its window most used, at the current pace
- * (used% / elapsed fraction). Early in a window (under 10% elapsed) it is not extrapolated: projected = used.
- */
-export interface Risk {
-  pool: string;
-  usedPercent: number;
-  elapsedPercent: number;
-  projectedPercent: number;
-  tooEarly: boolean;
-  resetsAt: number;
 }
 
 export interface Alternative {
@@ -220,19 +246,47 @@ export interface Alternative {
   effort: Effort | null;
   tier: Tier;
   quality: Quality;
-  /** Share of the ranked window expected to be left unused at reset; null when usage is unknown. */
-  headroom: number | null;
+  /** Reported, reserved, effective and prospective usage of every quota the route draws on; null without a usage window. */
+  quota: CandidateQuota | null;
   confidence: Confidence;
+  /** A quota it draws on is actually exhausted. */
   blocked: boolean;
-  /** Null when usage is unknown. */
-  risk: Risk | null;
   reason: string;
+}
+
+/** A route the Orchestrator may choose itself after a `decide`. */
+export interface RouteOption {
+  agent: AgentId;
+  model: string;
+  effort: Effort | null;
+  tier: Tier | null;
+  quota: CandidateQuota | null;
+  /** Why it was not routed automatically. */
+  reason: string;
+  /** The flag that makes this choice on the same route call: `--use <agent>/<model>`. */
+  use: string;
+  lastResort?: true;
+  /** The tier's preferred route, held back only by preferRiskLimit. */
+  preferred?: true;
+  /** Set when benchmark data is missing on a needed axis, so task coverage could not be verified. */
+  coverageNote?: string;
+}
+
+/** What the Orchestrator can do when no suitable route is below the automatic-routing threshold. */
+export interface DecisionOptions {
+  /** WAIT: for a quota reset or a fresh usage snapshot. `until` is absent when no reset time is known. */
+  wait: { until?: number; reason: string } | null;
+  /** USE: suitable routes above the threshold whose quota is not actually exhausted. */
+  use: RouteOption[];
+  /** LOWER: routes that would take the job with lower capability or effort requirements. */
+  lower: (RouteOption & { shortfall: string })[];
 }
 
 export interface Quality {
   class: Tier | null;
   cost: CostTier | null;
-  covers: boolean;
+  /** True when all needed axes meet their cuts, false on measured shortfall, null when benchmark data is unavailable. */
+  covers: boolean | null;
   shortfall: number;
   overshoot: number;
   evidence: EvidenceLabel;
@@ -240,7 +294,8 @@ export interface Quality {
 }
 
 export interface Decision {
-  status: 'ok' | 'wait' | 'none';
+  /** `ok`: routed and reserved. `decide`: the Orchestrator chooses WAIT, USE or LOWER (see `options`). `none`: nothing can take the job. */
+  status: 'ok' | 'decide' | 'none';
   requestedTier: Tier;
   needs: Needs;
   needsSource: 'need' | 'tier';
@@ -251,19 +306,29 @@ export interface Decision {
   tier?: Tier;
   downgraded: boolean;
   upgraded: boolean;
+  /**
+   * Informational: benchmark data is missing on a needed axis of a manually preferred or --use model, so task
+   * coverage could not be verified. Not a shortfall and not a downgrade; absent for routes whose coverage was checked.
+   */
+  coverageNote?: string;
   route?: { agent: AgentId; model: string; effort: Effort | null };
   /** How the route's effort was chosen and applied; present with `route`. */
   effort?: EffortResolution;
   launchArgs?: string[];
   confidence?: Confidence;
-  /** The route's consumption risk; null when usage is unknown. */
-  risk?: Risk | null;
+  /** The route's quota: every bucket it draws on, reported, reserved, effective and prospective; null without a usage window. */
+  quota?: CandidateQuota | null;
+  /** The capacity reserved for the routed worker; absent on a dry run and when nothing was routed. */
+  reservation?: { id: string; state: 'pending'; buckets: { bucket: string; percentPoints: number }[]; expiresAt: number };
+  /** Every quota bucket of the agents considered, most remaining capacity first. */
+  buckets?: QuotaView['buckets'];
+  /** With `decide`. */
+  options?: DecisionOptions;
   reasons: string[];
   warnings: string[];
   alternatives: Alternative[];
   /** Agents left out, and with `model` set, single models (banned by the user, or refused by the agent at launch). */
   skipped: { agent: AgentId; model?: string; reason: string }[];
-  waitUntil?: number;
 }
 
 export interface Preference {
@@ -276,12 +341,16 @@ export interface Config {
   denyAgents: AgentId[];
   /** The user's preferred route per tier; without a model, the agent's best model in the tier. */
   pins: Partial<Record<Tier, Preference>>;
-  /** Above this projected usage, replace the favorite only with a known within-limit alternative. */
+  /** A preferred route is used while its prospective usage stays below this percentage on every quota it draws on. */
   preferRiskLimit: number;
   /**
-   * Warn when the selected route is expected to exceed this percentage at reset.
+   * Risk thresholds on prospective usage (reported + reserved + this worker's buffer), per quota bucket.
+   * Below `cautionPercent`: available. From it to below `highPercent`: caution, used only when no available
+   * route exists. From `highPercent`: high risk, never routed automatically.
    */
-  usageRiskLimit: number;
+  riskThresholds: { cautionPercent: number; highPercent: number };
+  /** Temporary per-quota reservations for allocated workers. */
+  reservations: ReservationConfig;
   /** Model ids or families the user never wants routed. */
   banModels: string[];
   /**
@@ -290,22 +359,35 @@ export interface Config {
    */
   lastResortAgents: AgentId[];
   tierOverrides: Record<string, Tier>; // keyed by model id or family
-  thresholds: { longPercent: number; sessionPercent: number };
   /** Effort per requested tier when the route call gives neither --effort nor --demand. */
   defaultEffort: Record<Tier, Effort>;
   /** How an effort demand (--demand) maps to effort. */
   effortPolicy: EffortPolicy;
   /** Ascending blended maker-price cuts in USD per million tokens (3:1 input/output). */
   costBands: [number, number, number];
-  handoutMinutes: number;
-  handoutPercent: number;
   evidenceTtlHours: number;
   /** How long the placement table (every model's tiers, built from every source) is reused; 0 rebuilds on every command. */
   placementsTtlHours: number;
+  /** A usage snapshot older than this is stale: still used, with lower confidence. Four times older: unknown. */
   usageStaleMinutes: number;
   /** How long a model an agent refused at launch is skipped. */
   rejectionTtlHours: number;
   excludeNoZdr: boolean;
   /** Offer Cursor's `auto` as a fallback when no named model can be routed. */
   cursorAuto: boolean;
+}
+
+export interface ReservationConfig {
+  /** Percentage points a worker reserves on each quota bucket it draws on, by buffer tier and effort column. */
+  buffers: Record<BufferTier, Record<BufferEffort, number>>;
+  /** Quota-, provider- or plan-specific changes to `buffers`, applied in order. */
+  overrides: BufferOverride[];
+  /** Model ids or families that use another buffer row than their cost tier's, e.g. `minimal`. */
+  modelTiers: Record<string, BufferTier>;
+  /** A reservation not confirmed as launched (see `orcacompass verify`) is abandoned after this long. */
+  pendingMinutes: number;
+  /** A finished worker's reservation is reconciled by a snapshot taken at least this long after it ended. */
+  settleSeconds: number;
+  /** A running reservation Orca no longer reports is closed after this long. */
+  maxRunningHours: number;
 }

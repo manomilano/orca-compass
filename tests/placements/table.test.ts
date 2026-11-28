@@ -27,7 +27,7 @@ const fable: PlacedModel = {
 
 function tableFixture(patch: Partial<PlacementTable> = {}): PlacementTable {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     version: '0.1.0',
     builtAt: NOW,
     builtWith: builtWith(DEFAULT_CONFIG),
@@ -70,6 +70,14 @@ describe('writeTable and readTable', () => {
 describe('parseTable', () => {
   it('rejects a schema 3 table with the old builtWith shape', () => {
     expect(parseTable(JSON.stringify({ ...tableFixture(), schemaVersion: 3, builtWith: { classWeight: 0.1, tierOverrides: {} } }))).toBeUndefined();
+  });
+
+  it('rejects a schema 4 table, valid in every other field, so it is rebuilt as invalid', () => {
+    // Schema 4 tables list Antigravity `-xhigh` ids as unknown models; nothing else in the file tells them apart.
+    writeFileSync(join(dir, PLACEMENTS_FILE), JSON.stringify({ ...tableFixture(), schemaVersion: 4 }));
+    const read = readTable(readTextFile, dir);
+    expect(read).toEqual({ table: undefined, present: true });
+    expect(staleness(read, fresh)).toBe('invalid');
   });
 
   it.each([undefined, null, [5, 1, 12], [1, 5], ['1', 5, 12], [-1, 5, 12], [1, 1, 12]])('rejects invalid cached costBands %j', (costBands) => {
