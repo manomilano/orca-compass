@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "dataDate": "2026-11-26",
+  "dataDate": "2026-11-27",
   "rows": [
     {"modelId":"amazon/nova-lite-v1","metric":"aa_gpqa","value":0.433333333333333,"unit":"ratio","source":"aa-api","sourceUrl":"https://artificialanalysis.ai/models/nova-lite","observedAt":"2026-11-11"},
     {"modelId":"amazon/nova-lite-v1","metric":"aa_hle","value":0.0429,"unit":"ratio","source":"aa-api","sourceUrl":"https://artificialanalysis.ai/models/nova-lite","observedAt":"2026-11-11"},
@@ -1702,6 +1702,7 @@
     {"modelId":"thinkingmachines/inkling","metric":"vals_terminal_bench_4","setting":"Mini-SWE-agent","value":0.0051,"unit":"ratio","source":"vals-more","sourceUrl":"https://www.vals.ai/benchmarks/terminal-bench-4","observedAt":"2026-11-11"},
     {"modelId":"thinkingmachines/inkling","metric":"vals_vibe_code","setting":"OpenHands","value":0.19210000000000002,"unit":"ratio","source":"vals-more","sourceUrl":"https://www.vals.ai/benchmarks/vibe-code","observedAt":"2026-11-11"},
     {"modelId":"thinkingmachines/inkling","metric":"webdev_elo","value":1413.9528449856919,"unit":"elo","source":"lmarena","sourceUrl":"https://lmarena.ai/leaderboard/webdev","observedAt":"2026-11-26"},
+    {"modelId":"thinkingmachines/inkling-2-mini","metric":"epoch_gpqa_diamond","setting":"xHigh","value":0.8680555555555556,"unit":"ratio","source":"epoch","sourceUrl":"https://epoch.ai/benchmarks","observedAt":"2026-11-27"},
     {"modelId":"thinkingmachines/inkling-2-mini","metric":"livebench_browser","value":0.35700000000000004,"unit":"ratio","source":"livebench","sourceUrl":"https://livebench.ai/data/20261106/table.csv","observedAt":"2026-11-26"},
     {"modelId":"thinkingmachines/inkling-2-mini","metric":"livebench_coding","value":0.59,"unit":"ratio","source":"livebench","sourceUrl":"https://livebench.ai/data/20261106/table.csv","observedAt":"2026-11-26"},
     {"modelId":"thinkingmachines/inkling-2-mini","metric":"livebench_long_agentic","value":0.18899999999999997,"unit":"ratio","source":"livebench","sourceUrl":"https://livebench.ai/data/20261106/table.csv","observedAt":"2026-11-26"},
