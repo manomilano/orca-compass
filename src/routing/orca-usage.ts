@@ -3,17 +3,21 @@ import type { AgentId, AgentUsage, UsagePool } from '../types.js';
 import type { Runner } from '../system/run.js';
 import { poolKey } from './quota.js';
 
-// Orca is the only source of usage. `orca account list --json` returns the snapshot Orca already holds: it
-// never triggers a refresh. Orca refreshes on its own schedule (every few minutes while its window is in
-// use, far less often in the background), and stamps each provider's snapshot with `updatedAt`. That stamp
-// is what tells a fresh snapshot from the same one read again, even when the percentages did not move.
+// Orca is the only source of usage. `orca account list --json` returns the snapshot Orca holds, and asks Orca
+// to refresh it first when that cached data is stale (the command passes `refreshStaleUsage: true`); data
+// still fresh is returned as it is, so reading again does not force a new snapshot. Orca also refreshes on its
+// own schedule (every few minutes while its window is in use, far less often in the background), and stamps
+// each provider's snapshot with `updatedAt`. That stamp is what tells a fresh snapshot from the same one read
+// again, even when the percentages did not move.
 //
 // Not read: `rateLimits.opencodeGo` (the OpenCode Go subscription, which needs a cookie configured in Orca).
 // Supporting it means mapping it to the `opencode` agent and giving pools only to the models billed to that
 // subscription, whose provider prefix must first be checked against a live `opencode models` listing. Until
 // then OpenCode keeps "no usage window", and the key is ignored on purpose.
 
-// Orca has no usage entry for Muse; listing it reports that instead of "not reachable".
+// Muse is read like any provider with a session and a weekly window: Orca's rate limits have a `muse` entry
+// with both (seen `unavailable` on a machine where Muse is not set up). An Orca without that entry leaves Muse
+// `unknown` with "Orca reports no usage for muse", which listing it here gives instead of "not reachable".
 const agents = ['claude', 'codex', 'cursor', 'grok', 'antigravity', 'muse'] as const;
 
 interface OrcaPool {
@@ -149,7 +153,9 @@ function readAgent(agent: AgentId, rateLimits: Record<string, unknown>, account:
   }
   // Only an explicit 'unavailable' (signed out / CLI missing) excludes the agent. When a refresh fails Orca
   // reports 'error' and keeps its last good windows with their old updatedAt: still valid usage, only older,
-  // so they are marked retained. Anything else is unknown: a low-confidence candidate, never 0% used.
+  // so they are marked retained. Anything else is unknown: a low-confidence candidate, never 0% used. An
+  // 'error' with no window left to keep is such an unknown, with the account it was read for: a failed fetch,
+  // not a sign-out, so the ledger lets its last valid snapshot of that account stand in (see `mergeReading`).
   const kept = source.status === 'error' && Object.keys(pools).length > 0;
   const status = source.status === 'ok' || kept ? 'ok' : source.status === 'unavailable' ? 'unavailable' : 'unknown';
   const plan = text(source.planType);

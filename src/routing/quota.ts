@@ -46,8 +46,9 @@ export interface BufferOverride {
  * A model without a cost tier (Cursor auto, a preferred unranked model) reserves the largest row.
  */
 export function bufferTierOf(model: { modelId: string; family?: string }, costTier: Tier | null, config: ReservationConfig): BufferTier {
-  const mapped = config.modelTiers[model.modelId] ?? (model.family !== undefined ? config.modelTiers[model.family] : undefined);
-  return mapped ?? costTier ?? 'frontier';
+  // Own keys only: a model called `constructor` or `toString` must not read a row off Object.prototype.
+  const own = (key: string | undefined): BufferTier | undefined => (key !== undefined && Object.hasOwn(config.modelTiers, key) ? config.modelTiers[key] : undefined);
+  return own(model.modelId) ?? own(model.family) ?? costTier ?? 'frontier';
 }
 
 /**
@@ -115,6 +116,11 @@ export interface Reservation {
   startedAt?: number;
   /** When the worker was seen finished or cancelled; a snapshot taken after it reconciles the reservation. */
   endedAt?: number;
+  /**
+   * The end was inferred from a timeout (`pendingMinutes`, `maxRunningHours`), not reported by anyone. Later
+   * proof replaces it: a worker Orca confirms live is running again, an explicit end stands as given.
+   */
+  inferred?: true;
   /** The provider's snapshot time when the capacity was reserved. */
   snapshotAt: number | null;
   note?: string;
@@ -240,12 +246,23 @@ export function reservationsOn(reservations: readonly Reservation[], agent: Agen
   return reservations.filter((r) => {
     if (!isLive(r) || r.agent !== agent || r.scope !== scope || seen.has(r.id)) return false;
     if (r.dispatchId !== undefined && dispatches.has(r.dispatchId)) return false;
-    const settled = new Set((r.settled ?? []).map(poolKey));
-    if (!r.pools.some((p) => !settled.has(poolKey(p)) && drawsOn(p, target))) return false;
+    if (!countsOn(r, target)) return false;
     seen.add(r.id);
     if (r.dispatchId !== undefined) dispatches.add(r.dispatchId);
     return true;
   });
+}
+
+/**
+ * Whether a record still holds capacity on one window: a declared window it has not settled draws on it, and
+ * the window is not settled under its own name. Antigravity models declare a window (`bucket:gemini models 5h`)
+ * and its group (`bucket:gemini models`): once the 5-hour window is settled, the group key, still open for the
+ * weekly window, must not charge it a second way. The group keeps charging its other windows until all settle.
+ */
+export function countsOn(r: Pick<Reservation, 'pools' | 'settled'>, pool: Pick<UsagePool, 'name' | 'group'>): boolean {
+  const settled = new Set((r.settled ?? []).map(poolKey));
+  if (settled.has(poolKey(pool.name))) return false;
+  return r.pools.some((p) => !settled.has(poolKey(p)) && drawsOn(p, pool));
 }
 
 /** One bucket, rebuilt from the latest snapshot and the live reservation records. */
@@ -413,14 +430,27 @@ export const confirmedLiveDispatches = (workers: readonly WorkerState[]): Set<st
  *   snapshot's `updatedAt` (pure callers);
  * - a window Orca carries forward (see `CARRIED_WINDOWS`) whose value did not move also settles once a healthy
  *   snapshot that reported it is `CARRIED_SETTLE_MS` past the end;
+ * - a window listed without a valid percentage (null, not finite) was not read: it settles nothing, whatever
+ *   its time says;
  * - no window matches: the provider reported after the worker ended and has no such window.
  */
 function windowSettled(key: string, r: Reservation, u: AgentUsage & { updatedAt: number }, endedAt: number, settleMs: number): boolean {
   const after = (t: number, wait: number): boolean => t >= endedAt + wait && (r.snapshotAt === null || t > r.snapshotAt);
   const matching = Object.values(u.pools).filter((p) => drawsOn(key, p));
   if (matching.length === 0) return after(u.updatedAt, settleMs);
-  return matching.every((p) => after(p.observedAt ?? u.updatedAt, settleMs) ||
-    (isCarried(r.agent, u.source, p.name) && after(p.seenAt ?? u.updatedAt, Math.max(settleMs, CARRIED_SETTLE_MS))));
+  return matching.every((p) => validPercent(p.usedPercent) !== null && (after(p.observedAt ?? u.updatedAt, settleMs) ||
+    (isCarried(r.agent, u.source, p.name) && after(p.seenAt ?? u.updatedAt, Math.max(settleMs, CARRIED_SETTLE_MS)))));
+}
+
+/**
+ * Takes back an end that was only inferred from a timeout, on proof the worker is running: the record is
+ * `running` again and counts on every window, including those settled meanwhile. Any other record is returned
+ * as it is.
+ */
+export function revive(r: Reservation, now: number): Reservation {
+  if (!r.inferred) return r;
+  const { inferred: _inferred, endedAt: _endedAt, settled: _settled, note: _note, ...rest } = r;
+  return { ...rest, state: 'running', startedAt: r.startedAt ?? now };
 }
 
 /**
@@ -431,6 +461,8 @@ function windowSettled(key: string, r: Reservation, u: AgentUsage & { updatedAt:
  *   run, so it is held like a cancelled one until a fresh snapshot covers it.
  * - A running reservation older than `maxRunningHours` is closed the same way, unless its Dispatch is in
  *   `confirmedLive` (Orca reports it still running).
+ * - Both of these ends are marked `inferred`. A record with an inferred end whose Dispatch is in `confirmedLive`
+ *   is running again (see `revive`), even after a snapshot released it.
  * - A completed or cancelled reservation is settled window by window (see `windowSettled`), only by a
  *   readable, non-retained snapshot of its own provider and quota identity. The time is Orca's own: re-reading
  *   a cached snapshot never settles anything, and a fresh one settles even when it reports the same
@@ -453,12 +485,13 @@ export function reconcile(
   const out: Reservation[] = [];
   for (const original of list) {
     let r = original;
-    if (r.state === 'pending' && now - r.createdAt >= pendingMs) {
-      r = { ...r, state: 'cancelled_after_consumption', endedAt: r.createdAt + pendingMs, note: 'abandoned: the launch was never confirmed' };
-    }
     const confirmed = r.dispatchId !== undefined && confirmedLive?.has(r.dispatchId) === true;
+    if (confirmed) r = revive(r, now);
+    if (r.state === 'pending' && now - r.createdAt >= pendingMs) {
+      r = { ...r, state: 'cancelled_after_consumption', endedAt: r.createdAt + pendingMs, inferred: true, note: 'abandoned: the launch was never confirmed' };
+    }
     if (r.state === 'running' && !confirmed && now - (r.startedAt ?? r.createdAt) >= runningMs) {
-      r = { ...r, state: 'completed', endedAt: now, note: `closed: still running after ${config.maxRunningHours}h` };
+      r = { ...r, state: 'completed', endedAt: now, inferred: true, note: `closed: still running after ${config.maxRunningHours}h` };
     }
     if (r.state === 'completed' || r.state === 'cancelled_after_consumption') {
       const u = Object.hasOwn(usage, r.agent) ? usage[r.agent] : undefined;
@@ -487,13 +520,16 @@ export function reconcile(
 
 /**
  * Applies Orca's view of the workers to the reservations bound to them. `complete` says the list holds every
- * worker Orca knows, so a bound worker missing from it is gone.
+ * worker Orca knows, so a bound worker missing from it is gone. A record whose end was only inferred from a
+ * timeout is running again when Orca confirms its worker live; nothing else changes an ended record.
  */
 export function applyWorkerStates(list: readonly Reservation[], workers: readonly WorkerState[], now: number, complete: boolean): Reservation[] {
   const byId = new Map(workers.map((w) => [w.dispatchId, w]));
   return list.map((r) => {
-    if (!r.dispatchId || (r.state !== 'pending' && r.state !== 'running')) return r;
+    if (!r.dispatchId) return r;
     const w = byId.get(r.dispatchId);
+    if (r.inferred) return w !== undefined && isConfirmedLive(w) ? revive(r, now) : r;
+    if (r.state !== 'pending' && r.state !== 'running') return r;
     if (!w) return complete ? { ...r, state: 'completed' as const, endedAt: now, note: 'closed: Orca no longer reports this worker' } : r;
     if (w.outcome === 'succeeded') return { ...r, state: 'completed' as const, endedAt: now };
     // Any other settled outcome, an exited agent or a released terminal: it ran and is over.

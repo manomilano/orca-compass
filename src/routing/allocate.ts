@@ -4,7 +4,7 @@ import { modelFamily } from '../placements/tiers.js';
 import type { AgentId, AgentUsage, Config, Decision, Effort, Environment, PlacedAgent, RouteRequest } from '../types.js';
 import type { Runner } from '../system/run.js';
 import {
-  bufferEffortOf, bufferTierOf, isConfirmedLive, isLive, poolKey, scopeOf, type BufferEffort, type BufferTier, type Reservation, type WorkerState,
+  bufferEffortOf, bufferTierOf, isConfirmedLive, isLive, poolKey, revive, scopeOf, type BufferEffort, type BufferTier, type Reservation, type WorkerState,
 } from './quota.js';
 import { readOrcaWorkers } from './orca-workers.js';
 import {
@@ -149,12 +149,13 @@ export function syncReservations(
 }
 
 /**
- * Orca's worker states, asked for only when a reservation is bound to a Dispatch that may have changed, or when
- * the ledger is unreadable and its running workers may have to be reconstructed.
+ * Orca's worker states, asked for only when a reservation is bound to a Dispatch that may have changed (pending,
+ * running, or ended only by a timeout, which Orca may still prove wrong), or when the ledger is unreadable and
+ * its running workers may have to be reconstructed.
  */
 export async function workerStatesFor(run: Runner, dir: string = cacheDir()): Promise<Workers | undefined> {
   const state = readLedgerState(dir);
-  const bound = state.ledger.reservations.some((r) => r.dispatchId && (r.state === 'pending' || r.state === 'running'));
+  const bound = state.ledger.reservations.some((r) => r.dispatchId && (r.state === 'pending' || r.state === 'running' || r.inferred));
   return bound || state.corrupt !== undefined ? readOrcaWorkers(run) : undefined;
 }
 
@@ -226,11 +227,15 @@ function change(dir: string, q: Parameters<typeof findReservation>[1], apply: (r
   });
 }
 
-/** Binds a reservation to its worker's Dispatch and marks it running. The same record changes state: nothing is reserved twice. */
+/**
+ * Binds a reservation to its worker's Dispatch and marks it running. The same record changes state: nothing is
+ * reserved twice. A record whose end was only inferred from a timeout (abandoned as never confirmed, closed
+ * for running too long) is running again: the worker was just seen started.
+ */
 export function markRunning(q: { reservationId?: string; dispatchId: string; agent?: string; model?: string }, now: number, dir: string = cacheDir()): LifecycleChange {
   return change(dir, q, (r) => {
-    const bound = { ...r, dispatchId: q.dispatchId };
-    return r.state === 'pending' ? { ...bound, state: 'running', startedAt: now } : bound;
+    const bound = { ...revive(r, now), dispatchId: q.dispatchId };
+    return bound.state === 'pending' ? { ...bound, state: 'running', startedAt: now } : bound;
   });
 }
 

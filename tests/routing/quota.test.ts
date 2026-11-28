@@ -499,3 +499,115 @@ describe('running workers and retention', () => {
     expect(reservationsOn([w], 'claude', 'acct-a', 'session')).toEqual([w]);
   });
 });
+
+describe('final audit: settled windows, unread windows and inferred ends', () => {
+  const at = (t: number) => ({ observedAt: t, seenAt: t });
+
+  it('does not charge a settled Antigravity 5-hour window again through its group key', () => {
+    const g = { group: 'Gemini Models' };
+    // As the Antigravity adapter declares a Gemini model: the 5-hour window, the group, and the fallback names.
+    const declared = ['bucket:gemini models 5h', 'bucket:gemini models', 'session', 'weekly'];
+    const reading = (weeklyAt: number, dayAt: number, updatedAt: number) => usageOf('antigravity', [
+      pool('bucket:Gemini Models 5h', 40, { ...g, kind: 'session', windowMinutes: 300, ...at(NOW + 5 * MIN) }),
+      pool('bucket:Gemini Models', 10, { ...g, ...at(weeklyAt) }),
+      pool('bucket:Gemini Models 1d', 20, { ...g, windowMinutes: 1440, ...at(dayAt) }),
+    ], { updatedAt });
+    const reserved = (u: AgentUsage, list: Reservation[]) =>
+      Object.fromEntries(Object.values(u.pools).map((p) => [p.name, bucketQuota(u, p, list, config, u.updatedAt!).reserved]));
+    const done = worker({ agent: 'antigravity', state: 'completed', endedAt: NOW, pools: declared });
+    // While it runs, the worker counts once on every window of the group.
+    const first = reading(NOW - 5 * MIN, NOW - 5 * MIN, NOW + 5 * MIN);
+    expect(reserved(first, [{ ...done, state: 'running' }])).toEqual({ 'bucket:Gemini Models 5h': 2.5, 'bucket:Gemini Models': 2.5, 'bucket:Gemini Models 1d': 2.5 });
+    // Five minutes after it ended only the 5-hour window was read again; the weekly and the 1-day window were not.
+    const held = reconcile([done], { antigravity: first }, NOW + 5 * MIN, cfg);
+    expect(held[0]).toMatchObject({ state: 'completed', settled: ['bucket:gemini models 5h', 'session', 'weekly'] });
+    // The group key is still open for the weekly and the 1-day window, and charges only those.
+    expect(reserved(first, held)).toEqual({ 'bucket:Gemini Models 5h': 0, 'bucket:Gemini Models': 2.5, 'bucket:Gemini Models 1d': 2.5 });
+    expect(reservationsOn(held, 'antigravity', 'acct-a', first.pools['bucket:Gemini Models 5h'])).toEqual([]);
+    expect(reservationsOn(held, 'antigravity', 'acct-a', first.pools['bucket:Gemini Models 1d'])).toEqual(held);
+    // So the next Gemini worker is not charged the finished one's buffer on the 5-hour window.
+    const q = candidateQuota(first, declared, { tier: 'frontier', effort: 'medium' }, held, config, NOW + 5 * MIN);
+    expect(q.buckets.map((b) => [b.pool, b.reserved, b.workers, b.prospective])).toEqual([
+      ['bucket:Gemini Models 5h', 0, 0, 42.5], ['bucket:Gemini Models', 2.5, 1, 15], ['bucket:Gemini Models 1d', 2.5, 1, 25],
+    ]);
+    // The weekly window read, the 1-day one still not: the group stays open on both until all of it is covered.
+    const second = reading(NOW + 10 * MIN, NOW - 5 * MIN, NOW + 10 * MIN);
+    const still = reconcile(held, { antigravity: second }, NOW + 10 * MIN, cfg);
+    expect(still).toEqual(held);
+    expect(reserved(second, still)).toEqual({ 'bucket:Gemini Models 5h': 0, 'bucket:Gemini Models': 2.5, 'bucket:Gemini Models 1d': 2.5 });
+    const third = reading(NOW + 15 * MIN, NOW + 15 * MIN, NOW + 15 * MIN);
+    expect(reconcile(still, { antigravity: third }, NOW + 15 * MIN, cfg)[0].state).toBe('released');
+  });
+
+  it('settles nothing on a window listed without a valid percentage', () => {
+    const done = worker({ state: 'completed', endedAt: NOW, pools: ['session', 'weekly'] });
+    for (const unread of [null, Number.NaN, Number.POSITIVE_INFINITY, -1]) {
+      // A healthy, fresh snapshot that lists the weekly window but has no number for it.
+      const u = usageOf('claude', [pool('session', 10), pool('weekly', unread)], { updatedAt: NOW + 5 * MIN });
+      const held = reconcile([done], { claude: u }, NOW + 5 * MIN, cfg);
+      expect(held[0], String(unread)).toMatchObject({ state: 'completed', settled: ['session'] });
+      expect(isLive(held[0]), String(unread)).toBe(true);
+      // Time alone does not help: an hour of such snapshots leaves it standing.
+      const later = usageOf('claude', [pool('session', 10), pool('weekly', unread)], { updatedAt: NOW + 60 * MIN });
+      expect(reconcile(held, { claude: later }, NOW + 60 * MIN, cfg)[0].state, String(unread)).toBe('completed');
+    }
+    // Once the window is read, the same record is released; a valid 0% is a reading like any other.
+    const read = usageOf('claude', [pool('session', 10), pool('weekly', 41)], { updatedAt: NOW + 10 * MIN });
+    expect(reconcile([done], { claude: read }, NOW + 10 * MIN, cfg)[0].state).toBe('released');
+    const zero = usageOf('claude', [pool('session', 0), pool('weekly', 0)], { updatedAt: NOW + 10 * MIN });
+    expect(reconcile([done], { claude: zero }, NOW + 10 * MIN, cfg)[0].state).toBe('released');
+    // The 20-minute rule for a carried Claude window needs a number too, and still holds with one.
+    const fable = worker({ state: 'completed', endedAt: NOW, pools: ['fableweekly'] });
+    const tick = (value: number | null) => usageOf('claude', [
+      pool('fableWeekly', value, { observedAt: NOW - 30 * MIN, seenAt: NOW + CARRIED_SETTLE_MS }),
+    ], { updatedAt: NOW + CARRIED_SETTLE_MS, source: 'live-session' });
+    expect(reconcile([fable], { claude: tick(null) }, NOW + CARRIED_SETTLE_MS, cfg)).toEqual([fable]);
+    expect(reconcile([fable], { claude: tick(75) }, NOW + CARRIED_SETTLE_MS, cfg)[0].state).toBe('released');
+  });
+
+  it('reads modelTiers by own keys only, so a model named like an Object.prototype member cannot throw', () => {
+    for (const id of ['constructor', 'toString', 'hasOwnProperty', 'valueOf', '__proto__']) {
+      expect(bufferTierOf({ modelId: id }, 'daily', cfg), id).toBe('daily');
+      expect(bufferTierOf({ modelId: 'some-model', family: id }, null, cfg), id).toBe('frontier');
+      const tier = bufferTierOf({ modelId: id }, 'light', cfg);
+      expect(bufferFor(cfg, { agent: 'claude', pool: 'weekly', tier, effort: 'medium' }), id).toBe(1);
+    }
+    // A row the user really mapped under such a name still applies.
+    const mapped = { ...cfg, modelTiers: { constructor: 'minimal' as const } };
+    expect(bufferTierOf({ modelId: 'constructor' }, 'daily', mapped)).toBe('minimal');
+  });
+
+  it('marks an end inferred from a timeout, and takes it back when Orca confirms the worker live', () => {
+    const DAY = 24 * 3_600_000;
+    const usage = { claude: usageOf('claude', [pool('weekly', 40)]) };
+    const pending = worker({ state: 'pending', createdAt: NOW, snapshotAt: NOW });
+    expect(reconcile([pending], usage, NOW + 10 * MIN, cfg)[0]).toMatchObject({ state: 'cancelled_after_consumption', inferred: true, endedAt: NOW + 10 * MIN });
+    const running = worker({ createdAt: NOW, startedAt: NOW, snapshotAt: NOW, dispatchId: 'ctx_1', pools: ['session', 'weekly'] });
+    const closed = reconcile([running], usage, NOW + DAY, cfg);
+    expect(closed[0]).toMatchObject({ state: 'completed', inferred: true, endedAt: NOW + DAY, note: 'closed: still running after 24h' });
+    const live = [{ dispatchId: 'ctx_1', outcome: 'in_progress', liveness: 'live' }];
+    // Orca's worker list, and the confirmed-live set of a pure reconcile, both bring it back exactly as it was.
+    expect(applyWorkerStates(closed, live, NOW + DAY + MIN, true)).toEqual([running]);
+    expect(reconcile(closed, usage, NOW + DAY + MIN, cfg, new Set(['ctx_1']))).toEqual([running]);
+    // Also after windows were settled against the inferred end, and after a snapshot released the record.
+    expect(applyWorkerStates([{ ...closed[0], settled: ['weekly'] }], live, NOW + DAY + 6 * MIN, true)).toEqual([running]);
+    const fresh = { claude: usageOf('claude', [pool('weekly', 44)], { updatedAt: NOW + DAY + 5 * MIN }) };
+    const released = reconcile(closed, fresh, NOW + DAY + 5 * MIN, cfg);
+    expect(released[0]).toMatchObject({ state: 'released', inferred: true });
+    expect(weeklyOf(44, released).reserved).toBe(0);
+    const revived = applyWorkerStates(released, live, NOW + DAY + 6 * MIN, true);
+    expect(revived).toEqual([running]);
+    expect(weeklyOf(44, revived)).toMatchObject({ reserved: 2.5, workers: 1 });
+    expect(reconcile(released, fresh, NOW + DAY + 6 * MIN, cfg, new Set(['ctx_1']))).toEqual([running]);
+    // Only positive proof revives: an unverifiable, exited, released or unlisted worker leaves the inferred end standing.
+    for (const state of [{ outcome: 'in_progress', liveness: 'unverifiable' }, { outcome: 'succeeded', liveness: 'exited' }, { outcome: 'in_progress', liveness: 'live', terminalState: 'released' }]) {
+      expect(applyWorkerStates(closed, [{ dispatchId: 'ctx_1', ...state }], NOW + DAY + MIN, true), JSON.stringify(state)).toEqual(closed);
+    }
+    expect(applyWorkerStates(closed, [], NOW + DAY + MIN, true)).toEqual(closed);
+    expect(reconcile(closed, usage, NOW + DAY + MIN, cfg, new Set(['ctx_2']))).toEqual(closed);
+    // An end somebody reported is final, whatever the worker list says later.
+    const reported = worker({ state: 'completed', endedAt: NOW, dispatchId: 'ctx_1' });
+    expect(applyWorkerStates([reported], live, NOW + MIN, true)).toEqual([reported]);
+    expect(reconcile([reported], usage, NOW + MIN, cfg, new Set(['ctx_1']))).toEqual([reported]);
+  });
+});

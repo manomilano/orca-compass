@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG } from '../../src/config.js';
-import { markRunning, routeAndReserve, syncReservations, workerStatesFor } from '../../src/routing/allocate.js';
+import { endWorker, markRunning, routeAndReserve, syncReservations, workerStatesFor } from '../../src/routing/allocate.js';
 import { readOrcaWorkers } from '../../src/routing/orca-workers.js';
 import { LEDGER_FILE, readLedger } from '../../src/routing/reservations.js';
 import type { Runner } from '../../src/system/run.js';
@@ -116,5 +116,50 @@ describe('workers Orca confirms live', () => {
     const synced = syncReservations(env.usage, NOW, DEFAULT_CONFIG, dir, workers, { discoveries: env.discoveries });
     expect(synced.reservations).toMatchObject([{ state: 'running', dispatchId: 'ctx_1', agent: 'claude', model: 'claude-sonnet-5-5' }]);
     expect(synced.recovered).toContain('1 running reservation reconstructed');
+  });
+});
+
+describe('final audit: a worker closed only by the running limit', () => {
+  let dir: string;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'oc-workers-')); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  const env = { ...machineEnv(), discoveries: machineEnv().discoveries.filter((d) => d.agent === 'claude') };
+  const HOUR = 3_600_000;
+
+  it('is asked about again, and runs again once Orca lists it live', async () => {
+    const id = routeAndReserve({ tier: 'daily' }, env, DEFAULT_CONFIG, dir).reservation!.id;
+    markRunning({ reservationId: id, dispatchId: 'ctx_1' }, NOW, dir);
+    // Orca's worker list could not be read for a day: the 24-hour limit closes the record, as an inferred end.
+    const later = withUsageUpdatedAt(env, NOW + 25 * HOUR);
+    const closed = syncReservations(later.usage, NOW + 25 * HOUR, DEFAULT_CONFIG, dir).reservations[0];
+    expect(closed).toMatchObject({ id, state: 'completed', inferred: true, endedAt: NOW + 25 * HOUR });
+    // The next fresh snapshot even releases it.
+    const released = syncReservations(withUsageUpdatedAt(env, NOW + 25 * HOUR + 5 * 60_000).usage, NOW + 25 * HOUR + 5 * 60_000, DEFAULT_CONFIG, dir).reservations[0];
+    expect(released).toMatchObject({ state: 'released', inferred: true });
+    // The record is neither pending nor running, but its end is only inferred: Orca is still asked.
+    const asked = answering({ workers: [row('ctx_1', 'in_progress', 'live')], scope: { source: 'all' } });
+    const live = await workerStatesFor(asked.run, dir);
+    expect(asked.calls).toHaveLength(1);
+    expect(live).toMatchObject({ states: [{ dispatchId: 'ctx_1', liveness: 'live' }] });
+    const at = NOW + 25 * HOUR + 6 * 60_000;
+    const revived = syncReservations(withUsageUpdatedAt(env, at).usage, at, DEFAULT_CONFIG, dir, live).reservations[0];
+    expect(revived).toMatchObject({ id, state: 'running', dispatchId: 'ctx_1', startedAt: NOW });
+    for (const gone of ['inferred', 'endedAt', 'settled', 'note']) expect(revived, gone).not.toHaveProperty(gone);
+    expect(readLedger(dir).reservations[0]).toEqual(revived);
+    // It counts against the quota again, and stays running while Orca lists it live.
+    routeAndReserve({ tier: 'daily' }, { ...withUsageUpdatedAt(env, at), now: at }, DEFAULT_CONFIG, dir, { workers: live, dryRun: false });
+    expect(readLedger(dir).reservations.find((r) => r.id === id)!.state).toBe('running');
+  });
+
+  it('is not asked about once its end was reported', async () => {
+    const id = routeAndReserve({ tier: 'daily' }, env, DEFAULT_CONFIG, dir).reservation!.id;
+    markRunning({ reservationId: id, dispatchId: 'ctx_1' }, NOW, dir);
+    endWorker({ dispatchId: 'ctx_1' }, 'completed', NOW + 60_000, dir);
+    const asked = answering({ workers: [row('ctx_1', 'in_progress', 'live')], scope: { source: 'all' } });
+    expect(await workerStatesFor(asked.run, dir)).toBeUndefined();
+    expect(asked.calls).toEqual([]);
+    // And a worker list that still shows it live does not bring a reported end back.
+    const listed = { complete: true, states: [{ dispatchId: 'ctx_1', outcome: 'in_progress', liveness: 'live' }] };
+    expect(syncReservations(env.usage, NOW + 120_000, DEFAULT_CONFIG, dir, listed).reservations[0]).toMatchObject({ state: 'completed', endedAt: NOW + 60_000 });
   });
 });

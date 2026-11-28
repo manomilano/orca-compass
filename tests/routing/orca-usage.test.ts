@@ -400,3 +400,23 @@ describe('readOrcaUsage', () => {
     }
   });
 });
+
+describe('final audit: a failed fetch is not a sign-out', () => {
+  it('reads a provider error without any window as unknown usage of that account, apart from unavailable and from Orca being down', async () => {
+    const data = fixture();
+    Object.assign(data.result.rateLimits.claude, { status: 'error', error: 'Claude usage fetch failed', session: null, weekly: null, fableWeekly: null, monthly: null });
+    const usage = await readOrcaUsage(fake(JSON.stringify(data)));
+    // The account and scope are those of the healthy reading: the ledger can tell whose snapshot may stand in.
+    const healthy = (await readOrcaUsage(fake(fixtureText))).claude;
+    expect(usage.claude).toEqual({
+      agent: 'claude', status: 'unknown', pools: {}, account: healthy.account, scope: healthy.scope, updatedAt: 1793232000000, error: 'Claude usage fetch failed',
+    });
+    expect(usage.claude).not.toHaveProperty('unreachable');
+    expect(usage.claude).not.toHaveProperty('retained');
+    // A sign-out stays `unavailable`, which never lets a stored snapshot stand in.
+    Object.assign(data.result.rateLimits.claude, { status: 'unavailable', error: 'Not signed in' });
+    expect((await readOrcaUsage(fake(JSON.stringify(data)))).claude).toMatchObject({ status: 'unavailable', pools: {}, account: healthy.account, error: 'Not signed in' });
+    // The other providers are untouched by one provider's error.
+    expect(usage.codex.status).toBe('ok');
+  });
+});

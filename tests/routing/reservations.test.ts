@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG } from '../../src/config.js';
 import { bindDispatch, clearReservations, endWorker, markRunning, recoverReservations, routeAndReserve, syncReservations } from '../../src/routing/allocate.js';
-import { buildQuotaView, isLive, type Reservation, type WorkerState } from '../../src/routing/quota.js';
+import { buildQuotaView, candidateQuota, isLive, type Reservation, type WorkerState } from '../../src/routing/quota.js';
 import {
   CORRUPT_LEDGER_FILE, findReservation, LEDGER_FILE, LedgerError, LedgerLockError, LOCK_FILE, parseLedger, readLedger, syncLedger, withLedger,
 } from '../../src/routing/reservations.js';
@@ -628,5 +628,207 @@ describe('one reservation, one Dispatch', () => {
     expect(bindDispatch({ reservationId: id, dispatchId: 'ctx_7' }, dir)).toMatchObject({ from: 'pending', reservation: { state: 'pending', dispatchId: 'ctx_7' } });
     const workers = { complete: true, states: [{ dispatchId: 'ctx_7', outcome: 'in_progress', liveness: 'live' }] };
     expect(syncReservations(claudeOnly().usage, NOW + MIN, config, dir, workers).reservations[0]).toMatchObject({ state: 'running', startedAt: NOW + MIN });
+  });
+});
+
+describe('final audit: stored snapshots', () => {
+  const claudeAs = (account: string, patch: Partial<AgentUsage> = {}): Record<string, AgentUsage> =>
+    ({ claude: { ...claudeOnly(62).usage.claude, account, scope: `scope-${account}`, ...patch } });
+  const poolsAt = (weeklyUsed: number): AgentUsage['pools'] => claudeOnly(weeklyUsed).usage.claude.pools;
+  /** Orca answered for the account, but its fetch failed and it has no window left to keep (`error`, zero pools). */
+  const failedFetch = (account: string): Record<string, AgentUsage> =>
+    ({ claude: { agent: 'claude', status: 'unknown', pools: {}, account, scope: `scope-${account}`, error: 'Claude usage fetch failed' } });
+
+  it('drops the stored ungrouped session and weekly once Antigravity reports quota groups', () => {
+    const G = 'Gemini Models';
+    const window = (name: string, kind: 'session' | 'long', usedPercent: number, group?: string) =>
+      ({ name, kind, usedPercent, windowMinutes: kind === 'session' ? 300 : 10080, resetsAt: NOW + 3 * 3_600_000, ...(group ? { group } : {}) });
+    const reading = (updatedAt: number, pools: ReturnType<typeof window>[]): Record<string, AgentUsage> =>
+      ({ antigravity: { agent: 'antigravity', status: 'ok', updatedAt, account: 'G', scope: 'scope-G', pools: Object.fromEntries(pools.map((p) => [p.name, p])) } });
+    // An Orca without quota groups: only the tightest session and weekly across the groups, both nearly full.
+    syncReservations(reading(NOW, [window('session', 'session', 97), window('weekly', 'long', 97)]), NOW, config, dir);
+    const grouped = syncReservations(reading(NOW + 5 * MIN, [window('bucket:Gemini Models 5h', 'session', 0, G), window('bucket:Gemini Models', 'long', 0, G)]), NOW + 5 * MIN, config, dir);
+    expect(Object.keys(grouped.usage.antigravity.pools)).toEqual(['bucket:Gemini Models 5h', 'bucket:Gemini Models']);
+    expect(Object.keys(readLedger(dir).snapshots.antigravity.pools)).toEqual(['bucket:Gemini Models 5h', 'bucket:Gemini Models']);
+    // A Gemini model declares its group's windows and the fallback names: the empty group decides, not a stale 97%.
+    const declared = ['bucket:Gemini Models 5h', 'bucket:Gemini Models', 'session', 'weekly'];
+    const q = candidateQuota(grouped.usage.antigravity, declared, { tier: 'frontier', effort: 'medium' }, [], config, NOW + 5 * MIN);
+    expect(q).toMatchObject({ status: 'available', prospective: 2.5 });
+    expect(q.buckets.map((b) => [b.pool, b.reported])).toEqual([['bucket:Gemini Models 5h', 0], ['bucket:Gemini Models', 0]]);
+    // A grouped window missing from a later reading is still kept while it ages, as any window is.
+    const partial = syncReservations(reading(NOW + 10 * MIN, [window('bucket:Gemini Models 5h', 'session', 3, G)]), NOW + 10 * MIN, config, dir);
+    expect(Object.keys(partial.usage.antigravity.pools)).toEqual(['bucket:Gemini Models 5h', 'bucket:Gemini Models']);
+    expect(partial.usage.antigravity.pools['bucket:Gemini Models']).toMatchObject({ usedPercent: 0, seenAt: NOW + 5 * MIN });
+  });
+
+  it('keeps the stored session and weekly of a provider without quota groups when a reading misses them', () => {
+    syncReservations(claudeAs('A'), NOW, config, dir);
+    const { session: _session, weekly: _weekly, ...rest } = poolsAt(62);
+    const partial = syncReservations(claudeAs('A', { updatedAt: NOW + 5 * MIN, pools: rest }), NOW + 5 * MIN, config, dir);
+    expect(Object.keys(partial.usage.claude.pools).sort()).toEqual(['fableWeekly', 'session', 'weekly']);
+    expect(partial.usage.claude.pools.weekly).toMatchObject({ usedPercent: 62, seenAt: NOW });
+  });
+
+  it('keeps a known 100% blocking when one provider answers with a failed fetch for the same account', () => {
+    syncReservations(claudeAs('A', { pools: poolsAt(100) }), NOW, config, dir);
+    const failed = syncReservations(failedFetch('A'), NOW + 5 * MIN, config, dir);
+    expect(failed.usage.claude).toMatchObject({ status: 'ok', retained: true, standIn: true, updatedAt: NOW, account: 'A', scope: 'scope-A', error: 'Claude usage fetch failed' });
+    expect(failed.usage.claude.pools.weekly.usedPercent).toBe(100);
+    expect(readLedger(dir).snapshots.claude).toMatchObject({ account: 'A', updatedAt: NOW, pools: { weekly: { usedPercent: 100 } } });
+    // Routed on the failed reading itself: the exhausted weekly quota still blocks, instead of an unchecked route.
+    const d = routeAndReserve(daily, { ...claudeOnly(), now: NOW + 5 * MIN, usage: failedFetch('A') }, config, dir);
+    expect(d.status).toBe('decide');
+    expect(d.options).toMatchObject({ wait: { until: expect.any(Number) }, use: [] });
+    expect(d.reasons[0]).toContain('weekly 100% prospective, exhausted');
+    expect(stored()).toEqual([]);
+  });
+
+  it('routes on the stored snapshot at medium confidence after a failed fetch, and settles nothing on it', () => {
+    syncReservations(claudeAs('A'), NOW, config, dir);
+    const d = routeAndReserve(daily, { ...claudeOnly(), now: NOW + 5 * MIN, usage: failedFetch('A') }, config, dir);
+    expect(d).toMatchObject({ status: 'ok', confidence: 'medium' });
+    expect(d.quota!.buckets.find((b) => b.pool === 'weekly')).toMatchObject({ reported: 62, prospective: 63.5, snapshotAt: NOW });
+    expect(stored()[0]).toMatchObject({ scope: 'scope-A', account: 'A', snapshotAt: NOW });
+    endWorker({ reservationId: d.reservation!.id }, 'completed', NOW + 6 * MIN, dir);
+    // The stand-in is the old snapshot: however long the fetch keeps failing, it covers nothing the worker used.
+    expect(syncReservations(failedFetch('A'), NOW + 40 * MIN, config, dir).reservations[0].state).toBe('completed');
+    expect(syncReservations(claudeAs('A', { updatedAt: NOW + 45 * MIN }), NOW + 45 * MIN, config, dir).reservations[0].state).toBe('released');
+  });
+
+  it('still forgets the stored snapshot on a sign-out or another account, failed fetch or not', () => {
+    syncReservations(claudeAs('A'), NOW, config, dir);
+    // Another account's failed fetch: A's snapshot is not B's quota.
+    expect(syncReservations(failedFetch('B'), NOW + MIN, config, dir).usage.claude).toMatchObject({ status: 'unknown', pools: {}, account: 'B' });
+    expect(readLedger(dir).snapshots).toEqual({});
+    syncReservations(claudeAs('A', { updatedAt: NOW + 2 * MIN }), NOW + 2 * MIN, config, dir);
+    const signedOut: Record<string, AgentUsage> = { claude: { agent: 'claude', status: 'unavailable', pools: {}, account: 'A', error: 'Not signed in' } };
+    expect(syncReservations(signedOut, NOW + 3 * MIN, config, dir).usage.claude).toMatchObject({ status: 'unavailable', pools: {} });
+    expect(readLedger(dir).snapshots).toEqual({});
+    // With nothing stored, a failed fetch is plain unknown usage.
+    expect(syncReservations(failedFetch('A'), NOW + 4 * MIN, config, dir).usage.claude).toMatchObject({ status: 'unknown', pools: {}, error: 'Claude usage fetch failed' });
+  });
+
+  it('ignores a reading of the previous account that is older than the stored snapshot', () => {
+    syncReservations(claudeAs('B', { updatedAt: NOW + 5 * MIN, pools: poolsAt(99) }), NOW + 5 * MIN, config, dir);
+    // A process that read account A (2% used) before the switch to B was stored, and commits only now.
+    const stale = claudeAs('A', { updatedAt: NOW, pools: poolsAt(2) });
+    const late = syncReservations(stale, NOW + 6 * MIN, config, dir);
+    expect(late.usage.claude).toMatchObject({ account: 'B', scope: 'scope-B', updatedAt: NOW + 5 * MIN });
+    expect(late.usage.claude.pools.weekly.usedPercent).toBe(99);
+    expect(readLedger(dir).snapshots.claude).toMatchObject({ account: 'B', updatedAt: NOW + 5 * MIN, pools: { weekly: { usedPercent: 99 } } });
+    // Routing on that stale reading decides on B's 99%, and reserves nothing on A.
+    const d = routeAndReserve(daily, { ...claudeOnly(2), now: NOW + 6 * MIN, usage: stale }, config, dir);
+    expect(d.status).toBe('decide');
+    expect(d.options!.use[0].quota!.buckets.find((b) => b.pool === 'weekly')).toMatchObject({ reported: 99 });
+    // A reading of A taken after B's snapshot is a real switch back.
+    const back = syncReservations(claudeAs('A', { updatedAt: NOW + 7 * MIN, pools: poolsAt(2) }), NOW + 7 * MIN, config, dir);
+    expect(back.usage.claude).toMatchObject({ account: 'A', updatedAt: NOW + 7 * MIN });
+    expect(readLedger(dir).snapshots.claude).toMatchObject({ account: 'A', pools: { weekly: { usedPercent: 2 } } });
+  });
+
+  it('moves a live record to the scope and plan its account discloses later, and never to another plan', () => {
+    // The first reading of the account reports no plan: its scope is the plan-less one.
+    const noPlan = claudeAs('A', { scope: 'scope-A-noplan' });
+    const id = routeAndReserve(daily, { ...claudeOnly(62), usage: noPlan }, config, dir).reservation!.id;
+    expect(stored()[0]).toMatchObject({ id, scope: 'scope-A-noplan', account: 'A' });
+    expect(stored()[0]).not.toHaveProperty('plan');
+    const disclosed = syncReservations(claudeAs('A', { plan: 'max_5x', scope: 'scope-A-max', updatedAt: NOW + 5 * MIN }), NOW + 5 * MIN, config, dir);
+    expect(disclosed.reservations[0]).toMatchObject({ id, state: 'pending', scope: 'scope-A-max', plan: 'max_5x', account: 'A' });
+    expect(stored()[0]).toMatchObject({ scope: 'scope-A-max', plan: 'max_5x' });
+    // It still counts, on the bucket the account has now.
+    expect(buildQuotaView(disclosed.usage, disclosed.reservations, config, NOW + 5 * MIN).buckets.find((b) => b.pool === 'weekly'))
+      .toMatchObject({ id: 'claude:scope-A-max:weekly', reported: 62, reserved: 1.5, workers: 1 });
+    // The plan really changes: the record names max_5x and stays on it.
+    const changed = syncReservations(claudeAs('A', { plan: 'pro', scope: 'scope-A-pro', updatedAt: NOW + 6 * MIN }), NOW + 6 * MIN, config, dir);
+    expect(changed.reservations[0]).toMatchObject({ scope: 'scope-A-max', plan: 'max_5x' });
+    expect(buildQuotaView(changed.usage, changed.reservations, config, NOW + 6 * MIN).buckets.find((b) => b.pool === 'weekly')).toMatchObject({ reserved: 0, workers: 0 });
+  });
+
+  it('never moves a record reserved on one account to the snapshot of another, or of an unknown, account', () => {
+    const record = (id: string, scope: string, account?: string): Reservation => ({
+      id, state: 'running', agent: 'claude', model: 'claude-sonnet-5-5', tier: 'daily', effort: 'medium', scope, pools: ['weekly'],
+      ...(account ? { account } : {}), createdAt: NOW, startedAt: NOW, snapshotAt: null,
+    });
+    withLedger(dir, (ledger) => {
+      ledger.reservations.push(record('rsv_default_b', 'default', 'B'), record('rsv_noplan_b', 'scope-B-noplan', 'B'), record('rsv_default', 'default'));
+    });
+    const scopes = (s: ReturnType<typeof syncReservations>) => Object.fromEntries(s.reservations.map((r) => [r.id, r.scope]));
+    // A snapshot that names no account (a version 1 ledger) is not known to be B's: only the record without an account adopts it.
+    const anonymous: Record<string, AgentUsage> = { claude: { ...claudeOnly(62).usage.claude, scope: 'scope-x', plan: 'max_5x' } };
+    expect(scopes(syncReservations(anonymous, NOW + MIN, config, dir))).toEqual({ rsv_default_b: 'default', rsv_noplan_b: 'scope-B-noplan', rsv_default: 'scope-x' });
+    // Account A discloses a plan: B's records stay where they are.
+    const other = syncReservations(claudeAs('A', { plan: 'max_5x', updatedAt: NOW + 2 * MIN }), NOW + 2 * MIN, config, dir);
+    expect(scopes(other)).toEqual({ rsv_default_b: 'default', rsv_noplan_b: 'scope-B-noplan', rsv_default: 'scope-x' });
+    expect(other.reservations.find((r) => r.id === 'rsv_noplan_b')).not.toHaveProperty('plan');
+    // B itself comes back with a plan: its records follow it.
+    const own = syncReservations(claudeAs('B', { plan: 'pro', scope: 'scope-B-pro', updatedAt: NOW + 3 * MIN }), NOW + 3 * MIN, config, dir);
+    expect(scopes(own)).toEqual({ rsv_default_b: 'scope-B-pro', rsv_noplan_b: 'scope-B-pro', rsv_default: 'scope-x' });
+    expect(own.reservations.find((r) => r.id === 'rsv_noplan_b')).toMatchObject({ plan: 'pro' });
+  });
+});
+
+describe('final audit: ends inferred from a timeout', () => {
+  const launch = { agent: 'claude', model: 'claude-sonnet-5-5' };
+
+  it('releases an abandoned pending record at once when it turns out to have failed before launch', () => {
+    const env = claudeOnly();
+    const id = routeAndReserve(daily, env, config, dir).reservation!.id;
+    // Nobody confirmed the launch within pendingMinutes: held like a cancelled worker, as an inferred end.
+    const abandoned = syncReservations(env.usage, NOW + 11 * MIN, config, dir).reservations[0];
+    expect(abandoned).toMatchObject({ id, state: 'cancelled_after_consumption', inferred: true, endedAt: NOW + 10 * MIN });
+    expect(stored()[0]).toMatchObject({ state: 'cancelled_after_consumption', inferred: true });
+    expect(weekly({ ...env, now: NOW + 11 * MIN }, stored()).reserved).toBe(1.5);
+    const change = endWorker({ reservationId: id }, 'failed-before-launch', NOW + 12 * MIN, dir, 'the agent refused the model at launch');
+    expect(change).toMatchObject({ from: 'cancelled_after_consumption', reservation: { state: 'failed_before_launch', endedAt: NOW + 12 * MIN, note: 'the agent refused the model at launch' } });
+    expect(change.reservation).not.toHaveProperty('inferred');
+    expect(weekly({ ...env, now: NOW + 12 * MIN }, stored())).toMatchObject({ reserved: 0, workers: 0, effective: 50 });
+    // On the same cached snapshot the capacity is free for the next route.
+    expect(routeAndReserve(daily, { ...env, now: NOW + 12 * MIN }, config, dir).quota!.buckets.find((b) => b.pool === 'weekly')).toMatchObject({ reserved: 0, prospective: 51.5 });
+  });
+
+  it('replaces an inferred end by the explicit one, and counts settled windows again until a later snapshot', () => {
+    const env = claudeOnly();
+    const id = routeAndReserve(daily, env, config, dir).reservation!.id;
+    syncReservations(env.usage, NOW + 11 * MIN, config, dir);
+    withLedger(dir, (ledger) => { ledger.reservations[0] = { ...ledger.reservations[0], settled: ['weekly'] }; });
+    const change = endWorker({ reservationId: id }, 'completed', NOW + 30 * MIN, dir);
+    expect(change.reservation).toMatchObject({ state: 'completed', endedAt: NOW + 30 * MIN });
+    for (const gone of ['inferred', 'settled', 'note']) expect(change.reservation, gone).not.toHaveProperty(gone);
+    // A snapshot from before the real end no longer covers it; one after it does.
+    expect(syncReservations(withUsageUpdatedAt(env, NOW + 20 * MIN).usage, NOW + 31 * MIN, config, dir).reservations[0].state).toBe('completed');
+    expect(syncReservations(withUsageUpdatedAt(env, NOW + 32 * MIN).usage, NOW + 32 * MIN, config, dir).reservations[0].state).toBe('released');
+  });
+
+  it('runs an abandoned pending record again when its launch is confirmed late', () => {
+    const env = claudeOnly();
+    const id = routeAndReserve(daily, env, config, dir).reservation!.id;
+    syncReservations(env.usage, NOW + 11 * MIN, config, dir);
+    // verify names the Dispatch and the launch only: with nothing pending, the abandoned record is the worker's.
+    expect(findReservation(stored(), { dispatchId: 'ctx_7', ...launch })?.id).toBe(id);
+    const change = markRunning({ dispatchId: 'ctx_7', ...launch }, NOW + 12 * MIN, dir);
+    expect(change).toMatchObject({ from: 'cancelled_after_consumption', reservation: { id, state: 'running', dispatchId: 'ctx_7', startedAt: NOW + 12 * MIN } });
+    for (const gone of ['inferred', 'endedAt', 'note']) expect(change.reservation, gone).not.toHaveProperty(gone);
+    expect(weekly({ ...env, now: NOW + 12 * MIN }, stored())).toMatchObject({ reserved: 1.5, workers: 1 });
+    // A fresh snapshot does not release it now: it is running.
+    expect(syncReservations(withUsageUpdatedAt(env, NOW + 15 * MIN).usage, NOW + 15 * MIN, config, dir).reservations[0].state).toBe('running');
+  });
+
+  it('prefers a pending record over an abandoned one, and never matches one that was released or ended explicitly', () => {
+    const record = (id: string, createdAt: number, patch: Partial<Reservation>): Reservation =>
+      ({ id, state: 'pending', ...launch, tier: 'daily', effort: 'medium', scope: 'default', pools: ['weekly'], createdAt, snapshotAt: NOW, ...patch });
+    const abandoned = record('rsv_old', NOW, { state: 'cancelled_after_consumption', inferred: true, endedAt: NOW + 10 * MIN });
+    const pending = record('rsv_new', NOW + 20 * MIN, {});
+    expect(findReservation([abandoned, pending], launch)?.id).toBe('rsv_new');
+    expect(findReservation([abandoned], launch)?.id).toBe('rsv_old');
+    expect(findReservation([{ ...abandoned, state: 'released' }], launch)).toBeUndefined();
+    expect(findReservation([record('rsv_cancelled', NOW, { state: 'cancelled_after_consumption', endedAt: NOW + MIN })], launch)).toBeUndefined();
+    expect(findReservation([{ ...abandoned, dispatchId: 'ctx_1' }], launch)).toBeUndefined();
+  });
+
+  it('keeps the inferred mark in the ledger file, and drops anything else under that key', () => {
+    const record = { id: 'rsv_1', state: 'completed', ...launch, tier: 'daily', effort: 'medium', scope: 'default', pools: ['weekly'], createdAt: NOW, endedAt: NOW + MIN, snapshotAt: NOW };
+    const parsed = parseLedger(JSON.stringify({ version: 2, reservations: [{ ...record, inferred: true }, { ...record, id: 'rsv_2', inferred: 'yes' }], snapshots: {} })).reservations;
+    expect(parsed[0]).toMatchObject({ id: 'rsv_1', inferred: true });
+    expect(parsed[1]).not.toHaveProperty('inferred');
   });
 });

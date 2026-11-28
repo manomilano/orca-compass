@@ -75,6 +75,7 @@ function parseReservation(v: unknown): Reservation | undefined {
     createdAt,
     ...(finite(v.startedAt) ? { startedAt: v.startedAt } : {}),
     ...(finite(v.endedAt) ? { endedAt: v.endedAt } : {}),
+    ...(v.inferred === true ? { inferred: true as const } : {}),
     snapshotAt: finite(v.snapshotAt) ? v.snapshotAt : null,
     ...(typeof v.note === 'string' ? { note: v.note } : {}),
   };
@@ -381,6 +382,9 @@ export const newReservationId = (): string => `rsv_${randomBytes(6).toString('he
 const sameReading = (a: UsagePool, b: UsagePool): boolean =>
   a.usedPercent === b.usedPercent && a.resetsAt === b.resetsAt && a.windowMinutes === b.windowMinutes;
 
+/** Orca's tightest-across-groups windows, read only while a provider reports no quota groups (see orca-usage.ts). */
+const AGGREGATE_WINDOWS: readonly string[] = ['session', 'weekly'];
+
 /**
  * The snapshot to store for a readable reading, merged window by window into `prev` (same quota identity) or
  * stored whole (`prev` undefined).
@@ -389,6 +393,9 @@ const sameReading = (a: UsagePool, b: UsagePool): boolean =>
  *   seen; never stored, its observation time is unknown (0).
  * - A window missing from the reading is kept while its reset is ahead (or unknown) and the last reading of it
  *   is at most four times `usageStaleMinutes` old.
+ * - Not kept: the ungrouped `session` and `weekly` of a reading without quota groups, once a reading reports
+ *   grouped windows (Antigravity). They were only the tightest value across the groups, and the groups now say
+ *   it themselves; kept, a stale aggregate would stand against a group that is empty again.
  * - A window that already carries `seenAt` comes from an earlier merge and is kept as it is.
  */
 function mergedSnapshot(u: AgentUsage & { updatedAt: number }, prev: AgentUsage | undefined, now: number, config: Config): AgentUsage {
@@ -411,8 +418,10 @@ function mergedSnapshot(u: AgentUsage & { updatedAt: number }, prev: AgentUsage 
     pools[name] = { ...base, observedAt, seenAt: at };
   }
   const keepMs = 4 * config.usageStaleMinutes * 60_000;
+  const grouped = Object.values(u.pools).some((p) => p.group !== undefined);
   for (const old of Object.values(prev?.pools ?? {})) {
     if (Object.values(pools).some((p) => poolKey(p.name) === poolKey(old.name))) continue;
+    if (grouped && old.group === undefined && AGGREGATE_WINDOWS.includes(poolKey(old.name))) continue;
     const seen = old.seenAt ?? prev!.updatedAt ?? 0;
     if ((old.resetsAt !== null && old.resetsAt <= now) || now - seen > keepMs) continue;
     pools[old.name] = old;
@@ -434,9 +443,11 @@ function mergedSnapshot(u: AgentUsage & { updatedAt: number }, prev: AgentUsage 
  * | Reading | Ledger | Returned |
  * | --- | --- | --- |
  * | unreachable (or a stand-in), same account | none | stored, `retained` and `standIn`, with the error |
- * | reachable, another account | stored snapshot deleted, then as below | |
+ * | reachable, another account, older than stored (both timed) | none | stored |
+ * | reachable, another account, otherwise | stored snapshot deleted, then as below | |
  * | `unavailable` | stored snapshot deleted | the reading |
- * | `unknown`, or `ok` without `updatedAt` | none | the reading |
+ * | `unknown` without windows, same account (a failed fetch) | none | stored, `retained` and `standIn`, with the error |
+ * | any other `unknown`, or `ok` without `updatedAt` | none | the reading |
  * | `ok`, same scope, not newer than stored | none | stored |
  * | `ok`, same scope, newer | merged window by window | merged |
  * | `ok`, another scope (plan changed), not older | replaced whole | new |
@@ -444,10 +455,15 @@ function mergedSnapshot(u: AgentUsage & { updatedAt: number }, prev: AgentUsage 
  *
  * A reading of the stored account without a plan inherits the stored plan and scope. `retained` and `error`
  * of the reading are copied onto what is returned.
+ *
+ * A failed fetch is Orca answering for the account with `error` and no windows left to keep. Unlike
+ * `unavailable` (signed out, no credentials) it says nothing about the quota, so the last valid snapshot of
+ * that account keeps standing: a bucket known to be at 100% stays blocked.
  */
 function mergeReading(ledger: Ledger, agent: AgentId, u: AgentUsage, now: number, config: Config): AgentUsage {
   let stored = Object.hasOwn(ledger.snapshots, agent) ? ledger.snapshots[agent] : undefined;
   const otherAccount = (s: AgentUsage): boolean => s.account !== u.account;
+  const standingIn = (s: AgentUsage): AgentUsage => ({ ...s, retained: true, standIn: true, ...(u.error ? { error: u.error } : {}) });
   if (u.standIn || (u.unreachable && u.status === 'unknown')) {
     // An unreadable agent of a known other account gets nothing of the stored one, and a stand-in whose
     // snapshot is gone from the ledger meanwhile (another account, signed out) is unknown again.
@@ -456,9 +472,12 @@ function mergeReading(ledger: Ledger, agent: AgentId, u: AgentUsage, now: number
         ? { agent, status: 'unknown', pools: {}, ...(u.account !== undefined ? { account: u.account } : {}), ...(u.error ? { error: u.error } : {}), unreachable: true }
         : u;
     }
-    return { ...stored, retained: true, standIn: true, ...(u.error ? { error: u.error } : {}) };
+    return standingIn(stored);
   }
   if (stored && otherAccount(stored)) {
+    // A reading of the previous account that was still in flight when the newer snapshot was stored: it
+    // neither deletes nor replaces it.
+    if (u.updatedAt !== undefined && stored.updatedAt !== undefined && u.updatedAt < stored.updatedAt) return stored;
     delete ledger.snapshots[agent];
     stored = undefined;
   }
@@ -466,6 +485,7 @@ function mergeReading(ledger: Ledger, agent: AgentId, u: AgentUsage, now: number
     delete ledger.snapshots[agent];
     return u;
   }
+  if (stored && u.account !== undefined && u.status === 'unknown' && Object.keys(u.pools).length === 0) return standingIn(stored);
   if (u.status !== 'ok' || u.updatedAt === undefined) return u;
   const view = (s: AgentUsage): AgentUsage => ({ ...s, ...(u.retained ? { retained: true } : {}), ...(u.error ? { error: u.error } : {}) });
   let reading = u as AgentUsage & { updatedAt: number };
@@ -490,7 +510,9 @@ function mergeReading(ledger: Ledger, agent: AgentId, u: AgentUsage, now: number
  * - when an agent could not be read, the stored snapshot of the same account stands in, marked `retained`:
  *   valid usage is never replaced by nothing, and a retained snapshot never reconciles a reservation;
  * - a live record reserved under the `default` scope (usage was unknown) adopts the agent's stored scope,
- *   unless it was reserved on another account;
+ *   unless it was reserved on an account the stored snapshot is not known to be of;
+ * - a live record reserved on the stored account before Orca reported its plan moves to the scope and plan
+ *   the account has now. A record that names a plan never moves to another one;
  * - the reservations are brought up to date with the workers Orca reports and with the snapshots. A running
  *   worker Orca confirms live is never closed for running too long.
  */
@@ -505,9 +527,13 @@ export function syncLedger(
   for (const [agent, u] of Object.entries(usage)) merged[agent] = mergeReading(ledger, agent, u, now, config);
   let list: readonly Reservation[] = ledger.reservations.map((r) => {
     const s = Object.hasOwn(ledger.snapshots, r.agent) ? ledger.snapshots[r.agent] : undefined;
-    if (!isLive(r) || r.scope !== 'default' || s?.scope === undefined || s.scope === 'default') return r;
-    if (r.account !== undefined && s.account !== undefined && r.account !== s.account) return r;
-    return { ...r, scope: s.scope };
+    if (!isLive(r) || s?.scope === undefined || s.scope === 'default' || r.scope === s.scope) return r;
+    // Reserved on a known account: it follows that account only, never one that is unknown or another.
+    if (r.account !== undefined && r.account !== s.account) return r;
+    if (r.scope === 'default') return { ...r, scope: s.scope };
+    // The account disclosed its plan after the capacity was reserved: the same quota under its full identity.
+    if (r.account !== undefined && r.plan === undefined && s.plan !== undefined) return { ...r, scope: s.scope, plan: s.plan };
+    return r;
   });
   if (workers) list = applyWorkerStates(list, workers.states, now, workers.complete);
   ledger.reservations = reconcile(list, merged, now, config.reservations, workers ? confirmedLiveDispatches(workers.states) : undefined);
@@ -522,16 +548,24 @@ export type ReleaseOutcome = 'completed' | 'cancelled' | 'failed-before-launch';
 /**
  * Ends a reservation: `failed-before-launch` consumed nothing and stops counting at once; `completed` and
  * `cancelled` keep counting until a fresh snapshot covers what the worker used. Idempotent.
+ *
+ * An end that was only inferred from a timeout gives way to the explicit one, as of now: a pending record
+ * abandoned after `pendingMinutes` that turns out to have failed before launch is released at once, and
+ * windows settled against the inferred end count again until a snapshot after the real one covers them.
  */
 export function endReservation(r: Reservation, outcome: ReleaseOutcome, now: number, note?: string): Reservation {
-  if (!isLive(r) || r.state === 'completed' || r.state === 'cancelled_after_consumption') return r;
+  const ended = r.state === 'completed' || r.state === 'cancelled_after_consumption';
+  if (!isLive(r) || (ended && !r.inferred)) return r;
   const state: ReservationState = outcome === 'failed-before-launch' ? 'failed_before_launch' : outcome === 'cancelled' ? 'cancelled_after_consumption' : 'completed';
-  return { ...r, state, endedAt: now, ...(note ? { note } : {}) };
+  if (!r.inferred) return { ...r, state, endedAt: now, ...(note ? { note } : {}) };
+  const { inferred: _inferred, settled: _settled, note: _note, ...rest } = r;
+  return { ...rest, state, endedAt: now, ...(note ? { note } : {}) };
 }
 
 /**
  * The reservation a Dispatch belongs to: the one already bound to it, else the given id, else the oldest
- * unbound pending reservation for the same agent and launch model.
+ * unbound pending reservation for the same agent and launch model. When none is pending, the oldest unbound
+ * one abandoned after `pendingMinutes` and still counting: its launch was merely confirmed late.
  */
 export function findReservation(list: readonly Reservation[], q: { reservationId?: string; dispatchId?: string; agent?: string; model?: string }): Reservation | undefined {
   if (q.dispatchId) {
@@ -540,9 +574,10 @@ export function findReservation(list: readonly Reservation[], q: { reservationId
   }
   if (q.reservationId) return list.find((r) => r.id === q.reservationId);
   if (!q.agent || !q.model) return undefined;
-  return list
-    .filter((r) => r.state === 'pending' && !r.dispatchId && r.agent === q.agent && r.model === q.model)
-    .sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1))[0];
+  const unbound = list
+    .filter((r) => !r.dispatchId && r.agent === q.agent && r.model === q.model)
+    .sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1));
+  return unbound.find((r) => r.state === 'pending') ?? unbound.find((r) => r.inferred && r.state === 'cancelled_after_consumption');
 }
 
 /** Replaces the record with the same id. */
