@@ -1647,3 +1647,198 @@ describe('declared windows', () => {
     expect(p.decision.quota!.buckets.map((b) => b.id)).toEqual(['claude:scope_1:weekly']);
   });
 });
+
+describe('final audit: the hard cutoff, preferred variants and last resorts', () => {
+  const claudeAt = (weeklyUsed: number) => withPool(env, 'claude', 'weekly', { usedPercent: weeklyUsed });
+
+  it('#30 lets the route whose reservation stays below the 90% hard cutoff through, and no route that crosses it', () => {
+    // 88.2% reported: Sonnet's 1.5 pp ends at 89.7%, Opus (2 pp) at 90.2% and Fable (2.5 pp) at 90.7%.
+    const e = claudeAt(88.2);
+    const d = route({ tier: 'advanced', agents: claude }, e, DEFAULT_CONFIG);
+    expect(d).toMatchObject({ status: 'ok', route: { agent: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' }, quota: { status: 'caution' } });
+    expect(d.quota!.prospective).toBeCloseTo(89.7, 10);
+    expect(d.warnings).toEqual(['weekly quota would be 89.7% used with this worker (caution); resets in 14h']);
+    expect(d.alternatives.map((a) => [a.model, a.quota!.status, Number(a.quota!.prospective!.toFixed(2))])).toEqual([
+      ['claude-opus-5-5', 'high', 90.2], ['claude-fable-5-1', 'high', 90.7],
+    ]);
+    // Without Sonnet nothing stays below 90%: no route is taken automatically, however little it crosses by.
+    const cut = route({ tier: 'advanced', agents: claude }, e, { ...DEFAULT_CONFIG, banModels: ['claude-sonnet'] });
+    expect(cut.status).toBe('decide');
+    expect(cut.route).toBeUndefined();
+    expect(cut.options!.use.map((u) => [u.model, u.quota!.status])).toEqual([['claude-opus-5-5', 'high'], ['claude-fable-5-1', 'high']]);
+    expect(cut.reasons[0]).toMatch(/^no eligible route is below the 90% risk threshold: claude claude-opus-5-5 \(weekly 90\.2% prospective, high risk\)/);
+    // Exactly at the cutoff counts as crossing it: 88.5% + 1.5 pp = 90%.
+    expect(route({ tier: 'advanced', agents: claude }, claudeAt(88.5), DEFAULT_CONFIG)).toMatchObject({ status: 'decide' });
+    expect(route({ tier: 'advanced', agents: claude }, claudeAt(88.49), DEFAULT_CONFIG)).toMatchObject({ status: 'ok', route: { model: 'claude-sonnet-5-5' } });
+  });
+
+  describe('a preference naming an effort variant', () => {
+    const prefer = (model: string, extra: Partial<Config> = {}): Config => ({ ...DEFAULT_CONFIG, pins: { daily: { agent: 'cursor', model } }, ...extra });
+    const daily = { tier: 'daily' as const };
+
+    it('launches that variant and reserves at its effort', () => {
+      const high = planRoute(daily, env, prefer('claude-sonnet-5-5-high'));
+      expect(high.decision).toMatchObject({
+        status: 'ok', route: { agent: 'cursor', model: 'claude-sonnet-5-5-high', effort: null },
+        launchArgs: ['--agent', 'cursor', '--model', 'claude-sonnet-5-5-high'],
+        effort: { source: 'tier-default', target: 'medium', resolved: 'high', applied: 'model-id' },
+      });
+      expect(high.decision.reasons).toContain('preferred route, available');
+      expect(high.decision.reasons).toContain('effort: high, encoded in the model id named by your preference; medium wanted from tier default');
+      expect(high.decision.warnings).toEqual([]);
+      // The reservation is in the high column of the Daily row (1.75 pp), not the tier default's medium (1.5 pp).
+      expect(high.reserve).toMatchObject({ agent: 'cursor', model: 'claude-sonnet-5-5-high', tier: 'daily', effort: 'high' });
+      expect(bucketOf(high.decision, 'bucket:Other Models')).toMatchObject({ buffer: DEFAULT_CONFIG.reservations.buffers.daily.high, prospective: 8 });
+      // The model is not also listed as its own alternative.
+      expect(high.decision.alternatives.map((a) => a.model)).not.toContain('claude-sonnet-5-5-medium');
+      expect(high.decision.reasons.find((line) => line.startsWith('next best:'))).not.toContain('claude-sonnet-5-5');
+    });
+
+    it('leaves a preference for the base id, or for the variant the plan picks anyway, as it was', () => {
+      const base = planRoute(daily, env, prefer('claude-sonnet-5-5'));
+      expect(base.decision).toMatchObject({ route: { agent: 'cursor', model: 'claude-sonnet-5-5-medium' }, effort: { resolved: 'medium', applied: 'model-id' } });
+      expect(base.decision.reasons).toContain('effort: medium from tier default, chosen through the model id');
+      expect(base.reserve).toMatchObject({ model: 'claude-sonnet-5-5-medium', effort: 'medium' });
+      const same = planRoute(daily, env, prefer('claude-sonnet-5-5-medium'));
+      expect(same.decision.route).toEqual(base.decision.route);
+      expect(same.decision.reasons).toEqual(base.decision.reasons);
+      expect(same.reserve).toEqual(base.reserve);
+    });
+
+    it('is skipped with a warning when it conflicts with --effort or is below --demand, and the model still routes at the planned effort', () => {
+      const low = route({ ...daily, agents: ['cursor'], effort: 'low' }, env, prefer('claude-sonnet-5-5-high'));
+      expect(low.warnings).toContain('preferred cursor claude-sonnet-5-5-high skipped: runs at effort high encoded in claude-sonnet-5-5-high, not the requested low');
+      expect(low).toMatchObject({ status: 'ok', route: { agent: 'cursor', model: 'claude-sonnet-5-5-low' }, effort: { source: 'explicit', target: 'low', resolved: 'low' } });
+      const demanded = route({ ...daily, agents: ['cursor'], demand: 'exceptional' }, env, prefer('claude-sonnet-5-5-low'));
+      expect(demanded.warnings).toContain('preferred cursor claude-sonnet-5-5-low skipped: runs at effort low encoded in claude-sonnet-5-5-low, below xhigh needed for the exceptional demand');
+      expect(demanded).toMatchObject({ status: 'ok', route: { agent: 'cursor', model: 'claude-sonnet-5-5-xhigh' }, effort: { target: 'xhigh', resolved: 'xhigh' } });
+      // An explicit effort the variant agrees with, and a variant at or above the demand, are taken without a warning.
+      expect(route({ ...daily, effort: 'high' }, env, prefer('claude-sonnet-5-5-high'))).toMatchObject({ route: { model: 'claude-sonnet-5-5-high' }, warnings: [] });
+      const above = route({ ...daily, demand: 'high' }, env, prefer('claude-sonnet-5-5-xhigh'));
+      expect(above).toMatchObject({ route: { model: 'claude-sonnet-5-5-xhigh' }, effort: { resolved: 'xhigh' }, warnings: [] });
+      expect(above.reasons).toContain('effort: xhigh, encoded in the model id named by your preference; high wanted from high effort demand (balanced policy)');
+    });
+
+    it('is checked against the limit at its own effort, and offered once as the preferred USE option when held', () => {
+      // 88% reported: the planned medium (1.5 pp) stays below the 90% limit, the preferred high (1.75 pp) does not.
+      const near = withPool(env, 'cursor', 'bucket:Other Models', { usedPercent: 88.25 });
+      const d = route({ ...daily, agents: ['cursor'] }, near, prefer('claude-sonnet-5-5-high'));
+      expect(d.warnings).toContain('preferred cursor claude-sonnet-5-5-high skipped: Other Models would be 90% used with this worker (limit 90%); resets in 22d');
+      // Automatic routing goes on with the model at the planned effort.
+      expect(d).toMatchObject({ status: 'ok', route: { agent: 'cursor', model: 'claude-sonnet-5-5-medium' }, quota: { status: 'caution', prospective: 89.75 } });
+      // Nothing automatic left: the preferred variant is the model's one USE option, first in the list.
+      const tight = withPool(env, 'cursor', 'bucket:Other Models', { usedPercent: 93 });
+      const held = route({ ...daily, agents: ['cursor'] }, tight, prefer('claude-sonnet-5-5-high'));
+      expect(held.status).toBe('decide');
+      expect(held.options!.use.map((u) => [u.model, u.preferred ?? false])).toEqual([
+        ['claude-sonnet-5-5-high', true], ['claude-opus-5-5-medium', false], ['claude-fable-5-1-medium', false],
+      ]);
+      expect(held.options!.use[0]).toMatchObject({ use: '--use cursor/claude-sonnet-5-5-high', reason: 'preferred route, Other Models 94.75% prospective is at or above the 90% preference limit' });
+      // Taking it with --use launches the same variant.
+      const used = route({ ...daily, agents: ['cursor'], use: { agent: 'cursor', model: 'claude-sonnet-5-5-high' } }, tight, prefer('claude-sonnet-5-5-high'));
+      expect(used).toMatchObject({ status: 'ok', route: { model: 'claude-sonnet-5-5-high' }, effort: { resolved: 'high' } });
+    });
+  });
+
+  describe('a preference and a fully reserved quota', () => {
+    const terra = (preferRiskLimit: number): Config => ({ ...DEFAULT_CONFIG, preferRiskLimit, pins: { daily: { agent: 'codex', model: 'gpt-6.1-terra' } } });
+    const codexAt = (weeklyUsed: number) => withPool(env, 'codex', 'weekly', { usedPercent: weeklyUsed });
+
+    it('never takes the preferred route onto it, however high preferRiskLimit is set', () => {
+      // 99% reported: with this worker's 1.5 pp the weekly quota would be fully reserved.
+      for (const limit of [101, 150, 1000]) {
+        const d = route({ tier: 'daily' }, codexAt(99), terra(limit));
+        expect(d.route?.agent, String(limit)).toBe('cursor');
+        expect(d.warnings, String(limit)).toContain(`preferred codex gpt-6.1-terra skipped: weekly would be 100% used with this worker (limit 100%: preferRiskLimit ${limit}% never takes a fully reserved quota); resets in 5d`);
+      }
+      // With nothing else to route to, it is the Orchestrator's call: WAIT or USE.
+      const alone = route({ tier: 'daily', agents: ['codex'] }, codexAt(99), terra(150));
+      expect(alone.status).toBe('decide');
+      expect(alone.route).toBeUndefined();
+      expect(alone.options!.wait).toMatchObject({ until: expect.any(Number) });
+      expect(alone.options!.use.map((u) => [u.model, u.quota!.status])).toContainEqual(['gpt-6.1-terra', 'reserved']);
+      const used = route({ tier: 'daily', agents: ['codex'], use: { agent: 'codex', model: 'gpt-6.1-terra' } }, codexAt(99), terra(150));
+      expect(used).toMatchObject({ status: 'ok', route: { agent: 'codex', model: 'gpt-6.1-terra' }, quota: { status: 'reserved' } });
+    });
+
+    it('holds when the quota is full through other workers\' reservations rather than reported usage', () => {
+      const workers: Reservation[] = [1, 2].map((n) => ({
+        id: `rsv_${n}`, state: 'running', agent: 'codex', model: 'gpt-6-astra', tier: 'frontier', effort: 'xhigh', scope: 'default', pools: ['weekly'], createdAt: env.now, snapshotAt: env.now,
+      }));
+      // 92% reported + 2 × 3.5 pp reserved + 1.5 pp for this worker = 100.5%.
+      const d = route({ tier: 'daily' }, { ...codexAt(92), reservations: workers }, terra(150));
+      expect(d.route?.agent).toBe('cursor');
+      expect(d.warnings.some((w) => w.startsWith('preferred codex gpt-6.1-terra skipped: weekly would be 100% used with this worker'))).toBe(true);
+    });
+
+    it('still takes it in the high-risk range below 100% when the limit allows that', () => {
+      for (const limit of [100, 150]) {
+        const d = route({ tier: 'daily' }, codexAt(97), terra(limit));
+        expect(d, String(limit)).toMatchObject({ status: 'ok', route: { agent: 'codex', model: 'gpt-6.1-terra' }, quota: { status: 'high', prospective: 98.5 } });
+      }
+      // The limit itself is unchanged below 100%.
+      expect(route({ tier: 'daily' }, codexAt(89), terra(90)).warnings).toContain('preferred codex gpt-6.1-terra skipped: weekly would be 90.5% used with this worker (limit 90%); resets in 5d');
+    });
+  });
+
+  describe('a last-resort agent that cannot take the job automatically', () => {
+    // Codex as the last resort, with a usage window, so it can be at high risk.
+    const lastCodex: Config = { ...DEFAULT_CONFIG, lastResortAgents: ['codex'] };
+    const onlyCodex = { tier: 'daily' as const, excludeAgents: ['claude', 'cursor'] };
+
+    it('hands its WAIT and USE to the Orchestrator instead of answering that nothing can take the job', () => {
+      const tight = withPool(env, 'codex', 'weekly', { usedPercent: 93 });
+      const d = route(onlyCodex, tight, lastCodex);
+      expect(d.status).toBe('decide');
+      expect(d.options!.wait).toMatchObject({ until: expect.any(Number) });
+      expect(d.options!.use.length).toBeGreaterThan(0);
+      expect(d.options!.use.every((u) => u.agent === 'codex' && u.lastResort === true)).toBe(true);
+      expect(d.options!.use[0]).toMatchObject({ model: 'gpt-6.1-terra', use: '--use codex/gpt-6.1-terra' });
+      expect(d.reasons).toContain('USE: codex gpt-6.1-terra with --use codex/gpt-6.1-terra (weekly 94.5% prospective, high risk)');
+      expect(d.warnings).toContain('codex is a last-resort agent (lastResortAgents), offered as nothing else can take the job');
+      // Below the threshold it is simply used, as before.
+      const free = route(onlyCodex, env, lastCodex);
+      expect(free).toMatchObject({ status: 'ok', route: { agent: 'codex' } });
+      expect(free.warnings.some((w) => w.startsWith('codex is a last-resort agent (lastResortAgents), used as nothing else can take it'))).toBe(true);
+      // Actually exhausted, it has only a WAIT to offer: still the Orchestrator's decision.
+      const full = route(onlyCodex, withPool(env, 'codex', 'weekly', { usedPercent: 100 }), lastCodex);
+      expect(full).toMatchObject({ status: 'decide', options: { use: [] } });
+      expect(full.warnings).toContain('codex is a last-resort agent (lastResortAgents), offered as nothing else can take the job');
+    });
+
+    it('keeps the first answer when the last resort adds nothing', () => {
+      // No usable agent at all: none, with or without the last resort.
+      expect(route({ tier: 'daily', excludeAgents: ['claude', 'cursor', 'codex'] }, env, lastCodex).status).toBe('none');
+    });
+  });
+
+  it('lists a last resort appended to the USE options in the text reasons too, before the skipped line', () => {
+    const metaOf = (id: string) => env.discoveries.flatMap((d) => d.models).find((m) => m.modelId === id)!.meta;
+    const withOc: Environment = placed({
+      ...env,
+      discoveries: [...env.discoveries, {
+        agent: 'opencode', installed: true,
+        models: [{
+          agent: 'opencode', modelId: 'claude-fable-5-1', meta: metaOf('claude-fable-5-1'), efforts: [], effortSource: 'orca',
+          launch: { kind: 'flag', model: 'openrouter/anthropic/claude-fable-5.1' }, poolNames: [], billing: 'pay per use through openrouter',
+        }],
+      }],
+    });
+    const risky = withPool(onlyModels(withOc, 'claude', ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1']), 'claude', 'fableWeekly', { usedPercent: 95 });
+    const d = route({ needs: fableNeeds, excludeAgents: ['codex', 'cursor'] }, risky, DEFAULT_CONFIG);
+    expect(d.status).toBe('decide');
+    expect(d.options!.use.map((u) => [u.agent, u.lastResort ?? false])).toEqual([['claude', false], ['opencode', true]]);
+    const lines = d.reasons;
+    const first = d.options!.use[0];
+    const own = lines.indexOf(`USE: claude claude-fable-5-1 with --use claude/claude-fable-5-1 (${first.reason})`);
+    expect(first.reason).toMatch(/prospective, high risk$/);
+    const last = lines.indexOf('USE: opencode openrouter/anthropic/claude-fable-5.1 with --use opencode/openrouter/anthropic/claude-fable-5.1 (last-resort agent (lastResortAgents): pay per use through openrouter)');
+    const skipped = lines.findIndex((line) => line.startsWith('skipped: '));
+    expect(own).toBeGreaterThanOrEqual(0);
+    // Right after the other USE line, ahead of LOWER and of the skipped list.
+    expect(last).toBe(own + 1);
+    expect(skipped).toBeGreaterThan(last);
+    // Every USE option has exactly one line.
+    expect(lines.filter((line) => line.startsWith('USE: '))).toHaveLength(d.options!.use.length);
+  });
+});
