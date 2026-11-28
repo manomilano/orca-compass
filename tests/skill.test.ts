@@ -23,7 +23,7 @@ const commands = [...new Set(spans.filter((s) => s.startsWith('orcacompass ')))]
 const PLACEHOLDERS: Record<string, string[]> = {
   '<id>...': ['codex'], '<id>': ['codex'], '<tier>': ['daily'], '<agent>': ['codex'], '<model>': ['gpt-6.1-terra'],
   '[model]': [], '<percent>': ['80'], '<model-or-family>...': ['gpt-6.1-terra'], '<entry>...': ['gpt-6.1-terra'],
-  '<dispatchId>': ['ctx_1'],
+  '<dispatchId>': ['ctx_1'], '<reservation.id>': ['rsv_000000000000'],
 };
 // Named in prose without being a complete call from an agent: these exit 1 with this explanation.
 const NOT_RUN_AS_WRITTEN: Record<string, RegExp> = {
@@ -131,7 +131,13 @@ describe('SKILL.md', () => {
     expect(Array.isArray(d.launchArgs)).toBe(true);
     expect(d.effort).toHaveProperty('applied');
     for (const field of ['tier', 'blended', 'source']) expect((d.quality as { cost: object }).cost, field).toHaveProperty(field);
-    named('waitUntil');
+    for (const field of ['quota', 'reservation']) {
+      named(field);
+      expect(d, field).toHaveProperty(field);
+    }
+    // What the Skill reads when the decision comes back to the coordinator.
+    for (const field of ['options', 'reported', 'reserved', 'prospective', 'shortfall']) named(field);
+    expect((d.quota as { buckets: object[] }).buckets[0]).toMatchObject({ reported: expect.any(Number), reserved: expect.any(Number), effective: expect.any(Number), buffer: expect.any(Number), prospective: expect.any(Number) });
   });
 
   it('reads fields the setup output has', async () => {
@@ -150,7 +156,7 @@ describe('SKILL.md', () => {
       named(field);
       expect(tier, field).toHaveProperty(field);
     }
-    expect((tier.options as object[])[0]).toHaveProperty('onPacePercent');
+    expect((tier.options as object[])[0]).toHaveProperty('usagePercent');
   });
 
   it('reads fields and verdicts the verify output has', async () => {

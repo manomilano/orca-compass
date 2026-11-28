@@ -5,7 +5,6 @@
     "daily": { "agent": "claude", "model": "claude-sonnet-5-5" }
   },
   "tierOverrides": { "grok-4.7": "advanced" },
-  "thresholds": { "longPercent": 95, "sessionPercent": 90 },
   "defaultEffort": {
     "light": "low",
     "daily": "medium",
@@ -13,13 +12,25 @@
     "frontier": "high"
   },
   "costBands": [1, 5, 12],
-  "handoutMinutes": 10,
-  "handoutPercent": 5,
   "evidenceTtlHours": 24,
   "usageStaleMinutes": 30,
   "excludeNoZdr": false,
   "cursorAuto": true,
-  "preferRiskLimit": 100,
-  "usageRiskLimit": 90,
+  "preferRiskLimit": 90,
+  "riskThresholds": { "cautionPercent": 85, "highPercent": 90 },
+  "reservations": {
+    "buffers": {
+      "minimal": { "low": 0.5, "medium": 0.5, "high": 0.75, "xhigh": 1 },
+      "light": { "low": 0.5, "medium": 1, "high": 1.25, "xhigh": 1.5 },
+      "daily": { "low": 1, "medium": 1.5, "high": 1.75, "xhigh": 2 },
+      "advanced": { "low": 1.5, "medium": 2, "high": 2.5, "xhigh": 3 },
+      "frontier": { "low": 2, "medium": 2.5, "high": 3, "xhigh": 3.5 }
+    },
+    "overrides": [],
+    "modelTiers": {},
+    "pendingMinutes": 10,
+    "settleSeconds": 60,
+    "maxRunningHours": 24
+  },
   "banModels": []
 }

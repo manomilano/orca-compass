@@ -4,8 +4,9 @@ import type { Readable, Writable } from 'node:stream';
 import {
   applyAgentChoice, DEFAULT_CONFIG, isChosen, parsePercent, setAgentChoice, setBans, setPin, setPreferRiskLimit, updateConfigFile, type AgentChoice,
 } from './config.js';
-import { agentNotFamily, agentSkipReason, banMatches, enabledInOrca, launchIds, route } from './routing/router.js';
-import { TIERS, type AgentId, type Config, type Effort, type Environment, type Preference, type Risk, type Tier } from './types.js';
+import { agentNotFamily, agentSkipReason, banMatches, enabledInOrca, isPreferredRoute, launchIds, route } from './routing/router.js';
+import type { CandidateQuota } from './routing/quota.js';
+import { TIERS, type AgentId, type Config, type Effort, type Environment, type Preference, type Tier } from './types.js';
 import { configPath } from './paths.js';
 
 // `orcacompass setup`: four questions (agents, favorites, bans, summary) in a terminal, and the same
@@ -37,9 +38,11 @@ export interface TierOption {
   /** The id to prefer: `orcacompass prefer <tier> <agent> <model>`. */
   model: string;
   blocked: boolean;
-  /** Where the route's usage is heading (used% / elapsed fraction of the window); null when unknown. */
-  onPacePercent: number | null;
+  /** The route's highest prospective usage (reported + reserved + this worker's buffer) across its quotas; null when unknown. */
+  usagePercent: number | null;
   reason: string;
+  /** Set on the pick when benchmark data is missing on a needed axis, so task coverage could not be verified. */
+  note?: string;
 }
 
 export interface TierChoice {
@@ -80,24 +83,26 @@ function baseModel(env: Environment, agent: AgentId, launched: string): string {
   return d?.models.find((m) => launchIds(m).includes(launched))?.modelId ?? launched;
 }
 
-const pace = (risk: Risk | null | undefined): number | null => (risk ? Math.round(risk.projectedPercent) : null);
+const usageOf = (quota: CandidateQuota | null | undefined): number | null => (quota?.prospective == null ? null : Math.round(quota.prospective));
 
 function tierChoice(tier: Tier, env: Environment, config: Config): TierChoice {
-  const d = route({ tier, noDowngrade: true }, env, config);
-  // Cheaper covering picks belong here; structural upgrades still belong to another tier.
-  const own = !d.upgraded;
+  const d = route({ tier }, env, config);
+  // Cheaper covering picks belong here; structural upgrades still belong to another tier, unless the tier's
+  // own preference names the route.
+  const own = !d.upgraded || isPreferredRoute(d, config.pins[tier], env);
   const options: TierOption[] = [];
   if (own && d.route) {
     const prefix = `${d.route.agent} ${d.route.model}: `;
     const reason = d.reasons[0] ?? '';
     options.push({
-      agent: d.route.agent, model: baseModel(env, d.route.agent, d.route.model), blocked: false, onPacePercent: pace(d.risk),
+      agent: d.route.agent, model: baseModel(env, d.route.agent, d.route.model), blocked: false, usagePercent: usageOf(d.quota),
       reason: reason.startsWith(prefix) ? reason.slice(prefix.length) : reason,
+      ...(d.coverageNote ? { note: d.coverageNote } : {}),
     });
   }
   if (own) {
     for (const a of d.alternatives) {
-      options.push({ agent: a.agent, model: baseModel(env, a.agent, a.model), blocked: a.blocked, onPacePercent: pace(a.risk), reason: a.reason });
+      options.push({ agent: a.agent, model: baseModel(env, a.agent, a.model), blocked: a.blocked, usagePercent: usageOf(a.quota), reason: a.reason });
     }
   }
   return {
@@ -151,7 +156,7 @@ class Canceled extends Error {}
 
 const TIER_NAMES: Record<Tier, string> = { light: 'Light', daily: 'Daily', advanced: 'Advanced', frontier: 'Frontier' };
 const prefLabel = (p: Preference | undefined | null): string => (!p ? 'none' : p.model ? `${p.agent} ${p.model}` : `${p.agent} (its best model)`);
-const paceLabel = (o: TierOption): string => (o.blocked ? 'blocked' : o.onPacePercent === null ? 'usage unknown' : `on pace for ${o.onPacePercent}%`);
+const paceLabel = (o: TierOption): string => (o.blocked ? 'quota exhausted' : o.usagePercent === null ? 'usage unknown' : `${o.usagePercent}% used with one more worker`);
 const samePin = (a: Preference | undefined, b: Preference | undefined): boolean => a?.agent === b?.agent && a?.model === b?.model;
 const sameList = (a: readonly string[] | undefined, b: readonly string[] | undefined): boolean => JSON.stringify(a) === JSON.stringify(b);
 
@@ -257,9 +262,9 @@ export async function setupWizard(term: Terminal, env: Environment, config: Conf
     say();
     say('2/4  Favorite routes (optional)');
     const limitNote = config.preferRiskLimit === DEFAULT_CONFIG.preferRiskLimit ? 'the default' : `the default is ${DEFAULT_CONFIG.preferRiskLimit}%`;
-    say('An available, unblocked favorite is used for its tier. Above');
-    say(`${config.preferRiskLimit}% (${limitNote}) projected usage, a known within-limit alternative replaces it.`);
-    say('If none exists, the favorite is retained with a warning. Without a favorite, the route with the most room wins.');
+    say('A favorite is used for its tier while its usage, counting reserved workers and one more,');
+    say(`stays below ${config.preferRiskLimit}% (${limitNote}) on every quota it draws on. At or above it, routing goes on`);
+    say('without the favorite. Without a favorite, the quota with the most room left decides.');
     const pins: Partial<Record<Tier, Preference>> = { ...config.pins };
     let riskLimit = config.preferRiskLimit;
     if (await yesNo('Set favorites?', Object.keys(config.pins).length > 0)) {
@@ -273,6 +278,7 @@ export async function setupWizard(term: Terminal, env: Environment, config: Conf
           continue;
         }
         for (const line of table(t.options.map((o, i) => [String(i + 1), `${o.agent} ${o.model}`, paceLabel(o)]))) say(line);
+        for (const [i, o] of t.options.entries()) if (o.note) say(`  note on ${i + 1}: ${o.note}`);
         for (;;) {
           const a = await ask(`Favorite for ${TIER_NAMES[tier]}? Number, 0 for none [${pins[tier] ? 'keep' : 'none'}]: `);
           if (a === '') break;
@@ -291,7 +297,7 @@ export async function setupWizard(term: Terminal, env: Environment, config: Conf
       }
       if (Object.keys(pins).length > 0) {
         for (;;) {
-          const a = await ask(`Skip a favorite when it is on pace for more than what percent? [${riskLimit}]: `);
+          const a = await ask(`Skip a favorite when its usage would reach what percent? [${riskLimit}]: `);
           const n = a === '' ? riskLimit : parsePercent(a);
           if (n !== undefined) {
             riskLimit = n;
@@ -350,7 +356,7 @@ export async function setupWizard(term: Terminal, env: Environment, config: Conf
     if (unused.length > 0) say(`Not used: ${unused.map((v) => `${v.agent} (${v.reason!.split(': ')[0]})`).join(', ')}`);
     const favs = TIERS.filter((t) => pins[t]).map((t) => `${TIER_NAMES[t]} ${prefLabel(pins[t])}`);
     say(favs.length > 0
-      ? `Favorites: ${favs.join('; ')}; above ${riskLimit}%, switch only to a known within-limit alternative`
+      ? `Favorites: ${favs.join('; ')}; used while their usage stays below ${riskLimit}%`
       : 'Favorites: none; every tier takes the route with the most room');
     say(`Never used: ${bans.join(', ') || 'nothing'}`);
     say('Example routes:');
@@ -361,6 +367,7 @@ export async function setupWizard(term: Terminal, env: Environment, config: Conf
         ? d.downgraded ? ` (downgraded to ${d.tier})` : d.upgraded ? ` (upgraded to ${d.tier})` : ` (${d.tier} cost tier)`
         : '';
       say(`  ${tier.padEnd(8)}  ${r ? `${r.agent} · ${r.model}${r.effort ? ` · ${r.effort}` : ''}${moved}` : 'no route'}`);
+      if (d.coverageNote) say(`  ${' '.repeat(8)}  note: ${d.coverageNote}`);
       for (const w of d.warnings) say(`  ${' '.repeat(8)}  warning: ${w}`);
     }
 

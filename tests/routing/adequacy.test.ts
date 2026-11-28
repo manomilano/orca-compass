@@ -30,10 +30,28 @@ describe('adequacy', () => {
     expect(coverage(profile('claude-fable-5-2'), needs)).toMatchObject({ covers: true, shortfall: 0, overshoot: 3 });
     expect(coverage(profile('claude-haiku-5-5'), needsFromTier('daily')).shortfall).toBe(1);
   });
-  it('ignores an unranked axis only for min', () => {
+  it('ignores an unranked axis only for min and treats missing needed benchmarks as unknown rather than shortfall', () => {
     const composer = profile('composer-2-5');
-    expect(coverage(composer, { coding: 'low', agentic: 'min', reasoning: 'min' })).toMatchObject({ covers: true, shortfall: 0 });
-    expect(coverage(composer, { coding: 'low', agentic: 'low', reasoning: 'min' })).toMatchObject({ covers: false, shortfall: 2, below: [{ axis: 'agentic', score: null, cut: 35 }] });
+    expect(coverage(composer, { coding: 'low', agentic: 'min', reasoning: 'min' })).toMatchObject({ covers: true, shortfall: 0, below: [], unknown: [] });
+    expect(coverage(composer, { coding: 'low', agentic: 'low', reasoning: 'min' })).toMatchObject({ covers: null, shortfall: 0, below: [], unknown: ['agentic'] });
+    // Measured shortfall on a ranked axis still reports shortfall without adding artificial steps for unknown axes.
+    expect(coverage(composer, { coding: 'high', agentic: 'low', reasoning: 'min' }, snapshot.bands)).toMatchObject({
+      covers: false, shortfall: 1, below: [{ axis: 'coding', score: 80, cut: 84 }], unknown: ['agentic'],
+    });
+  });
+  it('treats fully unranked models as unknown coverage with zero shortfall across all tiers including light', () => {
+    const mystery = profile('mystery-9');
+    expect(coverage(mystery, needsFromTier('frontier'), snapshot.bands)).toEqual({
+      covers: null, shortfall: 0, overshoot: 0, below: [], unknown: ['coding', 'agentic', 'reasoning'],
+    });
+    expect(coverage(mystery, needsFromTier('light'), snapshot.bands)).toEqual({
+      covers: null, shortfall: 0, overshoot: 0, below: [], unknown: ['coding', 'agentic', 'reasoning'],
+    });
+    expect(coverage(mystery, { coding: 'high', agentic: 'min', reasoning: 'min' }, snapshot.bands)).toEqual({
+      covers: null, shortfall: 0, overshoot: 0, below: [], unknown: ['coding'],
+    });
+    expect(jobEvidence(mystery, needsFromTier('light'))).toBe('unranked');
+    expect(jobEvidence(mystery, needsFromTier('frontier'))).toBe('unranked');
   });
   it('uses the weakest evidence only among needed axes', () => {
     const p = profile('claude-fable-5-2');

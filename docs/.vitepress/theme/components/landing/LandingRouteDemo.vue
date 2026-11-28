@@ -32,8 +32,9 @@ const needs = `{
   "launchArgs": ["--agent", "claude", "--model", "claude-sonnet-5-5", "--effort", "medium"]
 }`
 const readable = `daily → claude · claude-sonnet-5-5 · medium (high confidence)
-  claude claude-sonnet-5-5: weekly 40% used, 62% of window elapsed (headroom 34%) → on pace for 65% before reset in 2d
-  cost: daily ($4.00/M blended, maker price)`
+  claude claude-sonnet-5-5: weekly 40% reported + 1.5 pp reserved (1 worker) + 1.5 pp for this worker = 43% prospective (available), resets in 2d
+  cost: daily ($4.00/M blended, maker price)
+  reserved rsv_3f9a1c2b7d10: weekly +1.5 pp; after worker-start run: orcacompass verify --dispatch <id> --reservation rsv_3f9a1c2b7d10`
 </script>
 
 <template>
@@ -69,7 +70,7 @@ const readable = `daily → claude · claude-sonnet-5-5 · medium (high confiden
           <CommandBlock command="orcacompass route --tier advanced" label="Read an advanced request in plain text" :output="readable" output-label="Illustrative output excerpt · README example" />
           <ol class="demo-notes">
             <li><strong>Capability and cost</strong><p>This advanced request finds a daily-cost route covering its needs.</p></li>
-            <li><strong>Usage in context</strong><p>Headroom accounts for usage pace and recent hand-outs.</p></li>
+            <li><strong>Usage in context</strong><p>Reported usage, what running workers reserve, and this worker's own share add up per quota. Nothing is forecast.</p></li>
             <li><strong>Your result will vary</strong><p>Your installed models and current usage determine the recommendation.</p></li>
           </ol>
         </div>

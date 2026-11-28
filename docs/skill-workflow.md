@@ -31,13 +31,16 @@ setting:
    `orcacompass agents disable|enable <id>...`. An added agent whose Orca
    setting is `no` also needs enabling in Orca's settings.
 2. **Favorites:** for each tier show `pick`, `preferred`, and `options`
-   (agent, model, `onPacePercent`, `blocked`). Apply the option's `model` with
-   `orcacompass prefer <tier> <agent> <model>`, clear with
+   (agent, model, `usagePercent`, `blocked`). Apply the option's `model` with
+   `orcacompass prefer <tier> <agent> <model>` (naming an effort-variant id
+   honors that variant's encoded effort), clear with
    `orcacompass prefer clear <tier>`, and change the limit with
-   `orcacompass prefer --risk-limit <percent>`. Above `config.preferRiskLimit`
-   (default `defaultPreferRiskLimit`, 100%), a known within-limit, unblocked
-   covering alternative replaces a favorite; otherwise it is retained with
-   a warning.
+   `orcacompass prefer --risk-limit <percent>`. A favorite is used while its
+   prospective usage stays below `config.preferRiskLimit` (default
+   `defaultPreferRiskLimit`, 90%; capped at 100%, so a favorite is never
+   routed automatically onto a fully reserved or exhausted quota) on every
+   quota it draws on; at or above it, routing goes on without the favorite,
+   with a warning.
 3. **Bans:** show `families` and `config.banModels`. Apply model or family
    bans with `orcacompass ban <entry>...` and remove them with
    `orcacompass unban <entry>...`. Use agent selection for whole agents.
@@ -109,13 +112,15 @@ Options the orchestrator may add:
 | `--agent <id>` (repeatable) | The user restricted the job to some agents. Also lifts OpenCode's last-resort status for this route |
 | `--exclude-agent <id>` (repeatable) | The user excluded an agent for this job |
 | `--effort <e>` | Only when the user asked for a specific effort. Never snapped: routes that cannot apply it exactly are left out |
-| `--no-downgrade` | Prevent capability shortfalls and Cursor Auto fallback; covering routes from any cost tier remain allowed |
+| `--use <agent>/<model>` | The answer to a `decide`: take that route as it is, despite risk or a shortfall |
+| `--dry-run` | Decide without reserving quota |
 
-::: warning Preference exception in this checkout
-The router checks a favorite before the normal `--no-downgrade` branch. An
-unblocked favorite that falls short can therefore still be returned as a
-downgrade with that flag. Inspect `quality.covers` and `downgraded` before
-launching when capability coverage is required.
+::: info Requirements are never lowered automatically
+A route is returned only when its model meets all three needs and can apply
+the effort. The one exception is the user's own choice: a preferred model, or
+a route taken with `--use`, is returned even when it falls short, marked
+`downgraded`. Inspect `quality.covers` and `downgraded` before launching
+when capability coverage is required.
 :::
 
 There is no `--model` flag. If the user names an exact model, launch it
@@ -132,14 +137,19 @@ Valid explicit effort levels are `none`, `minimal`, `low`, `medium`, `high`,
 exit 1. If no route supports the exact requested level, ask the user or route
 without `--effort`.
 
-Routing compares every covering route across cost tiers: the most usage
-headroom wins, after a price adjustment of at most five points. A route is
-blocked only when Orca reports a usage window as 100% used. A pick that is
-close to its limit, or expected to end above `usageRiskLimit` (default 90%),
-carries a warning; relay it. Prices never change evidence scores or need cuts.
+Routing is quota first: the quota bucket with the most capacity left decides,
+and in it the most economical eligible route below the risk threshold is
+taken. Usage is what Orca reports plus what is reserved for workers already
+routed, plus this worker's own buffer; nothing is forecast. A quota is
+exhausted only when Orca reports it as 100% used. A pick in the caution range
+(85% to below 90%) carries a warning; relay it. From 90% nothing is picked
+automatically. Prices never change evidence scores or need cuts.
 
 Parse the JSON and read `status`, `reasons`, `warnings`, `confidence`,
-`downgraded` and `upgraded`. Exit code 0 alone does not mean a route exists.
+`quota`, `downgraded` and `upgraded`. Exit code 0 alone does not mean a
+route exists. An `ok` route has reserved its quota (`reservation.id`); if the
+worker is not going to be launched after all, give it back with
+`orcacompass release --reservation <id> --outcome failed-before-launch`.
 
 ### 3. Launch
 
@@ -159,8 +169,9 @@ Notes:
 - Cursor and Antigravity Gemini models encode effort in the model id
   (`claude-opus-5-5-high`, `gemini-3.8-flash-high`): `route.effort` is `null` and
   `launchArgs` has no `--effort`.
-- Cursor `auto` is a fallback when no named model can be routed. It has no
-  evidence profile or cost tier and never competes with ranked models.
+- Cursor `auto` is never routed on its own: Cursor picks the model, so it has
+  no evidence profile or cost tier. It only appears under `options.lower`
+  when a decision comes back.
 - An OpenCode route needs `--worktree current` or an existing worktree: Orca
   refuses `--model` for OpenCode in a new one. The route's `reasons` say so.
 
@@ -169,7 +180,7 @@ Notes:
 Right after `worker-start` returns a `dispatchId`:
 
 ```sh
-orcacompass verify --dispatch <dispatchId> --json
+orcacompass verify --dispatch <dispatchId> --reservation <reservation.id> --json
 ```
 
 Orca does not check that an agent can use the model it was given. Codex and
@@ -194,26 +205,36 @@ do not extend a timed-out startup verification by repeating calls. Start a
 replacement only after cleanup succeeds. Never stop a worker that `verify`
 reported as `started`. Details: [Verify and rejections](verify-and-rejections.md).
 
+`verify` also settles the reservation: `started` and `stalled` mark it running
+(and a late `verify` revives a timeout-inferred end), `unknown` binds the
+Dispatch while leaving it `pending`, `rejected` releases it at once, `failed`
+keeps it until Orca's usage covers it. When the worker reports `worker_done`
+or is stopped, end the reservation with
+`orcacompass release --dispatch <dispatchId>` (add `--outcome cancelled` for
+a worker stopped after it had worked). A worker that is never released is
+closed when Orca reports it finished.
+
 ### 5. Handle the result
 
 | Field | Action |
 | --- | --- |
-| `downgraded: true` | Mention the downgrade and reason in the worker's task spec. Effort is not raised to make up for a weaker model; narrow the task or add checks |
-| `upgraded: true` | Surface the warning. No route at or below the requested tier covers the job, so a pricier cost tier was used. See [Fallbacks](tiers-and-routing.md#fallbacks-downgrade-upgrade-wait-none) |
-| warning `<window> quota is N% used; resets in …` | Orca reports the pick's usage window at or above its warning threshold (`thresholds`, 95% long, 90% session). Relay it and keep the job small |
-| warning `selected route is expected to end above …` | The pick is expected to end its usage window above `usageRiskLimit`. Relay it and keep the job small |
+| `downgraded: true` | Only for a route chosen explicitly (a preferred model, or `--use`). Mention the downgrade and reason in the worker's task spec. Effort is not raised to make up for a weaker model; narrow the task or add checks |
+| `coverageNote` | The preferred or `--use` model has no benchmark data on an axis the job needs, so task coverage could not be verified. Not a downgrade. Mention it in the worker's task spec and add checks |
+| `upgraded: true` | Surface the warning. No route at or below the requested tier is eligible, so a pricier cost tier was used. See [Outcomes](tiers-and-routing.md#outcomes-ok-decide-none) |
+| warning `<window> quota would be N% used with this worker (caution); …` | The pick is in the caution range because no route was available below it (`riskThresholds`). Relay it and keep the job small |
+| warning `usage of <agent> is unknown: …` | The route was taken without a quota check. Say so |
 | `effort.applied` | `flag`, `model-id`, or `provider-default` (the agent decides). Never claim an effort was set when it is `provider-default` |
-| `effort.adjusted: true` | The route cannot apply the exact target. Report the target and the resolved effort when relevant, especially for `exceptional` demand. Do not reroute only for this; ranking already counts the shortfall |
+| `effort.adjusted: true` | The route cannot apply the exact target. It applies the next higher effort it offers (a lower one only when neither `--demand` nor `--effort` was given). Report the target and the resolved effort when relevant. Do not reroute only for this |
 | warning `… is a last-resort agent …` | The route costs money per token or runs on this machine; tell the user before launching several workers on it |
-| `status: "wait"` | Read `waitUntil` (epoch ms). Wait, or retry without `--no-downgrade` if the user allows a downgrade |
+| `status: "decide"` | Nothing was picked and there are no `launchArgs`. Read `options` and choose, asking the user when the choice is theirs: **WAIT** (`options.wait`; `until` in epoch ms only when a reset time is reported, never invent one), **USE** a route at high usage by adding its `use` flag to the same call (an entry with `preferred: true` is the user's preference for the tier, held back by `preferRiskLimit`; `lastResort: true` marks a last-resort agent offered when nothing else can take the job or alongside elevated-risk options), or **LOWER** the requirements: route again with a lower `--need` or `--demand`, or take a listed route as it is with its `use` flag |
 | `status: "none"` | Say no recommendation was available. Use Orca's defaults only where they respect the user's explicit constraints, and keep any explicit agent or model choice. If no route can apply an explicit effort, report the available levels and ask before launching with another effort or none |
 | command missing | Say OrcaCompass was absent. Use the same default fallback only if it respects the user's explicit constraints; otherwise ask first |
 | exit 1 | Usage or runtime error: fix the command or report it |
 | exit 2 | `config error: <path>: <message>`: report and resolve before retrying |
-| low confidence | Usage unknown or more than 4x `usageStaleMinutes` old. Do not invent percentages |
-| medium confidence | Usage moderately stale (the reason says "usage 45m old"), or a recent hand-out |
+| low confidence | Usage unknown: not reported, more than 4x `usageStaleMinutes` old, or a window reset since the snapshot. Do not invent percentages |
+| medium confidence | Usage moderately stale (the reason says "usage 45m old"), or the last valid snapshot standing in because Orca could not be read |
 | catalog source `snapshot` | Metadata may be old; run `orcacompass refresh` when online |
-| warning `preferred … skipped: …` | The user's favorite would exceed its risk limit or is blocked; tell them the line |
+| warning `preferred … skipped: …` | The user's favorite would reach its usage limit or its quota is exhausted; tell them the line |
 
 ## Managing providers through the Skill
 
@@ -236,10 +257,13 @@ one-job constraint. Relay warnings when a favorite was skipped.
 
 ## Several workers at once
 
-OrcaCompass applies [recent hand-outs](tiers-and-routing.md#usage-headroom-and-pace)
-to known usage pools, so manual spreading across `alternatives` is unnecessary.
-These are estimates, not capacity reservations. Alternatives have no `launchArgs`; if choosing one
-explicitly, route again with `--agent` and use that decision's arguments.
+Every route [reserves](tiers-and-routing.md#reservations) its worker's share
+of each quota bucket it draws on, and the next route counts it, so manual
+spreading across `alternatives` is unnecessary. The reservation is taken
+under a lock: route calls made at the same moment, from different
+coordinators, cannot both take the last capacity. Alternatives have no
+`launchArgs`; if choosing one explicitly, route again with `--agent` and use
+that decision's arguments.
 
 Inspect `quality` for evidence class, cost (`tier`, `blended`, `source`),
 coverage, shortfall, overshoot, axis scores and evidence. Labels include

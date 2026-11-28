@@ -31,14 +31,14 @@ Linux and `%USERPROFILE%` on Windows, the folder the agents themselves use.
 
 ### The cache
 
-The cache holds discovered data, recent hand-outs and saved model refusals.
-You can delete it, but doing so forgets those routing adjustments and refusals
-as well as the cached metadata:
+The cache holds discovered data, the reservations of allocated workers and
+saved model refusals. You can delete it, but doing so forgets those
+reservations and refusals as well as the cached metadata:
 
 | File | Content |
 | --- | --- |
 | `evidence-snapshot.json`, `evidence-check.json` | Cached evidence and manifest check time |
-| `handouts.json` | Recent route hand-outs used to adjust pool usage |
+| `reservations.json` | The reservation ledger: one record per allocated worker with its lifecycle state, and the last valid usage snapshot per provider (quota identities are hashes; no account id is stored). Changed under `reservations.lock` and replaced whole, so concurrent commands cannot corrupt it |
 | `placements.json` | The placement table: every model's tiers with the numbers behind them, built from every source; reused for `placementsTtlHours` |
 | `cursor-models.json`, `grok-models.json`, `antigravity-models.json`, `opencode-models.json` | Last good model listing per agent, used only when the live command fails |
 | `rejected-models.json` | Models agents refused at launch, written by `verify` |
@@ -48,9 +48,10 @@ milliseconds), and `models`: an array of `{ "id": "..." }` objects with an optio
 provider `label` (Cursor keeps its labels, including `NO ZDR`). They store provider
 observations only. Computed tiers live in `placements.json`, which records the
 OrcaCompass version and the placement keys of the configuration
-(`tierOverrides`, `costBands`) in `builtWith` (schema 4), so a change
-to any of them rebuilds it. OrcaCompass stores recent hand-outs temporarily
-and reads usage on each run. User preferences remain in `config.json`.
+(`tierOverrides`, `costBands`) in `builtWith` (schema 5), so a change
+to any of them rebuilds it. OrcaCompass reads usage on each run and keeps
+worker reservations until Orca's usage covers them. User preferences remain in
+`config.json`.
 
 The listing commands run when the placement table is built, not on every
 route (Grok first checks its own native `models_cache.json`). A successful listing
@@ -94,22 +95,73 @@ present they produce a warning and are ignored; use `costBands` and
 | --- | --- | --- | --- |
 | `allowAgents` | omitted (all) | Only these agents are eligible | `agents only`; `agents disable` and `agents enable` when the key exists; `agents reset` removes it |
 | `denyAgents` | `[]` | These agents are never used, even if allowed | `agents disable`, `agents enable`, `agents only`, `agents reset` |
-| `pins` | `{}` | Preferred route per tier with optional `model`, e.g. `{ "daily": { "agent": "codex" } }`. An eligible, unblocked favorite wins unless it exceeds `preferRiskLimit` and an unblocked alternative has known usage within the limit | `prefer` |
-| `preferRiskLimit` | `100` | Projected usage percentage above which a within-limit alternative replaces the favorite. Retain the favorite when no unblocked alternative has known usage within this limit | `prefer --risk-limit` |
+| `pins` | `{}` | Preferred route per tier with optional `model` (including effort-variant ids such as `claude-sonnet-5-5-high`), e.g. `{ "daily": { "agent": "codex" } }`. A favorite is used while its prospective usage stays below `min(preferRiskLimit, 100)`, and never when a quota is fully reserved or exhausted | `prefer` |
+| `preferRiskLimit` | `90` | A favorite is skipped once its prospective usage (reported + reserved + its own buffer) reaches `min(preferRiskLimit, 100)` on a quota it draws on, and never takes a fully `reserved` quota. Values above `100` are accepted for compatibility but capped at `100` at route time; values above `riskThresholds.highPercent` warn on load and keep a favorite in use in the high-risk range (below 100%) | `prefer --risk-limit` |
 | `banModels` | `[]` | Model ids or families never routed | `ban`, `unban` |
-| `lastResortAgents` | `["opencode"]` | Agents used only when no other agent can take the job in any allowed tier (or instead of waiting). `--agent <id>` or a preference for the tier lifts it; `[]` makes them ordinary | by hand |
+| `lastResortAgents` | `["opencode"]` | Agents used only when no other agent can take the job (instead of waiting, never ahead of a route the Orchestrator could still use). `--agent <id>` or a preference for the tier lifts it; `[]` makes them ordinary | by hand |
 | `tierOverrides` | `{}` | Model id or family to a tier: `{ "gemma4:12b": "light", "grok": "daily" }`. Sets the cost tier, leaving a model's own evidence bands and coverage unchanged. A model with no scores of its own and a known maker also inherits assumed scores through the override; with no known maker it stays unranked. An `auto` override is ignored with a warning | by hand |
 | `excludeNoZdr` | `false` | Exclude models marked no-ZDR (zero data retention). Relies on Cursor's `NO ZDR` labels only | by hand |
-| `cursorAuto` | `true` | Offer Cursor `auto` as a fallback when no named model can be routed | by hand |
+| `cursorAuto` | `true` | List Cursor `auto` as an option when the decision comes back to the Orchestrator. It is never routed on its own | by hand |
 
-### Usage
+### Usage and risk
 
 | Key | Default | Purpose |
 | --- | --- | --- |
-| `thresholds.longPercent` | `95` | Warn at this reported usage on a selected weekly, monthly or bucket pool. Hard exhaustion is 100% |
-| `thresholds.sessionPercent` | `90` | Warn at this session usage. A session at or on pace to reach this level can constrain ranked headroom. Hard exhaustion is 100% |
-| `usageRiskLimit` | `90` | Warn if expected use at reset exceeds this percentage on the selected route. This setting changes warnings only |
-| `usageStaleMinutes` | `30` | Usage older than this caps confidence at medium; beyond 4x this, headroom becomes unknown and confidence low. Stale usage still blocks |
+| `riskThresholds.cautionPercent` | `85` | Prospective usage from here on is `caution`: the route is used only when none is available below it, with a warning |
+| `riskThresholds.highPercent` | `90` | Prospective usage from here on is `high`: the route is never picked automatically, and the decision goes back to the Orchestrator. Must not be below `cautionPercent`; both are 0 to 100 |
+| `usageStaleMinutes` | `30` | A usage snapshot older than this caps confidence at medium; beyond 4x this the usage is unknown and confidence low |
+
+Prospective usage is `reported + reserved + this worker's buffer` per quota
+bucket; see [Risk thresholds](tiers-and-routing.md#risk-thresholds). Actual
+exhaustion is always 100% reported usage.
+
+### Reservations {#reservations}
+
+| Key | Default | Purpose |
+| --- | --- | --- |
+| `reservations.buffers` | the table below | Percentage points a worker reserves on each quota bucket it draws on, by buffer tier (row) and effort (column). Given cells replace the defaults; the rest keep theirs |
+| `reservations.overrides` | `[]` | Changes for some workers or buckets, applied in order. Each rule matches by any of `agent`, `plan` (Orca's plan type, such as `max_5x`) and `pool` (a usage window, such as `session` or `bucket:Other Models`), and gives a `scale` (between `0` and `100`) to multiply by, `buffers` cells to replace, or both |
+| `reservations.modelTiers` | `{}` | Model id or family to a buffer tier, when a model should reserve another row than its cost tier's: `{ "claude-haiku-5-5": "minimal" }` |
+| `reservations.pendingMinutes` | `10` | A reservation whose launch nobody confirmed (`verify`) is abandoned after this long (`inferred: true`), then released by the next fresh usage snapshot unless later proof (live worker list, late `verify`, or explicit `release`) overrides it |
+| `reservations.settleSeconds` | `60` | A finished worker's reservation is released, window by window, by readings with valid percentages that Orca took at least this long after the worker ended (a window Claude's live session carries forward unchanged waits at least 20 minutes) |
+| `reservations.maxRunningHours` | `24` | A running reservation is closed (`inferred: true`) after this long, in case its worker was never released and Orca no longer lists it. A worker Orca confirms is still live is never closed (and revives a timeout-inferred end). A finished record still held is dropped seven days after the worker ended |
+
+Default `buffers`, in percentage points per worker:
+
+| Buffer tier | `low` | `medium` | `high` | `xhigh` |
+| --- | ---: | ---: | ---: | ---: |
+| `minimal` | 0.5 | 0.5 | 0.75 | 1.0 |
+| `light` | 0.5 | 1.0 | 1.25 | 1.5 |
+| `daily` | 1.0 | 1.5 | 1.75 | 2.0 |
+| `advanced` | 1.5 | 2.0 | 2.5 | 3.0 |
+| `frontier` | 2.0 | 2.5 | 3.0 | 3.5 |
+
+A model reserves the row of its cost tier. No model uses `minimal` unless
+`modelTiers` maps it there; a model without a cost tier uses `frontier`.
+Efforts `none` and `minimal` use the `low` column and `max` uses `xhigh`.
+The values are starting heuristics, not measured token costs: compare them
+with how much your usage really moves per worker and adjust. A 5-hour session
+is a far smaller window than a week, so the same work takes a larger share of
+it; an override can say so:
+
+```json
+{
+  "reservations": {
+    "buffers": { "frontier": { "xhigh": 4 } },
+    "overrides": [
+      { "agent": "claude", "pool": "session", "scale": 3 },
+      { "agent": "claude", "plan": "max_20x", "scale": 0.5 }
+    ],
+    "modelTiers": { "claude-haiku-5-5": "minimal" }
+  }
+}
+```
+
+::: info Removed keys
+`thresholds`, `usageRiskLimit`, `handoutMinutes` and `handoutPercent`
+belonged to the usage projection and the flat hand-out buffer. They are ignored
+with a warning; `riskThresholds` and `reservations` take their place.
+:::
 
 ### Effort
 
@@ -135,8 +187,6 @@ the spelling `xhigh` (the `--effort` flag also accepts `extra-high`).
 | Key | Default | Purpose |
 | --- | --- | --- |
 | `costBands` | `[1, 5, 12]` | USD per million blended tokens: Light below 1, Daily below 5, Advanced below 12, Frontier at or above 12; blend `(3 × input + output) / 4` |
-| `handoutMinutes` | `10` | Lifetime of recent hand-outs |
-| `handoutPercent` | `5` | Usage points added per hand-out per pool |
 | `evidenceTtlHours` | `24` | Manifest check interval |
 | `placementsTtlHours` | `5` | Placement cache lifetime; `0` rebuilds on every command. Changed snapshot or placement settings rebuild it, and `refresh` forces a rebuild |
 | `rejectionTtlHours` | `168` | How long a model an agent refused at launch (found by `verify`) is skipped |
@@ -149,7 +199,7 @@ A hand-written config (illustrative):
 {
   "denyAgents": ["grok"],
   "pins": { "daily": { "agent": "codex" } },
-  "preferRiskLimit": 120,
+  "preferRiskLimit": 95,
   "banModels": ["claude-haiku"],
   "tierOverrides": { "gemma4:12b": "light" },
   "effortPolicy": "quality"
@@ -159,8 +209,8 @@ A hand-written config (illustrative):
 This config:
 
 - excludes Grok Build and all Haiku models;
-- prefers Codex for everyday jobs unless it is on pace for more than 120% of
-  a window and a within-limit alternative is available;
+- prefers Codex for everyday jobs while its usage, with reserved workers and
+  one more, stays below 95% on every quota it draws on;
 - treats a local Gemma model as Light;
 - gives high as well as exceptional demand `xhigh`.
 
@@ -189,7 +239,7 @@ Metadata and model listings are read when the placement table is built (see
 
 | Source | Used for | How |
 | --- | --- | --- |
-| `orca account list --json` | Usage and limits per agent | Run whenever the routing environment is gathered, 20 s timeout |
+| `orca account list --json` | Usage and limits per agent | Run whenever the routing environment is gathered, 20 s timeout; asks Orca to refresh stale cached usage (`refreshStaleUsage: true`) and returns cached readings otherwise |
 | Orca's model catalog, then the Claude Code (`CLAUDE_CONFIG_DIR`) or Codex (`CODEX_HOME`) local catalog, then the evidence snapshot | Claude and Codex models and effort options | Read at table build; fallback effort levels are assumed |
 | Evidence snapshot and manifest | Catalog and benchmark profiles | Cache, repository manifest and snapshot, then bundled fallback; never older than the bundled snapshot |
 | `cursor-agent models` | Cursor model variants and `NO ZDR` labels | At table build, 30 s, saved copy on failure |
@@ -198,6 +248,7 @@ Metadata and model listings are read when the placement table is built (see
 | `opencode models` | OpenCode models (`provider/model`) | At table build, 30 s, saved copy on failure |
 | OrcaCompass's built-in Muse list | Muse models (neither Muse nor Orca lists them) | At table build, when `muse` is on PATH |
 | Orca's profile state (`profile-state.db` or `orca-data.json`), read-only | Which agents you enabled in Orca (`settings.disabledTuiAgents`) | Experimental; anything unexpected is `unknown` |
+| `orca orchestration worker-list` | Reconciling bound reservations and recovering an unreadable ledger | Run when a bound reservation is pending, running or timeout-inferred, or when `reservations.json` is corrupt |
 | `orca orchestration worker-show` / `worker-read` | `verify` only | Read-only |
 
 ## Privacy

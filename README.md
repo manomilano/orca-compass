@@ -24,8 +24,9 @@ plan's usage is left before the limits reset. OrcaCompass makes that choice:
 the orchestrator rates how hard the job is, and OrcaCompass compares the
 installed Claude Code, Codex, Cursor, Grok Build, Antigravity and OpenCode
 routes using model metadata and current usage limits, explains its choice, and
-returns launch arguments. Muse has basic support: a built-in model list and no
-usage data. The orchestrator still launches the worker. It ships
+returns launch arguments. Muse has basic support: a built-in model list
+(usage is read when Orca reports it, otherwise unknown). The orchestrator still
+launches the worker. It ships
 as an Agent Skill backed by a small TypeScript CLI.
 
 ## How it works
@@ -34,10 +35,17 @@ as an Agent Skill backed by a small TypeScript CLI.
 2. **OrcaCompass builds profiles** with raw LLMBenchmark capability evidence
    and separate cost tiers from price (3:1 input/output blend, `costBands`
    default `[1, 5, 12]`; hints are the fallback when price is missing).
-3. **It compares qualifying models across cost tiers.** Among open routes with
-   known usage, it scores reset-adjusted headroom in percentage points
-   minus a price adjustment capped at five points. Recent hand-outs count toward
-   usage. Cursor `auto` is a fallback.
+3. **It routes by quota, on what is known now.** Only models that meet all three
+   needs and can apply the effort are eligible. For each quota a route draws
+   on, it adds up the usage Orca reports, what is reserved for workers already
+   routed, and this worker's own buffer. The quota with the most capacity left
+   comes first, and in it the most economical eligible model. Nothing is
+   forecast.
+4. **It reserves what it hands out.** Each routed worker holds a small,
+   per-quota reservation until Orca's usage covers it, so parallel routes
+   cannot overbook a quota. When no route is below the risk threshold (90% by
+   default), the decision goes back to the orchestrator: wait, use a route at
+   elevated risk, or lower the requirements.
 
 ```sh
 orcacompass route --need coding=mid,agentic=low,reasoning=low --demand moderate --json
@@ -121,11 +129,12 @@ orcacompass status                        # agents, usage, and the pick for each
 orcacompass tiers                         # cost tiers, prices and capability evidence
 orcacompass agents                        # which agents are used, and why not
 orcacompass agents disable grok           # never route to Grok Build
-orcacompass prefer daily codex            # Codex first for everyday jobs, unless it runs too hot
+orcacompass prefer daily codex            # Codex first for everyday jobs, while its quota has room
 orcacompass ban claude-haiku              # never route a Claude Haiku model
 orcacompass route --tier daily --json     # a route for an everyday job
 orcacompass route --tier advanced --agent claude --agent codex --demand high
-orcacompass route --tier frontier --no-downgrade --json   # never accept a capability shortfall
+orcacompass route --tier frontier --dry-run --json        # look without reserving quota
+orcacompass release --dispatch <dispatchId>               # a worker finished: end its reservation
 ```
 
 With the Skill installed, the orchestrator does this for you: it rates each
@@ -136,7 +145,7 @@ arguments:
 orca orchestration worker-start --spec "<actual task>" --agent claude --model claude-opus-5-5 --effort medium
 ```
 
-Only `status: "ok"` carries a route. Pass `launchArgs` as separate, properly
+Only `status: "ok"` carries a route; `decide` hands the choice back with its options. Pass `launchArgs` as separate, properly
 quoted arguments together with your usual Orca worktree and lifecycle options.
 OrcaCompass never launches workers itself.
 
@@ -145,8 +154,9 @@ For example, a routing decision can look like this (illustrative numbers, shorte
 ```text
 $ orcacompass route --tier advanced
 daily → claude · claude-sonnet-5-5 · medium (high confidence)
-  claude claude-sonnet-5-5: weekly 40% used, 62% of window elapsed (headroom 34%) → on pace for 65% before reset in 2d
+  claude claude-sonnet-5-5: weekly 40% reported + 1.5 pp reserved (1 worker) + 1.5 pp for this worker = 43% prospective (available), resets in 2d
   cost: daily ($4.00/M blended, maker price)
+  reserved rsv_3f9a1c2b7d10: weekly +1.5 pp; after worker-start run: orcacompass verify --dispatch <id> --reservation rsv_3f9a1c2b7d10
 ```
 
 ## User guide
