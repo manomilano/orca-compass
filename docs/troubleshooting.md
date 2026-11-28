@@ -133,7 +133,7 @@ a newer reading for another account clears it. Usage is never replaced by 0%.
 Without any snapshot, routing still works, but every route has low confidence,
 carries a warning and cannot be ranked by quota.
 
-Other causes of low confidence: Orca reports no usage for that agent, the
+Other causes of low confidence: Orca reports no usage for that agent (notably **Antigravity on Orca 1.4.280+**, where Orca retired the standalone Antigravity usage meter in `stablyai/orca#50137` — Antigravity models remain discovered and usable via `prefer`, `--agent antigravity`, or automatic low-confidence fallback, without quota calculations until supported reporting returns), the
 snapshot is older than four times `usageStaleMinutes` (2 hours by default), or
 a window's reset time passed since the snapshot was taken. `orca account list --json`
 asks Orca to refresh cached usage when stale (`refreshStaleUsage: true`) and

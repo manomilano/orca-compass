@@ -8,7 +8,7 @@ const crew = [
   { name: 'Codex', id: 'codex', status: 'Supported' },
   { name: 'Cursor', id: 'cursor', status: 'Supported' },
   { name: 'Grok Build', id: 'grok', status: 'Supported' },
-  { name: 'Antigravity', id: 'antigravity', status: 'Supported' },
+  { name: 'Antigravity', id: 'antigravity', status: 'Basic support (quota unavailable on Orca 1.4.280+ pending Orca/Antigravity update)' },
   { name: 'Muse', id: 'muse', status: 'Basic support' },
   { name: 'OpenCode', id: 'opencode', status: 'Last resort by default' },
 ]
