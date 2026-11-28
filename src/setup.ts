@@ -4,7 +4,7 @@ import type { Readable, Writable } from 'node:stream';
 import {
   applyAgentChoice, DEFAULT_CONFIG, isChosen, parsePercent, setAgentChoice, setBans, setPin, setPreferRiskLimit, updateConfigFile, type AgentChoice,
 } from './config.js';
-import { agentNotFamily, agentSkipReason, banMatches, enabledInOrca, launchIds, route } from './routing/router.js';
+import { agentNotFamily, agentSkipReason, banMatches, enabledInOrca, isPreferredRoute, launchIds, route } from './routing/router.js';
 import type { CandidateQuota } from './routing/quota.js';
 import { TIERS, type AgentId, type Config, type Effort, type Environment, type Preference, type Tier } from './types.js';
 import { configPath } from './paths.js';
@@ -87,8 +87,9 @@ const usageOf = (quota: CandidateQuota | null | undefined): number | null => (qu
 
 function tierChoice(tier: Tier, env: Environment, config: Config): TierChoice {
   const d = route({ tier }, env, config);
-  // Cheaper covering picks belong here; structural upgrades still belong to another tier.
-  const own = !d.upgraded;
+  // Cheaper covering picks belong here; structural upgrades still belong to another tier, unless the tier's
+  // own preference names the route.
+  const own = !d.upgraded || isPreferredRoute(d, config.pins[tier], env);
   const options: TierOption[] = [];
   if (own && d.route) {
     const prefix = `${d.route.agent} ${d.route.model}: `;

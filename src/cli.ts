@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { bindDispatch, clearReservations, endWorker, markRunning, routeAndReserve, type LifecycleChange } from './routing/allocate.js';
-import { bucketId, bucketText, buildQuotaView, bufferFor, displayPool, isLive, pointsText, poolKey, type Reservation } from './routing/quota.js';
+import { bucketText, buildQuotaView, bufferFor, countsOn, displayPool, drawsOn, isLive, pointsText, poolKey, scopeOf, type Reservation } from './routing/quota.js';
 import { LedgerError, type ReleaseOutcome } from './routing/reservations.js';
 import { cacheDir } from './paths.js';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
@@ -19,9 +19,9 @@ import {
 } from './config.js';
 import { parseEffort } from './routing/effort.js';
 import { activeRejections } from './routing/rejection.js';
-import { agentNotFamily, agentSkipReason, banMatches, enabledInOrca, formatLaunch, launchIds, rejectedText, route } from './routing/router.js';
+import { agentNotFamily, agentSkipReason, banMatches, enabledInOrca, formatLaunch, isPreferredRoute, launchIds, rejectedText, route } from './routing/router.js';
 import {
-  AGENT_IDS, DEMANDS, TIERS, type AgentId, type Demand, type Alternative, type Config, type Decision, type Effort, type Environment, type OrcaAgents,
+  AGENT_IDS, DEMANDS, TIERS, type AgentId, type AgentUsage, type Demand, type Alternative, type Config, type Decision, type Effort, type Environment, type OrcaAgents,
   type PlacementTable, type Preference, type RouteRequest, type Tier,
 } from './types.js';
 import { gather, gatherEnvironment, loadPlacements, type Gathered, type GatherDeps } from './routing/environment.js';
@@ -482,6 +482,49 @@ interface TierView {
   options?: Decision['options'];
 }
 
+/** One window a reservation record is shown on in `status`. */
+interface ReservationBucket {
+  /** The window's name as Orca reports it, or the declared key when Orca's windows are not known. */
+  pool: string;
+  /** The points the record holds on it right now: none once it is no longer live or the window is settled. */
+  percentPoints: number;
+  settled?: true;
+}
+
+/**
+ * The windows a reservation record holds capacity on. With a readable snapshot of the quota identity it was
+ * reserved on, these are the windows Orca actually reports that its declared ones draw on: every window of a
+ * declared Antigravity group (a 1-day one included), and none of the declared names Orca does not report
+ * (`session` and `weekly` beside quota groups, Claude's `monthly` on a plan without one). A window settled
+ * under its own name holds nothing. Without such a snapshot (usage unknown, another account or plan) only the
+ * declaration is known, so the declared windows are listed, with the buffer of the plan it was reserved on.
+ */
+function reservationBuckets(r: Reservation, usage: AgentUsage | undefined, config: Config): ReservationBucket[] {
+  const live = isLive(r);
+  if (usage !== undefined && usage.status === 'ok' && scopeOf(usage) === r.scope) {
+    const seen = new Set<string>();
+    const out: ReservationBucket[] = [];
+    for (const window of Object.values(usage.pools)) {
+      const key = poolKey(window.name);
+      if (seen.has(key) || !r.pools.some((p) => drawsOn(p, window))) continue;
+      seen.add(key);
+      const counts = countsOn(r, window);
+      out.push({
+        pool: window.name,
+        percentPoints: live && counts ? bufferFor(config.reservations, { agent: r.agent, plan: usage.plan, pool: window.name, tier: r.tier, effort: r.effort }) : 0,
+        ...(counts ? {} : { settled: true as const }),
+      });
+    }
+    return out;
+  }
+  const settled = new Set((r.settled ?? []).map(poolKey));
+  return r.pools.map((pool) => ({
+    pool,
+    percentPoints: !live || settled.has(poolKey(pool)) ? 0 : bufferFor(config.reservations, { agent: r.agent, plan: r.plan, pool, tier: r.tier, effort: r.effort }),
+    ...(settled.has(poolKey(pool)) ? { settled: true as const } : {}),
+  }));
+}
+
 function buildStatus(gathered: Gathered, config: Config) {
   const { env, table } = gathered;
   const skipped = new Map<string, string>();
@@ -496,8 +539,9 @@ function buildStatus(gathered: Gathered, config: Config) {
         skipped.set(s.agent, s.reason);
       }
     }
-    // Cheaper covering picks belong here; structural upgrades still belong to another tier.
-    const own = !d.upgraded;
+    // Cheaper covering picks belong here; structural upgrades still belong to another tier, unless the tier's
+    // own preference names the route: that is the user's pick for this tier, whatever it costs.
+    const own = !d.upgraded || isPreferredRoute(d, config.pins[tier], env);
     const view: TierView = { status: own ? d.status : 'none', alternatives: own ? d.alternatives : [], warnings: own ? d.warnings : [] };
     if (own && d.route) {
       const prefix = `${d.route.agent} ${d.route.model}: `;
@@ -549,23 +593,12 @@ function buildStatus(gathered: Gathered, config: Config) {
   return {
     now: env.now,
     riskThresholds: config.riskThresholds,
-    // Every reservation record, with the percentage points it holds on each bucket right now: none once it is
-    // no longer live or the window is settled, else its buffer row for the plan it was reserved on.
-    reservations: gathered.reservations.map((r) => {
-      const live = isLive(r);
-      const settled = new Set((r.settled ?? []).map(poolKey));
-      return {
-        ...r,
-        live,
-        buckets: r.pools.map((pool) => ({
-          // The window's name as Orca reports it, when the bucket is in the current snapshot.
-          pool: quota.buckets.find((b) => b.id === bucketId(r.agent, r.scope, pool))?.pool ?? pool,
-          percentPoints: !live || settled.has(poolKey(pool)) ? 0
-            : bufferFor(config.reservations, { agent: r.agent, plan: r.plan, pool, tier: r.tier, effort: r.effort }),
-          ...(settled.has(poolKey(pool)) ? { settled: true } : {}),
-        })),
-      };
-    }),
+    // Every reservation record, with the percentage points it holds on each window right now (see `reservationBuckets`).
+    reservations: gathered.reservations.map((r) => ({
+      ...r,
+      live: isLive(r),
+      buckets: reservationBuckets(r, Object.hasOwn(env.usage, r.agent) ? env.usage[r.agent] : undefined, config),
+    })),
     ...(gathered.ledgerError ? { ledgerError: gathered.ledgerError } : {}),
     ...(gathered.ledgerRecovered ? { ledgerRecovered: gathered.ledgerRecovered } : {}),
     evidence: table.sources.evidence,
@@ -618,7 +651,7 @@ function statusText(s: Status, sources: SnapshotSource[]): string[] {
     for (const r of live) {
       // A window a fresh reading already covers no longer counts: it is left out.
       const held = r.buckets.filter((b) => !b.settled).map((b) => `${displayPool(b.pool)} +${pointsText(b.percentPoints)}`).join(', ');
-      lines.push(`  ${r.id}  ${r.agent} ${r.model}  ${r.state.replace(/_/g, ' ')} for ${duration(now - (r.endedAt ?? r.startedAt ?? r.createdAt))}  (${held})`);
+      lines.push(`  ${r.id}  ${r.agent} ${r.model}  ${r.state.replace(/_/g, ' ')} for ${duration(now - (r.endedAt ?? r.startedAt ?? r.createdAt))}  (${held || 'none of its windows is reported now'})`);
     }
   }
   if (s.ledgerError) lines.push(`  warning: the reservation ledger could not be written: ${s.ledgerError}`);
@@ -633,12 +666,15 @@ function statusText(s: Status, sources: SnapshotSource[]): string[] {
       if (t.pick.note) lines.push(`  ${' '.repeat(8)}    note: ${t.pick.note}`);
     } else if (t.status === 'decide' && t.options) {
       const until = t.options.wait?.until;
+      const use = useText(t.options.use);
       const parts = [
         ...(t.options.wait ? [`wait${until !== undefined ? ` ${duration(until - now)}` : ''}`] : []),
-        ...(t.options.use.length ? [`use ${t.options.use.length} route${t.options.use.length === 1 ? '' : 's'} above the risk threshold`] : []),
+        ...(use ? [use] : []),
         ...(t.options.lower.length ? [`lower the requirements (${t.options.lower.length} route${t.options.lower.length === 1 ? '' : 's'})`] : []),
       ];
-      lines.push(`  ${label}  nothing below the risk threshold; your decision: ${parts.join(', ')}`);
+      // A route held only by the preference limit, or a last resort, is not above the risk threshold.
+      const why = t.options.use.every(aboveRiskThreshold) ? 'nothing below the risk threshold' : 'nothing is routed automatically';
+      lines.push(`  ${label}  ${why}; your decision: ${parts.join(', ')}`);
     } else {
       lines.push(`  ${label}  no candidates`);
     }
@@ -664,6 +700,33 @@ function statusText(s: Status, sources: SnapshotSource[]): string[] {
     }
   }
   return lines;
+}
+
+type UseOption = NonNullable<Decision['options']>['use'][number];
+
+/** Whether a USE option is one because its quota is in the high-risk range or fully reserved. */
+const aboveRiskThreshold = (u: UseOption): boolean => u.quota?.status === 'high' || u.quota?.status === 'reserved';
+
+/**
+ * The USE part of a tier's decision line, saying why each route is the Orchestrator's call: above the risk
+ * threshold, the preferred route held only by `preferRiskLimit` (below that threshold), or a last-resort agent.
+ */
+function useText(use: UseOption[]): string | undefined {
+  if (use.length === 0) return undefined;
+  const routes = `${use.length} route${use.length === 1 ? '' : 's'}`;
+  const above = use.filter(aboveRiskThreshold).length;
+  if (above === use.length) return `use ${routes} above the risk threshold`;
+  const rest = use.filter((u) => !aboveRiskThreshold(u));
+  const preferred = rest.filter((u) => u.preferred).length;
+  const lastResort = rest.filter((u) => !u.preferred && u.lastResort).length;
+  const kinds: [count: number, what: string][] = [
+    [above, 'above the risk threshold'],
+    [preferred, 'held only by preferRiskLimit'],
+    [lastResort, 'last resort'],
+    [rest.length - preferred - lastResort, 'not routed automatically'],
+  ];
+  const named = kinds.filter(([count]) => count > 0).map(([count, what]) => (use.length === 1 ? what : `${count} ${what}`));
+  return `use ${routes} (${named.join(', ')})`;
 }
 
 async function statusCommand(args: string[], io: IO, deps: MainDeps): Promise<number> {

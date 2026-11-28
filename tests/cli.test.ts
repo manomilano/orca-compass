@@ -977,12 +977,14 @@ describe('quota reservations', () => {
     expect(ledger().reservations).toMatchObject([{ id: d.reservation.id, state: 'pending' }]);
     const { status, pool } = await weekly();
     expect(pool).toMatchObject({ reported: 50, usedPercent: 50, reserved: 1.5, workers: 1, effective: 51.5, status: 'available' });
-    expect(status.reservations).toMatchObject([{ id: d.reservation.id, state: 'pending', live: true, agent: 'claude', model: 'claude-sonnet-5-5', tier: 'daily', effort: 'medium', buckets: [{ pool: 'session', percentPoints: 1.5 }, { pool: 'weekly', percentPoints: 1.5 }, { pool: 'monthly', percentPoints: 1.5 }] }]);
+    // The windows Orca reports, not every declared one: this account has no `monthly`, so the record holds nothing there.
+    expect(status.reservations).toMatchObject([{ id: d.reservation.id, state: 'pending', live: true, agent: 'claude', model: 'claude-sonnet-5-5', tier: 'daily', effort: 'medium', pools: ['session', 'weekly', 'monthly'] }]);
+    expect(status.reservations[0].buckets).toEqual([{ pool: 'session', percentPoints: 1.5 }, { pool: 'weekly', percentPoints: 1.5 }]);
     stdout = [];
     await main(['status'], io, deps);
     expect(out()).toContain('    weekly 50% reported + 1.5 pp reserved (1 worker) = 51.5% effective, available; resets in 14h');
     expect(out()).toContain('    fableWeekly 75% reported, available; resets in 14h');
-    expect(out()).toMatch(/^reservations \(1 counting against quota\):\n {2}rsv_[0-9a-f]{12} {2}claude claude-sonnet-5-5 {2}pending for 0m {2}\(session \+1\.5 pp, weekly \+1\.5 pp, monthly \+1\.5 pp\)$/m);
+    expect(out()).toMatch(/^reservations \(1 counting against quota\):\n {2}rsv_[0-9a-f]{12} {2}claude claude-sonnet-5-5 {2}pending for 0m {2}\(session \+1\.5 pp, weekly \+1\.5 pp\)$/m);
     // A second route sees the first one's reservation; a dry run reserves nothing.
     const second = await routed();
     expect(second.quota.buckets.find((b: { pool: string }) => b.pool === 'weekly')).toMatchObject({ reported: 50, reserved: 1.5, effective: 51.5, prospective: 53 });
@@ -1168,7 +1170,7 @@ describe('quota reservations', () => {
     await main(['status', '--json'], io, deps);
     const r = JSON.parse(out()).reservations.find((x: { id: string }) => x.id === d.reservation.id);
     expect(r).toMatchObject({ state: 'failed_before_launch', live: false });
-    expect(r.buckets.map((b: { percentPoints: number }) => b.percentPoints)).toEqual([0, 0, 0]);
+    expect(r.buckets).toEqual([{ pool: 'session', percentPoints: 0 }, { pool: 'weekly', percentPoints: 0 }]);
   });
 
   it('status computes a record\'s points with the plan it was reserved on (#10d)', async () => {
@@ -1189,5 +1191,153 @@ describe('quota reservations', () => {
     const r = JSON.parse(out()).reservations.find((x: { id: string }) => x.id === d.reservation.id);
     expect(r).toMatchObject({ live: true, plan: 'max_5x' });
     expect(r.buckets.map((b: { percentPoints: number }) => b.percentPoints)).toEqual([3, 3, 3]);
+  });
+});
+
+describe('final audit: status and setup', () => {
+  const ledgerFile = () => join(process.env.ORCACOMPASS_HOME!, 'cache', 'reservations.json');
+  const seed = (reservations: object[]) => {
+    mkdirSync(join(process.env.ORCACOMPASS_HOME!, 'cache'), { recursive: true });
+    writeFileSync(ledgerFile(), JSON.stringify({ version: 2, reservations, snapshots: {} }));
+  };
+  const statusJson = async (d: MainDeps = deps) => {
+    stdout = [];
+    expect(await main(['status', '--json'], io, d)).toBe(0);
+    return JSON.parse(out());
+  };
+  const statusText = async (d: MainDeps = deps) => {
+    stdout = [];
+    expect(await main(['status'], io, d)).toBe(0);
+    return out();
+  };
+  const tierLine = (text: string, tier: string) => text.split('\n').find((l) => l.startsWith(`  ${tier.padEnd(8)}  `));
+
+  it('breaks a reservation down by the windows Orca reports: every window of an Antigravity group, no fallback name, no settled window', async () => {
+    const bucket = (windowMinutes: number, usedPercent: number) =>
+      ({ name: 'Gemini Models', group: 'Gemini Models', usedPercent, windowMinutes, resetsAt: NOW + 86_400_000, resetDescription: null });
+    const data = JSON.parse(orcaFixture);
+    data.result.rateLimits.antigravity = {
+      provider: 'antigravity', session: null, weekly: { usedPercent: 40, windowMinutes: 10080, resetsAt: NOW + 86_400_000, resetDescription: null },
+      buckets: [bucket(300, 40), bucket(10080, 10), bucket(1440, 20)], updatedAt: NOW, error: null, status: 'ok', usageMetadata: { source: 'cli' },
+    };
+    const agy: MainDeps = { ...deps, run: fakeRunner(() => ({ code: 0, stdout: JSON.stringify(data), stderr: '' })) };
+    // A finished Gemini worker as the Antigravity adapter declares it: the 5-hour window, the group, and the fallback
+    // names. A fresh reading already covered the 5-hour window; the group is still open.
+    seed([{
+      id: 'rsv_agy', state: 'completed', agent: 'antigravity', model: 'gemini-4-neon-high', tier: 'frontier', effort: 'medium', scope: 'default',
+      pools: ['bucket:gemini models 5h', 'bucket:gemini models', 'session', 'weekly'], settled: ['bucket:gemini models 5h'],
+      createdAt: NOW - 600_000, endedAt: NOW, snapshotAt: NOW - 600_000,
+    }]);
+    const s = await statusJson(agy);
+    const r = s.reservations.find((x: { id: string }) => x.id === 'rsv_agy');
+    expect(r).toMatchObject({ state: 'completed', live: true });
+    // The 1-day window is there although nothing declares it by name; `session` and `weekly` are not reported and not listed.
+    expect(r.buckets).toEqual([
+      { pool: 'bucket:Gemini Models 5h', percentPoints: 0, settled: true },
+      { pool: 'bucket:Gemini Models', percentPoints: 2.5 },
+      { pool: 'bucket:Gemini Models 1d', percentPoints: 2.5 },
+    ]);
+    const text = await statusText(agy);
+    expect(text).toMatch(/^reservations \(1 counting against quota\):\n {2}rsv_agy {2}antigravity gemini-4-neon-high {2}completed for 0m {2}\(Gemini Models \+2\.5 pp, Gemini Models 1d \+2\.5 pp\)$/m);
+  });
+
+  it('lists the declared windows of a record whose quota identity has no readable snapshot', async () => {
+    // Reserved on another account's scope: Orca's current windows are not this record's buckets.
+    seed([{
+      id: 'rsv_other', state: 'running', agent: 'claude', model: 'claude-sonnet-5-5', tier: 'daily', effort: 'medium', scope: 'scope-of-another-account',
+      account: 'another-account', pools: ['session', 'weekly', 'monthly'], createdAt: NOW, startedAt: NOW, snapshotAt: NOW,
+    }]);
+    const r = (await statusJson()).reservations.find((x: { id: string }) => x.id === 'rsv_other');
+    expect(r.buckets).toEqual([{ pool: 'session', percentPoints: 1.5 }, { pool: 'weekly', percentPoints: 1.5 }, { pool: 'monthly', percentPoints: 1.5 }]);
+  });
+
+  describe('a preferred route that is a structural upgrade', () => {
+    // Cursor only, with its Light-cost models banned: nothing in the Light cost tier covers a Light job.
+    const lightCost = ['claude-haiku-5-5', 'deepseek-v41-flash-1017', 'gpt-5-mini', 'gpt-5.4-nano', 'gpt-5.6-luna'];
+    const configured = (pins: object) => writeFileSync(configPath(), JSON.stringify({ allowAgents: ['cursor'], banModels: lightCost, pins }));
+    const setupJson = async () => {
+      stdout = [];
+      expect(await main(['setup', '--json'], io, deps)).toBe(0);
+      return JSON.parse(out());
+    };
+
+    it('stays hidden in status and setup while no preference names it', async () => {
+      configured({});
+      stdout = [];
+      expect(await main(['route', '--tier', 'light', '--json', '--dry-run'], io, deps)).toBe(0);
+      expect(JSON.parse(out())).toMatchObject({ status: 'ok', upgraded: true, tier: 'daily', route: { agent: 'cursor', model: 'grok-4.7-low' } });
+      const s = await statusJson();
+      expect(s.tiers.light).toEqual({ status: 'none', alternatives: [], warnings: [] });
+      expect(tierLine(await statusText(), 'light')).toBe('  light     no candidates');
+      expect((await setupJson()).tiers.light).toEqual({ pick: null, preferred: null, options: [], warnings: [] });
+    });
+
+    it.each([
+      ['a model', { agent: 'cursor', model: 'grok-4.7' }],
+      ['an effort variant of it', { agent: 'cursor', model: 'grok-4.7-low' }],
+      ['the agent', { agent: 'cursor' }],
+    ])('is shown in status and setup when the tier\'s preference names %s', async (_what, pin) => {
+      configured({ light: pin });
+      const s = await statusJson();
+      expect(s.tiers.light).toMatchObject({ status: 'ok', pick: { agent: 'cursor', model: 'grok-4.7-low' }, warnings: ['no model in the light cost tier covers the job; using daily'] });
+      expect(s.tiers.light.pick.reason).toMatch(/\(daily cost tier\)$/);
+      const text = await statusText();
+      expect(tierLine(text, 'light')).toMatch(/^ {2}light {5}cursor · grok-4\.7-low \(high\) — .*\(daily cost tier\)$/);
+      expect(text).not.toContain('light     no candidates');
+      const setup = await setupJson();
+      expect(setup.tiers.light).toMatchObject({ pick: { agent: 'cursor', model: 'grok-4.7-low' }, preferred: pin, warnings: ['no model in the light cost tier covers the job; using daily'] });
+      expect(setup.tiers.light.options[0]).toMatchObject({ agent: 'cursor', model: 'grok-4.7', blocked: false });
+    });
+
+    it('stays hidden when the upgrade is not the preferred route', async () => {
+      // The preference names a model the agent does not list: it is skipped, and the upgrade is an automatic one.
+      configured({ light: { agent: 'cursor', model: 'no-such-model' } });
+      const s = await statusJson();
+      expect(s.tiers.light).toMatchObject({ status: 'none', alternatives: [], warnings: [] });
+      expect(s.tiers.light).not.toHaveProperty('pick');
+      expect((await setupJson()).tiers.light).toMatchObject({ pick: null, options: [] });
+    });
+  });
+
+  it('does not call a route held only by preferRiskLimit one above the risk threshold', async () => {
+    // Claude only; the preferred Sonnet does not cover a Frontier job and is over the 20% preference limit at 51.75%.
+    writeFileSync(configPath(), JSON.stringify({
+      allowAgents: ['claude'], banModels: ['claude-opus', 'claude-fable'], pins: { frontier: { agent: 'claude', model: 'claude-sonnet-5-5' } }, preferRiskLimit: 20,
+    }));
+    const s = await statusJson();
+    expect(s.tiers.frontier.options.use.map((u: { model: string; preferred?: boolean; quota: { status: string } }) => [u.model, u.preferred, u.quota.status]))
+      .toEqual([['claude-sonnet-5-5', true, 'available']]);
+    const line = tierLine(await statusText(), 'frontier')!;
+    expect(line).toMatch(/^ {2}frontier {2}nothing is routed automatically; your decision: wait 14h, use 1 route \(held only by preferRiskLimit\), lower the requirements \(\d+ routes?\)$/);
+    expect(line).not.toContain('above the risk threshold');
+  });
+
+  it('still says above the risk threshold for routes that are', async () => {
+    const tight = JSON.parse(orcaFixture);
+    tight.result.rateLimits.claude.weekly.usedPercent = 93;
+    writeFileSync(configPath(), JSON.stringify({ allowAgents: ['claude'] }));
+    const claudeTight: MainDeps = { ...deps, run: fakeRunner(() => ({ code: 0, stdout: JSON.stringify(tight), stderr: '' })) };
+    expect(tierLine(await statusText(claudeTight), 'daily')).toMatch(/^ {2}daily {5}nothing below the risk threshold; your decision: wait 14h, use \d+ routes? above the risk threshold/);
+  });
+
+  it('names each kind of USE route when only some are above the risk threshold', async () => {
+    // Codex at 93% of its weekly quota: its routes are above the threshold. Claude is at 50%, and its only model
+    // left is the preferred Haiku, over the 20% preference limit: held, but nowhere near the threshold.
+    const data = JSON.parse(orcaFixture);
+    data.result.rateLimits.codex.weekly.usedPercent = 93;
+    const codexTight: MainDeps = { ...deps, run: fakeRunner(() => ({ code: 0, stdout: JSON.stringify(data), stderr: '' })) };
+    writeFileSync(configPath(), JSON.stringify({
+      allowAgents: ['claude', 'codex'], banModels: ['claude-sonnet', 'claude-opus', 'claude-fable'],
+      pins: { daily: { agent: 'claude', model: 'claude-haiku-5-5' } }, preferRiskLimit: 20,
+    }));
+    const s = await statusJson(codexTight);
+    const use: { agent: string; preferred?: boolean; quota: { status: string } }[] = s.tiers.daily.options.use;
+    expect(use[0]).toMatchObject({ agent: 'claude', model: 'claude-haiku-5-5', preferred: true, quota: { status: 'available' } });
+    const above = use.filter((u) => u.quota.status === 'high').length;
+    expect(above).toBe(use.length - 1);
+    expect(above).toBeGreaterThan(0);
+    const line = tierLine(await statusText(codexTight), 'daily')!;
+    expect(line).toMatch(/^ {2}daily {5}nothing is routed automatically; your decision: wait \d+[hd], use /);
+    expect(line).toContain(`, use ${use.length} routes (${above} above the risk threshold, 1 held only by preferRiskLimit)`);
   });
 });
